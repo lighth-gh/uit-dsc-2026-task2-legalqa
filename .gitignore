@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+artifacts/*.sqlite
+artifacts/*.sqlite-*
+*.zip
+.env
+.DS_Store

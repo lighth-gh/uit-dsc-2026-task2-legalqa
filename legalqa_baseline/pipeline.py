@@ -8,7 +8,7 @@ from .storage import SearchIndex
 from .text import best_excerpt, query_terms, tokenize
 
 
-Mode = Literal["extractive", "knn", "hybrid"]
+Mode = Literal["extractive", "knn", "hybrid", "rag", "hybrid_rag"]
 
 
 @dataclass(frozen=True)
@@ -66,11 +66,15 @@ class LegalQABaseline:
         top_k: int = 12,
         max_answer_words: int = 520,
         knn_threshold: float = 0.72,
+        generator: Any | None = None,
+        context_top_k: int = 3,
     ):
         self.index = index
         self.top_k = top_k
         self.max_answer_words = max_answer_words
         self.knn_threshold = knn_threshold
+        self.generator = generator
+        self.context_top_k = context_top_k
 
     def _extractive(self, question: str) -> Prediction | None:
         contexts = self.index.search_contexts(question, top_k=self.top_k)
@@ -94,6 +98,49 @@ class LegalQABaseline:
         }
         confidence = min(1.0, _context_rerank_score(question, best) / 20.0)
         return Prediction(answer, "extractive", confidence, evidence)
+
+    def _rag(self, question: str) -> Prediction | None:
+        if self.generator is None:
+            from .generator import ViQwenRAGGenerator
+            self.generator = ViQwenRAGGenerator()
+
+        contexts = self.index.search_contexts(question, top_k=self.top_k)
+        if not contexts:
+            return None
+
+        ranked = sorted(
+            contexts,
+            key=lambda item: _context_rerank_score(question, item),
+            reverse=True,
+        )
+        top_chunks = ranked[: self.context_top_k]
+
+        context_blocks = []
+        for idx, chunk in enumerate(top_chunks, start=1):
+            name = str(chunk.get("name") or "").strip()
+            text = str(chunk.get("text") or "").strip()
+            if name:
+                context_blocks.append(f"[{idx}] Văn bản: {name}\n{text}")
+            else:
+                context_blocks.append(f"[{idx}] {text}")
+        joined_context = "\n\n".join(context_blocks)
+
+        answer = self.generator.generate(context=joined_context, question=question)
+        evidence = {
+            "num_contexts": len(top_chunks),
+            "top_contexts": [
+                {
+                    "context_id": c["context_id"],
+                    "chunk_no": c["chunk_no"],
+                    "name": c.get("name"),
+                    "bm25_score": c["bm25_score"],
+                }
+                for c in top_chunks
+            ],
+        }
+        best = top_chunks[0]
+        confidence = min(1.0, _context_rerank_score(question, best) / 20.0)
+        return Prediction(answer, "rag", confidence, evidence)
 
     def _knn(self, question: str, exclude_id: str | None = None) -> Prediction | None:
         neighbors = self.index.search_train(question, top_k=5, exclude_id=exclude_id)
@@ -129,6 +176,14 @@ class LegalQABaseline:
                 result = knn
             else:
                 result = self._extractive(question) or knn
+        elif mode == "rag":
+            result = self._rag(question)
+        elif mode == "hybrid_rag":
+            knn = self._knn(question, exclude_id=exclude_id)
+            if knn is not None and knn.confidence >= self.knn_threshold:
+                result = knn
+            else:
+                result = self._rag(question) or knn
         else:
             raise ValueError(f"Mode không hỗ trợ: {mode}")
 

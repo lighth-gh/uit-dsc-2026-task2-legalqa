@@ -115,6 +115,28 @@ python -m legalqa_baseline predict \
   --db artifacts/legalqa.sqlite \
   --output artifacts/submission_hybrid.json \
   --mode hybrid
+
+# Chạy RAG Generator (Vi-Qwen2-1.5B-RAG):
+python -m legalqa_baseline predict \
+  --input data/public-official.json \
+  --db artifacts/legalqa.sqlite \
+  --output artifacts/submission_rag.json \
+  --mode rag \
+  --device cuda
+```
+
+Hoặc sử dụng script chạy RAG chuyên biệt:
+
+```bash
+pip install -r requirements-generator.txt
+python run_rag_inference.py \
+  --input data/public-official.json \
+  --db artifacts/legalqa.sqlite \
+  --output artifacts/submission_rag.json \
+  --model-name AITeamVN/Vi-Qwen2-1.5B-RAG \
+  --mode rag \
+  --context-top-k 3 \
+  --device cuda
 ```
 
 Tham số đáng thử trước:
@@ -122,17 +144,25 @@ Tham số đáng thử trước:
 - `--max-answer-words`: 320, 420, 520, 620.
 - `--top-k`: 8, 12, 20.
 - `--knn-threshold`: 0.65–0.85; ngưỡng càng cao càng ít sao chép đáp án Train.
+- `--context-top-k`: 3–5 (số đoạn luật liên quan nhất đưa vào prompt LLM).
 
 ## 6. Kiểm tra một câu hỏi
 
 ```bash
+# Kiểm tra chế độ hybrid (extractive/knn)
 python -m legalqa_baseline inspect \
   --db artifacts/legalqa.sqlite \
   --mode hybrid \
   --question "Vận chuyển động vật không có giấy chứng nhận kiểm dịch bị phạt thế nào?"
+
+# Kiểm tra chế độ RAG Generator
+python -m legalqa_baseline inspect \
+  --db artifacts/legalqa.sqlite \
+  --mode rag \
+  --question "Vận chuyển động vật không có giấy chứng nhận kiểm dịch bị phạt thế nào?"
 ```
 
-Kết quả cho biết route (`extractive`/`knn`), độ tin cậy và `context_id` hoặc mẫu Train đã dùng. Đây là cách nhanh nhất để debug retrieval.
+Kết quả cho biết route (`extractive`/`knn`/`rag`), độ tin cậy và `evidence` hoặc các ngữ cảnh pháp lý đã dùng để LLM sinh câu trả lời.
 
 ## 7. Giới hạn đã biết
 
@@ -153,4 +183,5 @@ BM25 Top 100
   → Vi-Qwen2-1.5B-RAG hoặc Qwen2.5-1.5B-Instruct (sinh đáp án)
 ```
 
-Không ghép tùy ý các model sát 4B: giới hạn của BTC tính **tổng tham số embedding + reranker + generator**, không phải từng model riêng lẻ. Baseline 0.1 giữ interface retrieval/evidence rõ ràng để thay từng tầng mà không đổi schema submission.
+Không ghép tùy ý các model sát 4B: giới hạn của BTC tính **tổng tham số embedding + reranker + generator**, không phải từng model riêng lẻ. Baseline giữ interface retrieval/evidence/generation rõ ràng để thay từng tầng mà không đổi schema submission.
+

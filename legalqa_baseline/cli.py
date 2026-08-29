@@ -12,16 +12,58 @@ from .pipeline import LegalQABaseline
 from .storage import SearchIndex, build_index, load_qa, write_predictions
 
 
+VALID_MODES = ["extractive", "knn", "hybrid", "rag", "hybrid_rag"]
+
+
 def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--top-k", type=int, default=12)
     parser.add_argument("--max-answer-words", type=int, default=520)
     parser.add_argument("--knn-threshold", type=float, default=0.72)
+    parser.add_argument("--context-top-k", type=int, default=3, help="Số chunk luật đưa vào ngữ cảnh LLM")
+    parser.add_argument(
+        "--generator-model",
+        type=str,
+        default="AITeamVN/Vi-Qwen2-1.5B-RAG",
+        help="Tên mô hình LLM HuggingFace hoặc đường dẫn cục bộ",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "cuda", "cpu"],
+        help="Thiết bị chạy LLM",
+    )
+    parser.add_argument(
+        "--torch-dtype",
+        type=str,
+        default="auto",
+        choices=["auto", "bfloat16", "float16"],
+        help="Kiểu dữ liệu trọng số",
+    )
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=512,
+        help="Số token tối đa sinh ra cho câu trả lời",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.1,
+        help="Nhiệt độ lấy mẫu (0.0: greedy search)",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=0.9,
+        help="Top-p sampling",
+    )
 
 
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m legalqa_baseline",
-        description="Baseline BM25/FTS5 offline cho UIT DSC 2026 LegalQA",
+        description="Baseline BM25/FTS5 & RAG LLM cho UIT DSC 2026 LegalQA",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -38,7 +80,7 @@ def make_parser() -> argparse.ArgumentParser:
     predict.add_argument("--db", required=True)
     predict.add_argument("--output", required=True)
     predict.add_argument(
-        "--mode", choices=["extractive", "knn", "hybrid"], default="hybrid"
+        "--mode", choices=VALID_MODES, default="hybrid"
     )
     _add_pipeline_args(predict)
 
@@ -55,7 +97,7 @@ def make_parser() -> argparse.ArgumentParser:
     inspect.add_argument("--db", required=True)
     inspect.add_argument("--question", required=True)
     inspect.add_argument(
-        "--mode", choices=["extractive", "knn", "hybrid"], default="hybrid"
+        "--mode", choices=VALID_MODES, default="hybrid"
     )
     _add_pipeline_args(inspect)
 
@@ -65,12 +107,26 @@ def make_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _pipeline(args: argparse.Namespace, index: SearchIndex) -> LegalQABaseline:
+def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool = False) -> LegalQABaseline:
+    generator = None
+    if need_generator:
+        from .generator import ViQwenRAGGenerator
+        generator = ViQwenRAGGenerator(
+            model_name_or_path=getattr(args, "generator_model", "AITeamVN/Vi-Qwen2-1.5B-RAG"),
+            device=getattr(args, "device", "auto"),
+            torch_dtype=getattr(args, "torch_dtype", "auto"),
+            max_new_tokens=getattr(args, "max_new_tokens", 512),
+            temperature=getattr(args, "temperature", 0.1),
+            top_p=getattr(args, "top_p", 0.9),
+        )
+
     return LegalQABaseline(
         index=index,
         top_k=args.top_k,
         max_answer_words=args.max_answer_words,
         knn_threshold=args.knn_threshold,
+        generator=generator,
+        context_top_k=getattr(args, "context_top_k", 3),
     )
 
 
@@ -92,8 +148,9 @@ def command_predict(args: argparse.Namespace) -> int:
     predictions: dict[str, str] = {}
     routes: dict[str, int] = {}
     started = time.time()
+    need_generator = args.mode in ("rag", "hybrid_rag")
     with SearchIndex(args.db) as index:
-        pipeline = _pipeline(args, index)
+        pipeline = _pipeline(args, index, need_generator=need_generator)
         for number, (sample_id, item) in enumerate(data.items(), start=1):
             result = pipeline.predict_one(item["question"], mode=args.mode)
             predictions[sample_id] = result.answer
@@ -120,7 +177,7 @@ def command_validate(args: argparse.Namespace) -> int:
     if args.limit > 0:
         sample_ids = sample_ids[: args.limit]
     modes = [mode.strip() for mode in args.modes.split(",") if mode.strip()]
-    invalid = set(modes) - {"extractive", "knn", "hybrid"}
+    invalid = set(modes) - set(VALID_MODES)
     if invalid:
         raise ValueError(f"Mode không hợp lệ: {sorted(invalid)}")
 
@@ -131,11 +188,14 @@ def command_validate(args: argparse.Namespace) -> int:
             "top_k": args.top_k,
             "max_answer_words": args.max_answer_words,
             "knn_threshold": args.knn_threshold,
+            "context_top_k": args.context_top_k,
+            "generator_model": args.generator_model,
         },
         "results": {},
     }
+    need_generator = any(m in ("rag", "hybrid_rag") for m in modes)
     with SearchIndex(args.db) as index:
-        pipeline = _pipeline(args, index)
+        pipeline = _pipeline(args, index, need_generator=need_generator)
         for mode in modes:
             predictions: list[str] = []
             references: list[str] = []
@@ -167,8 +227,11 @@ def command_validate(args: argparse.Namespace) -> int:
 
 
 def command_inspect(args: argparse.Namespace) -> int:
+    need_generator = args.mode in ("rag", "hybrid_rag")
     with SearchIndex(args.db) as index:
-        result = _pipeline(args, index).predict_one(args.question, mode=args.mode)
+        result = _pipeline(args, index, need_generator=need_generator).predict_one(
+            args.question, mode=args.mode
+        )
     print(
         json.dumps(
             {
@@ -199,6 +262,10 @@ def command_score(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     args = make_parser().parse_args(argv)
     commands = {
         "build-index": command_build,
