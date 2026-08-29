@@ -1,0 +1,28 @@
+{
+  "config": {
+    "samples": 300,
+    "seed": 2026,
+    "top_k": 12,
+    "max_answer_words": 520,
+    "knn_threshold": 0.72
+  },
+  "results": {
+    "extractive": {
+      "meteor_exact_approx": 0.36024146686492403,
+      "rougeL": 0.41299165033105223,
+      "samples": 300,
+      "routes": {
+        "extractive": 300
+      }
+    },
+    "hybrid": {
+      "meteor_exact_approx": 0.37531159265637193,
+      "rougeL": 0.42743734037055287,
+      "samples": 300,
+      "routes": {
+        "extractive": 273,
+        "knn": 27
+      }
+    }
+  }
+}
