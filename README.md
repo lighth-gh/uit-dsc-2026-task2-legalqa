@@ -116,12 +116,27 @@ python -m legalqa_baseline predict \
   --output artifacts/submission_hybrid.json \
   --mode hybrid
 
-# Chạy RAG Generator (Vi-Qwen2-1.5B-RAG):
+# Chạy RAG Generator (Vi-Qwen2-1.5B-RAG + BM25 + Dense FAISS + RRF + Vietnamese_Reranker):
 python -m legalqa_baseline predict \
   --input data/public-official.json \
   --db artifacts/legalqa.sqlite \
+  --dense-index artifacts/legalqa_dense \
   --output artifacts/submission_rag.json \
   --mode rag \
+  --bm25-top-k 50 \
+  --dense-top-k 50 \
+  --rrf-k 60 \
+  --rrf-top-k 12 \
+  --rerank-top-k 3 \
+  --device cuda
+```
+
+### Xây dựng Dense FAISS Vector Index:
+```bash
+python -m legalqa_baseline build-dense-index \
+  --contexts data/selected-contexts.zip \
+  --dense-index artifacts/legalqa_dense \
+  --embedding-model AITeamVN/Vietnamese_Embedding_v2 \
   --device cuda
 ```
 
@@ -132,19 +147,26 @@ pip install -r requirements-generator.txt
 python run_rag_inference.py \
   --input data/public-official.json \
   --db artifacts/legalqa.sqlite \
+  --dense-index artifacts/legalqa_dense \
   --output artifacts/submission_rag.json \
   --model-name AITeamVN/Vi-Qwen2-1.5B-RAG \
+  --embedding-model AITeamVN/Vietnamese_Embedding_v2 \
+  --reranker-model AITeamVN/Vietnamese_Reranker \
+  --bm25-top-k 50 \
+  --dense-top-k 50 \
+  --rrf-k 60 \
+  --rrf-top-k 12 \
+  --rerank-top-k 3 \
   --mode rag \
-  --context-top-k 3 \
   --device cuda
 ```
 
-Tham số đáng thử trước:
+Tham số đáng thử:
 
-- `--max-answer-words`: 320, 420, 520, 620.
-- `--top-k`: 8, 12, 20.
-- `--knn-threshold`: 0.65–0.85; ngưỡng càng cao càng ít sao chép đáp án Train.
-- `--context-top-k`: 3–5 (số đoạn luật liên quan nhất đưa vào prompt LLM).
+- `--bm25-top-k` & `--dense-top-k`: 50 (lấy 50 ứng viên từ mỗi nhánh).
+- `--rrf-k`: 60 (tham số Reciprocal Rank Fusion tiêu chuẩn).
+- `--rrf-top-k`: 12 (lấy 12 ứng viên tốt nhất sau khi hợp nhất).
+- `--rerank-top-k`: 3 (chọn đúng 3 Điều luật chính xác nhất đưa vào LLM).
 
 ## 6. Kiểm tra một câu hỏi
 
@@ -155,33 +177,27 @@ python -m legalqa_baseline inspect \
   --mode hybrid \
   --question "Vận chuyển động vật không có giấy chứng nhận kiểm dịch bị phạt thế nào?"
 
-# Kiểm tra chế độ RAG Generator
+# Kiểm tra chế độ Hybrid RAG Generator
 python -m legalqa_baseline inspect \
   --db artifacts/legalqa.sqlite \
+  --dense-index artifacts/legalqa_dense \
   --mode rag \
   --question "Vận chuyển động vật không có giấy chứng nhận kiểm dịch bị phạt thế nào?"
 ```
 
-Kết quả cho biết route (`extractive`/`knn`/`rag`), độ tin cậy và `evidence` hoặc các ngữ cảnh pháp lý đã dùng để LLM sinh câu trả lời.
+Kết quả cho biết route (`extractive`/`knn`/`rag`), độ tin cậy và `evidence` (top chunks, BM25 score, Dense score, RRF score, Reranker score) đã dùng để LLM sinh câu trả lời.
 
-## 7. Giới hạn đã biết
+## 7. Kiến trúc mô hình (< 4B tham số)
 
-- BM25 không hiểu đồng nghĩa/ngữ nghĩa sâu.
-- Trích một chunk có thể thiếu phần mở đầu, kết luận hoặc căn cứ sửa đổi mà đáp án chuyên gia thêm vào.
-- KNN chỉ an toàn khi câu hỏi rất gần nhau; dùng ngưỡng thấp sẽ chép nhầm điều luật.
-- METEOR/ROUGE-L thưởng độ giống bề mặt, nên câu đúng nghĩa nhưng diễn đạt khác vẫn có điểm thấp.
-- 20 văn bản corpus có `passage` rỗng; builder bỏ qua có chủ đích.
-
-## 8. Hướng nâng cấp sau baseline
-
-Theo danh sách mô hình BTC đã phê duyệt, cấu hình hợp lý tiếp theo là:
+Theo danh sách mô hình BTC đã phê duyệt, hệ thống kết hợp:
 
 ```text
-BM25 Top 100
-  → Vietnamese_Embedding_v2 hoặc multilingual-e5-base (dense retrieval)
-  → Vietnamese_Reranker / Qwen3-Reranker-0.6B (Top 5)
-  → Vi-Qwen2-1.5B-RAG hoặc Qwen2.5-1.5B-Instruct (sinh đáp án)
+BM25 FTS5 (0B) + Vietnamese_Embedding_v2 (110M) [Top 50 + Top 50]
+  → Reciprocal Rank Fusion (rrf_k=60) [Top 12]
+  → Vietnamese_Reranker (110M) [Top 3]
+  → Vi-Qwen2-1.5B-RAG (1.54B) [Sinh đáp án]
 ```
 
-Không ghép tùy ý các model sát 4B: giới hạn của BTC tính **tổng tham số embedding + reranker + generator**, không phải từng model riêng lẻ. Baseline giữ interface retrieval/evidence/generation rõ ràng để thay từng tầng mà không đổi schema submission.
+👉 **Tổng tham số**: $\approx 1.76\text{B} \ll 4\text{B}$ (Tuyệt đối tuân thủ điều lệ BTC, tối ưu hóa toàn diện cho tiếng Việt và văn bản pháp luật).
+
 

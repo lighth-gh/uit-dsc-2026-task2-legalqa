@@ -96,6 +96,54 @@ def parse_args() -> argparse.Namespace:
         help="Top-p sampling",
     )
     parser.add_argument(
+        "--dense-index",
+        type=str,
+        default=None,
+        help="Đường dẫn file FAISS / NumPy Dense Index (.faiss / .npy)",
+    )
+    parser.add_argument(
+        "--embedding-model",
+        type=str,
+        default="AITeamVN/Vietnamese_Embedding_v2",
+        help="Tên mô hình Dense Embedding tiếng Việt",
+    )
+    parser.add_argument(
+        "--reranker-model",
+        type=str,
+        default="AITeamVN/Vietnamese_Reranker",
+        help="Tên mô hình Cross-Encoder Reranker tiếng Việt",
+    )
+    parser.add_argument(
+        "--bm25-top-k",
+        type=int,
+        default=50,
+        help="Số candidate truy xuất bằng BM25",
+    )
+    parser.add_argument(
+        "--dense-top-k",
+        type=int,
+        default=50,
+        help="Số candidate truy xuất bằng Dense FAISS",
+    )
+    parser.add_argument(
+        "--rrf-k",
+        type=int,
+        default=60,
+        help="Hệ số RRF fusion k (mặc định 60)",
+    )
+    parser.add_argument(
+        "--rrf-top-k",
+        type=int,
+        default=12,
+        help="Số candidate sau khi RRF fusion",
+    )
+    parser.add_argument(
+        "--rerank-top-k",
+        type=int,
+        default=3,
+        help="Số chunk chọn lọc sau khi qua Reranker",
+    )
+    parser.add_argument(
         "--mode",
         type=str,
         default="rag",
@@ -140,10 +188,12 @@ def main() -> int:
     print("UIT DSC 2026 - Task 2 LegalQA: RAG Generator Pipeline")
     print(f"• Input: {input_path}")
     print(f"• Database: {db_path}")
-    print(f"• Model: {args.model_name}")
-    print(f"• Mode: {args.mode}")
+    print(f"• Generator: {args.model_name}")
+    print(f"• Dense Index: {args.dense_index}")
+    print(f"• Embedding: {args.embedding_model}")
+    print(f"• Reranker: {args.reranker_model}")
+    print(f"• Mode: {args.mode} | RRF k={args.rrf_k} | Top {args.rerank_top_k} chunks")
     print(f"• Device: {args.device}")
-    print(f"• Context chunks: {args.context_top_k} / {args.top_k}")
     print("=" * 60)
 
     data = load_qa(input_path)
@@ -151,7 +201,7 @@ def main() -> int:
     if args.limit > 0:
         sample_ids = sample_ids[: args.limit]
 
-    print(f"[*] Đang tải mô hình LLM: {args.model_name}...")
+    print(f"[*] Đang tải mô hình LLM Generator: {args.model_name}...")
     generator = ViQwenRAGGenerator(
         model_name_or_path=args.model_name,
         device=args.device,
@@ -160,6 +210,35 @@ def main() -> int:
         temperature=args.temperature,
         top_p=args.top_p,
     )
+
+    dense_index = None
+    embedding_model = None
+    if args.dense_index:
+        p = Path(args.dense_index)
+        meta_p = p.with_suffix(".meta.json") if p.suffix in (".faiss", ".npy") else p.with_name(f"{p.stem}.meta.json")
+        if p.exists() or meta_p.exists():
+            try:
+                from legalqa_baseline.dense import DenseVectorIndex, VietnameseEmbeddingModel
+                dense_index = DenseVectorIndex.load(p)
+                embedding_model = VietnameseEmbeddingModel(
+                    model_name_or_path=args.embedding_model,
+                    device=args.device,
+                )
+                print(f"[Dense] Nạp index thành công ({len(dense_index.metadata):,} chunks)")
+            except Exception as exc:
+                print(f"[Dense] Cảnh báo lỗi nạp dense index ({exc}), fallback BM25.", file=sys.stderr)
+
+    reranker = None
+    if args.reranker_model:
+        try:
+            from legalqa_baseline.reranker import VietnameseReranker
+            reranker = VietnameseReranker(
+                model_name_or_path=args.reranker_model,
+                device=args.device,
+            )
+            print(f"[Reranker] Nạp reranker thành công: {args.reranker_model}")
+        except Exception as exc:
+            print(f"[Reranker] Cảnh báo lỗi nạp reranker ({exc}), fallback RRF order.", file=sys.stderr)
 
     predictions: dict[str, str] = {}
     routes: dict[str, int] = {}
@@ -172,6 +251,14 @@ def main() -> int:
             knn_threshold=args.knn_threshold,
             generator=generator,
             context_top_k=args.context_top_k,
+            dense_index=dense_index,
+            embedding_model=embedding_model,
+            reranker=reranker,
+            bm25_top_k=args.bm25_top_k,
+            dense_top_k=args.dense_top_k,
+            rrf_k=args.rrf_k,
+            rrf_top_k=args.rrf_top_k,
+            rerank_top_k=args.rerank_top_k,
         )
 
         total = len(sample_ids)

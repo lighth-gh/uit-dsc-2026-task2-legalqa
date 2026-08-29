@@ -59,6 +59,36 @@ def _context_rerank_score(question: str, result: dict[str, Any]) -> float:
     return bm25 + 2.0 * coverage + 2.0 * phrase_coverage + 6.0 * trigram_coverage
 
 
+def reciprocal_rank_fusion(
+    bm25_results: list[dict[str, Any]],
+    dense_results: list[dict[str, Any]],
+    rrf_k: int = 60,
+    top_k: int = 12,
+) -> list[dict[str, Any]]:
+    """Hợp nhất kết quả từ BM25 và Dense Search bằng Reciprocal Rank Fusion (RRF)."""
+    scores: dict[tuple[str, int], float] = {}
+    docs: dict[tuple[str, int], dict[str, Any]] = {}
+
+    for rank, doc in enumerate(bm25_results, start=1):
+        key = (str(doc.get("context_id", "")), int(doc.get("chunk_no", 0)))
+        scores[key] = scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
+        docs[key] = dict(doc)
+
+    for rank, doc in enumerate(dense_results, start=1):
+        key = (str(doc.get("context_id", "")), int(doc.get("chunk_no", 0)))
+        scores[key] = scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
+        if key not in docs:
+            docs[key] = dict(doc)
+
+    sorted_keys = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)
+    fused_results: list[dict[str, Any]] = []
+    for key in sorted_keys[:top_k]:
+        item = dict(docs[key])
+        item["rrf_score"] = float(scores[key])
+        fused_results.append(item)
+    return fused_results
+
+
 class LegalQABaseline:
     def __init__(
         self,
@@ -68,6 +98,14 @@ class LegalQABaseline:
         knn_threshold: float = 0.72,
         generator: Any | None = None,
         context_top_k: int = 3,
+        dense_index: Any | None = None,
+        embedding_model: Any | None = None,
+        reranker: Any | None = None,
+        bm25_top_k: int = 50,
+        dense_top_k: int = 50,
+        rrf_k: int = 60,
+        rrf_top_k: int = 12,
+        rerank_top_k: int = 3,
     ):
         self.index = index
         self.top_k = top_k
@@ -75,6 +113,14 @@ class LegalQABaseline:
         self.knn_threshold = knn_threshold
         self.generator = generator
         self.context_top_k = context_top_k
+        self.dense_index = dense_index
+        self.embedding_model = embedding_model
+        self.reranker = reranker
+        self.bm25_top_k = bm25_top_k
+        self.dense_top_k = dense_top_k
+        self.rrf_k = rrf_k
+        self.rrf_top_k = rrf_top_k
+        self.rerank_top_k = rerank_top_k or context_top_k
 
     def _extractive(self, question: str) -> Prediction | None:
         contexts = self.index.search_contexts(question, top_k=self.top_k)
@@ -104,16 +150,45 @@ class LegalQABaseline:
             from .generator import ViQwenRAGGenerator
             self.generator = ViQwenRAGGenerator()
 
-        contexts = self.index.search_contexts(question, top_k=self.top_k)
-        if not contexts:
+        # 1. Truy xuất BM25 Top-50
+        bm25_candidates = self.index.search_contexts(question, top_k=self.bm25_top_k)
+
+        # 2. Truy xuất Dense FAISS Top-50 (nếu có index và embedding model)
+        dense_candidates: list[dict[str, Any]] = []
+        if self.dense_index is not None and self.embedding_model is not None:
+            try:
+                q_vec = self.embedding_model.encode([question])[0]
+                dense_candidates = self.dense_index.search(q_vec, top_k=self.dense_top_k)
+            except Exception as exc:
+                print(f"[pipeline] Lỗi dense search ({exc}), fallback BM25.", file=sys.stderr)
+
+        # 3. Hợp nhất RRF (Reciprocal Rank Fusion k=60 -> Top-12) hoặc fallback Heuristic BM25
+        if dense_candidates:
+            fused_candidates = reciprocal_rank_fusion(
+                bm25_candidates, dense_candidates, rrf_k=self.rrf_k, top_k=self.rrf_top_k
+            )
+        else:
+            # Fallback thuần BM25
+            fused_candidates = sorted(
+                bm25_candidates,
+                key=lambda item: _context_rerank_score(question, item),
+                reverse=True,
+            )[: self.rrf_top_k]
+
+        if not fused_candidates:
             return None
 
-        ranked = sorted(
-            contexts,
-            key=lambda item: _context_rerank_score(question, item),
-            reverse=True,
-        )
-        top_chunks = ranked[: self.context_top_k]
+        # 4. Tái xếp hạng bằng Vietnamese_Reranker (Top-3 chunks)
+        if self.reranker is not None:
+            try:
+                top_chunks = self.reranker.rerank(
+                    question, fused_candidates, top_k=self.rerank_top_k
+                )
+            except Exception as exc:
+                print(f"[pipeline] Lỗi reranker ({exc}), fallback RRF order.", file=sys.stderr)
+                top_chunks = fused_candidates[: self.rerank_top_k]
+        else:
+            top_chunks = fused_candidates[: self.rerank_top_k]
 
         context_blocks = []
         for idx, chunk in enumerate(top_chunks, start=1):
@@ -133,7 +208,10 @@ class LegalQABaseline:
                     "context_id": c["context_id"],
                     "chunk_no": c["chunk_no"],
                     "name": c.get("name"),
-                    "bm25_score": c["bm25_score"],
+                    "bm25_score": c.get("bm25_score"),
+                    "dense_score": c.get("dense_score"),
+                    "rrf_score": c.get("rrf_score"),
+                    "rerank_score": c.get("rerank_score"),
                 }
                 for c in top_chunks
             ],
