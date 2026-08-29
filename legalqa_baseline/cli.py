@@ -82,6 +82,8 @@ def make_parser() -> argparse.ArgumentParser:
     predict.add_argument(
         "--mode", choices=VALID_MODES, default="hybrid"
     )
+    predict.add_argument("--resume", action="store_true", help="Tiếp tục từ checkpoint đã lưu nếu có")
+    predict.add_argument("--checkpoint-interval", type=int, default=10, help="Số mẫu lưu checkpoint định kỳ")
     _add_pipeline_args(predict)
 
     validate = subparsers.add_parser("validate", help="Leave-one-out validation")
@@ -145,25 +147,98 @@ def command_build(args: argparse.Namespace) -> int:
 
 def command_predict(args: argparse.Namespace) -> int:
     data = load_qa(args.input)
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = output_path.with_suffix(".checkpoint.json")
+
     predictions: dict[str, str] = {}
     routes: dict[str, int] = {}
+
+    if getattr(args, "resume", False) and checkpoint_path.exists():
+        try:
+            with checkpoint_path.open("r", encoding="utf-8") as f:
+                saved = json.load(f)
+                predictions = {str(k): str(v.get("answer", "")) for k, v in saved.items()}
+                print(
+                    f"[predict] Đã nạp lại checkpoint: {len(predictions):,}/{len(data):,} câu đã xong.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        except Exception:
+            predictions = {}
+
     started = time.time()
     need_generator = args.mode in ("rag", "hybrid_rag")
+    total = len(data)
+    interval = getattr(args, "checkpoint_interval", 10)
+
+    use_tqdm = False
+    try:
+        from tqdm import tqdm
+        use_tqdm = True
+    except ImportError:
+        use_tqdm = False
+
     with SearchIndex(args.db) as index:
         pipeline = _pipeline(args, index, need_generator=need_generator)
-        for number, (sample_id, item) in enumerate(data.items(), start=1):
+        items = list(data.items())
+        pbar = tqdm(items, desc=f"Predicting [{args.mode}]", total=total, unit="câu") if use_tqdm else None
+
+        processed_count = 0
+        for number, (sample_id, item) in enumerate(items, start=1):
+            if sample_id in predictions:
+                if pbar:
+                    pbar.update(1)
+                continue
+
+            t0 = time.time()
             result = pipeline.predict_one(item["question"], mode=args.mode)
             predictions[sample_id] = result.answer
             routes[result.route] = routes.get(result.route, 0) + 1
-            if number % 100 == 0:
-                print(f"[predict] {number:,}/{len(data):,}", file=sys.stderr, flush=True)
-    write_predictions(args.output, predictions)
+            processed_count += 1
+            sample_time = time.time() - t0
+
+            # Lưu checkpoint định kỳ
+            if processed_count % interval == 0 or number == total:
+                write_predictions(checkpoint_path, predictions)
+
+            if pbar:
+                pbar.set_postfix({
+                    "routes": str(routes),
+                    "last": f"{sample_time:.2f}s",
+                })
+                pbar.update(1)
+            else:
+                if number <= 5 or number % 5 == 0 or number == total:
+                    elapsed = time.time() - started
+                    avg_time = elapsed / max(1, processed_count)
+                    remaining = total - number
+                    eta = remaining * avg_time
+                    percent = (number / total) * 100
+                    print(
+                        f"[predict:{args.mode}] {number:,}/{total:,} ({percent:.1f}%) | "
+                        f"Tốc độ: {avg_time:.2f}s/câu | ETA: {eta:.0f}s | "
+                        f"Routes: {routes}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+
+        if pbar:
+            pbar.close()
+
+    write_predictions(output_path, predictions)
+    if checkpoint_path.exists():
+        try:
+            checkpoint_path.unlink()
+        except Exception:
+            pass
+
     summary = {
         "samples": len(predictions),
         "mode": args.mode,
         "routes": routes,
         "elapsed_seconds": round(time.time() - started, 2),
-        "output": str(Path(args.output).resolve()),
+        "output": str(output_path.resolve()),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
