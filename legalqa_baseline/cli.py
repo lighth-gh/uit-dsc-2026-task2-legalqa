@@ -117,7 +117,7 @@ def make_parser() -> argparse.ArgumentParser:
         help="Tên mô hình Embedding tiếng Việt",
     )
     build_dense.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu"])
-    build_dense.add_argument("--batch-size", type=int, default=8)
+    build_dense.add_argument("--batch-size", type=int, default=32)
     build_dense.add_argument("--max-chunk-words", type=int, default=620)
     build_dense.add_argument("--overlap-words", type=int, default=100)
     build_dense.add_argument("--embedding-max-length", type=int, default=2048)
