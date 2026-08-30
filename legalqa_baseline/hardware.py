@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
+
+
+MODEL_IDENTITY_FILENAME = ".legalqa_model.json"
 
 
 def cuda_supports_bfloat16(torch_module: Any, device: Any = 0) -> bool:
@@ -27,3 +32,19 @@ def recommended_cuda_dtype(torch_module: Any, device: Any = 0) -> Any:
         if cuda_supports_bfloat16(torch_module, device=device)
         else torch_module.float16
     )
+
+
+def resolve_model_identity(model_name_or_path: str) -> str:
+    """Return a stable repo ID for either a Hub ID or portable local snapshot."""
+    model_path = Path(model_name_or_path)
+    marker_path = model_path / MODEL_IDENTITY_FILENAME
+    if model_path.is_dir() and marker_path.is_file():
+        try:
+            payload = json.loads(marker_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            payload = None
+        if isinstance(payload, dict):
+            repo_id = payload.get("repo_id")
+            if isinstance(repo_id, str) and repo_id.strip():
+                return repo_id.strip()
+    return str(model_name_or_path)

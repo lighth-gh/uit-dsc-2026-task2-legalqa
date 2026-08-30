@@ -170,12 +170,20 @@ python -m legalqa_baseline build-dense-index \
   --dense-index artifacts/legalqa_dense \
   --embedding-model AITeamVN/Vietnamese_Embedding_v2 \
   --batch-size 8 \
+  --resume \
+  --checkpoint-chunks 4096 \
   --device cuda
 ```
 
 Dense index của bản 0.1 dùng mean-pooling/cosine không còn tương thích. Encoder hiện dùng đúng CLS-pooling và dot product theo model card; nếu CLI báo schema cũ, hãy build lại với `--force`.
 
 Khi có nhiều GPU CUDA, dense encoder tự động dùng DataParallel trên tất cả GPU hiện diện. `--batch-size` là batch tổng (không phải batch mỗi GPU); batch 8 là mức an toàn cho 2x Tesla T4. Nếu vẫn hết VRAM, encoder tự động retry với batch nhỏ hơn. T4 dùng FP16; BF16 chỉ được chọn trên GPU Ampere trở lên.
+
+`--resume` lưu Dense embedding thành các part nguyên tử trong thư mục `*.dense-checkpoint`; nếu runtime dừng, chạy lại cùng lệnh để tiếp tục từ part cuối thay vì dựng lại từ đầu. Trong lúc `predict`, CLI giữ cả `submission_*.checkpoint.json` và một `submission_*.json` đọc được sau mỗi chu kỳ checkpoint.
+
+### Chạy lâu trên Kaggle
+
+Notebook `uit-dsc-2026-task2-legalqa.ipynb` ghi toàn bộ submission, checkpoint, BM25/Dense index và snapshot ba model vào `/kaggle/working`. Sau khi chạy, chọn **Save Version** để Kaggle lưu Output. Lần sau, chọn **Add Data** và thêm Output của version trước; notebook sẽ tự tìm lại model/index/checkpoint và resume. Các model ở đây là pretrained checkpoint được tải về, pipeline không có bước fine-tune nên không cần train lại.
 
 Hoặc sử dụng script chạy RAG chuyên biệt:
 

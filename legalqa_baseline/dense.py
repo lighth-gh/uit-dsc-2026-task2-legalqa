@@ -9,18 +9,58 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .hardware import recommended_cuda_dtype
+from .hardware import recommended_cuda_dtype, resolve_model_identity
 from .storage import iter_contexts
 from .text import chunk_passage
 
 
 DENSE_SCHEMA_VERSION = 3
+DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION = 1
 VALID_SIMILARITIES = {"cosine", "dot_product"}
 
 
 def _tensor_to_float32_numpy(tensor: Any) -> Any:
     """Convert CUDA FP16/BF16 tensors to a NumPy-compatible FP32 array."""
     return tensor.float().cpu().numpy()
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    tmp_path.replace(path)
+
+
+def _save_numpy_atomic(path: Path, array: Any, np_module: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("wb") as handle:
+        np_module.save(handle, array)
+    tmp_path.replace(path)
+
+
+def _close_numpy_memmap(array: Any) -> None:
+    mmap_handle = getattr(array, "_mmap", None)
+    if mmap_handle is not None:
+        mmap_handle.close()
+
+
+def _clear_dense_checkpoint(checkpoint_dir: Path) -> None:
+    """Remove only files created inside one explicitly scoped checkpoint dir."""
+    if not checkpoint_dir.is_dir():
+        return
+    for path in checkpoint_dir.iterdir():
+        if path.is_file() and (
+            path.name == "state.json"
+            or path.name.startswith("part-")
+            or path.suffix == ".tmp"
+        ):
+            path.unlink()
+    try:
+        checkpoint_dir.rmdir()
+    except OSError:
+        pass
 
 
 class VietnameseEmbeddingModel:
@@ -39,10 +79,12 @@ class VietnameseEmbeddingModel:
         self.batch_size = batch_size
         self._tokenizer: Any = None
         self._model: Any = None
+        self._parallel_model: Any = None
         self._device: Any = None
         self._device_ids: list[int] = []
         self._hidden_size = 0
         self._multi_gpu = False
+        self._parallel_forward_reported = False
 
     def _load_model(self) -> None:
         if self._model is not None:
@@ -96,6 +138,7 @@ class VietnameseEmbeddingModel:
                 return outputs[0][:, 0]
 
         cls_encoder = _CLSEncoder(base_model)
+        self._model = cls_encoder
         if self._device.type == "cuda":
             selected_index = getattr(self._device, "index", None)
             if selected_index is None:
@@ -104,7 +147,7 @@ class VietnameseEmbeddingModel:
                 self._device_ids = [int(selected_index)]
 
         if len(self._device_ids) > 1:
-            self._model = torch.nn.DataParallel(
+            self._parallel_model = torch.nn.DataParallel(
                 cls_encoder,
                 device_ids=self._device_ids,
                 output_device=self._device_ids[0],
@@ -122,7 +165,6 @@ class VietnameseEmbeddingModel:
                 flush=True,
             )
         else:
-            self._model = cls_encoder
             if self._device.type == "cuda":
                 gpu_id = self._device_ids[0] if self._device_ids else 0
                 print(
@@ -131,6 +173,8 @@ class VietnameseEmbeddingModel:
                     flush=True,
                 )
         self._model.eval()
+        if self._parallel_model is not None:
+            self._parallel_model.eval()
 
     def encode(
         self,
@@ -157,7 +201,6 @@ class VietnameseEmbeddingModel:
 
         started = time.time()
         last_log = started
-        reported_parallel_forward = False
 
         i = 0
         effective_bs = bs
@@ -174,15 +217,20 @@ class VietnameseEmbeddingModel:
                 ).to(self._device)
 
                 with torch.inference_mode():
+                    use_parallel = (
+                        self._parallel_model is not None
+                        and current_bs >= len(self._device_ids)
+                    )
+                    active_model = self._parallel_model if use_parallel else self._model
                     # _CLSEncoder already performs the model-specific CLS
                     # pooling and returns a plain tensor for DataParallel.
-                    embeddings = self._model(**encoded)
+                    embeddings = active_model(**encoded)
                     if normalize_embeddings:
                         embeddings = F.normalize(embeddings, p=2, dim=1)
                     # NumPy does not support torch.bfloat16. Convert explicitly
                     # so reduced-precision CUDA inference remains portable.
                     all_embeddings.append(_tensor_to_float32_numpy(embeddings))
-                    if self._multi_gpu and not reported_parallel_forward:
+                    if use_parallel and not self._parallel_forward_reported:
                         allocations = ", ".join(
                             f"GPU {gpu_id}={torch.cuda.memory_allocated(gpu_id) / 1024**3:.2f} GiB"
                             for gpu_id in self._device_ids
@@ -192,7 +240,7 @@ class VietnameseEmbeddingModel:
                             file=sys.stderr,
                             flush=True,
                         )
-                        reported_parallel_forward = True
+                        self._parallel_forward_reported = True
             except RuntimeError as exc:
                 is_cuda_oom = (
                     self._device.type == "cuda"
@@ -326,13 +374,22 @@ class DenseVectorIndex:
                 f"Dense dimension không khớp manifest: index={actual_dim}, manifest={manifest_dim}"
             )
         manifest_model = manifest.get("embedding_model")
+        expected_model_identity = (
+            resolve_model_identity(expected_model_name)
+            if expected_model_name
+            else None
+        )
         if expected_model_name and not manifest_model:
             raise ValueError(
                 "Legacy Dense index has no embedding model/pooling metadata; rebuild the index"
             )
-        if expected_model_name and manifest_model and expected_model_name != manifest_model:
+        if (
+            expected_model_identity
+            and manifest_model
+            and expected_model_identity != manifest_model
+        ):
             raise ValueError(
-                f"Dense index dùng model {manifest_model!r}, không phải {expected_model_name!r}"
+                f"Dense index dùng model {manifest_model!r}, không phải {expected_model_identity!r}"
             )
         if expected_model_name and int(manifest.get("schema_version") or 0) < DENSE_SCHEMA_VERSION:
             raise ValueError("Dense index uses an old pooling schema; rebuild it with CLS pooling")
@@ -465,6 +522,8 @@ def build_dense_index(
     overlap_words: int = 100,
     embedding_max_length: int = 2048,
     force: bool = False,
+    resume: bool = False,
+    checkpoint_chunks: int = 4096,
 ) -> dict[str, Any]:
     """Xây dựng Dense Vector Index từ kho văn bản selected-contexts."""
     import numpy as np
@@ -478,8 +537,10 @@ def build_dense_index(
     ]
     if any(path.exists() for path in index_paths) and not force:
         raise FileExistsError(f"Index đã tồn tại tại {output_path}; thêm --force để xây lại.")
-    if batch_size <= 0 or embedding_max_length <= 0:
-        raise ValueError("batch_size và embedding_max_length phải lớn hơn 0")
+    if batch_size <= 0 or embedding_max_length <= 0 or checkpoint_chunks <= 0:
+        raise ValueError(
+            "batch_size, embedding_max_length và checkpoint_chunks phải lớn hơn 0"
+        )
 
     started = time.time()
     print(f"[BuildDense] Khởi tạo encoder: {embedding_model_name}...", file=sys.stderr, flush=True)
@@ -535,13 +596,144 @@ def build_dense_index(
         flush=True,
     )
 
-    # Encode theo batch
-    vectors = encoder.encode(
-        chunk_texts,
-        batch_size=batch_size,
-        max_length=embedding_max_length,
-        normalize_embeddings=False,
+    corpus_sha256 = corpus_hasher.hexdigest()
+    model_identity = resolve_model_identity(embedding_model_name)
+    checkpoint_fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "corpus_sha256": corpus_sha256,
+                "embedding_model": model_identity,
+                "embedding_max_length": embedding_max_length,
+                "max_chunk_words": max_chunk_words,
+                "overlap_words": overlap_words,
+                "total_chunks": total_chunks,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    checkpoint_dir = output_path.parent / f"{output_path.name}.dense-checkpoint"
+    checkpoint_state_path = checkpoint_dir / "state.json"
+    checkpoint_parts: list[dict[str, Any]] = []
+    completed_chunks = 0
+    resumed_chunks = 0
+
+    if resume and checkpoint_state_path.is_file():
+        try:
+            state = json.loads(checkpoint_state_path.read_text(encoding="utf-8"))
+            if not isinstance(state, dict):
+                raise ValueError("state must be an object")
+            if state.get("schema_version") != DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION:
+                raise ValueError("checkpoint schema mismatch")
+            if state.get("fingerprint") != checkpoint_fingerprint:
+                raise ValueError("checkpoint fingerprint mismatch")
+            raw_parts = state.get("parts")
+            if not isinstance(raw_parts, list):
+                raise ValueError("checkpoint parts must be a list")
+            expected_start = 0
+            expected_dimension: int | None = None
+            for raw_part in raw_parts:
+                if not isinstance(raw_part, dict):
+                    raise ValueError("invalid checkpoint part")
+                file_name = str(raw_part.get("file") or "")
+                if not file_name or Path(file_name).name != file_name:
+                    raise ValueError("unsafe checkpoint part name")
+                part_start = int(raw_part.get("start"))
+                part_end = int(raw_part.get("end"))
+                if part_start != expected_start or not part_start < part_end <= total_chunks:
+                    raise ValueError("non-contiguous checkpoint parts")
+                part_path = checkpoint_dir / file_name
+                part_array = np.load(part_path, mmap_mode="r", allow_pickle=False)
+                part_shape = tuple(part_array.shape)
+                _close_numpy_memmap(part_array)
+                if len(part_shape) != 2 or part_shape[0] != part_end - part_start:
+                    raise ValueError("checkpoint part shape mismatch")
+                if expected_dimension is None:
+                    expected_dimension = int(part_shape[1])
+                elif int(part_shape[1]) != expected_dimension:
+                    raise ValueError("checkpoint embedding dimension mismatch")
+                checkpoint_parts.append(
+                    {"file": file_name, "start": part_start, "end": part_end}
+                )
+                expected_start = part_end
+            completed_chunks = expected_start
+            if int(state.get("completed_chunks", -1)) != completed_chunks:
+                raise ValueError("checkpoint completion marker mismatch")
+            resumed_chunks = completed_chunks
+            print(
+                f"[BuildDense] Resume checkpoint: {completed_chunks:,}/{total_chunks:,} chunks đã có.",
+                file=sys.stderr,
+                flush=True,
+            )
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            print(
+                f"[BuildDense] Bỏ checkpoint không tương thích ({exc}); xây lại từ đầu.",
+                file=sys.stderr,
+                flush=True,
+            )
+            _clear_dense_checkpoint(checkpoint_dir)
+            checkpoint_parts = []
+            completed_chunks = 0
+    elif checkpoint_dir.exists():
+        _clear_dense_checkpoint(checkpoint_dir)
+
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    _write_json_atomic(
+        checkpoint_state_path,
+        {
+            "schema_version": DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION,
+            "fingerprint": checkpoint_fingerprint,
+            "total_chunks": total_chunks,
+            "completed_chunks": completed_chunks,
+            "parts": checkpoint_parts,
+        },
     )
+
+    while completed_chunks < total_chunks:
+        part_start = completed_chunks
+        part_end = min(total_chunks, part_start + checkpoint_chunks)
+        part_vectors = encoder.encode(
+            chunk_texts[part_start:part_end],
+            batch_size=batch_size,
+            max_length=embedding_max_length,
+            normalize_embeddings=False,
+        )
+        part_file_name = f"part-{part_start:09d}-{part_end:09d}.npy"
+        _save_numpy_atomic(
+            checkpoint_dir / part_file_name,
+            part_vectors.astype(np.float32, copy=False),
+            np,
+        )
+        checkpoint_parts.append(
+            {"file": part_file_name, "start": part_start, "end": part_end}
+        )
+        completed_chunks = part_end
+        _write_json_atomic(
+            checkpoint_state_path,
+            {
+                "schema_version": DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION,
+                "fingerprint": checkpoint_fingerprint,
+                "total_chunks": total_chunks,
+                "completed_chunks": completed_chunks,
+                "parts": checkpoint_parts,
+            },
+        )
+        print(
+            f"[BuildDense] Đã lưu checkpoint: {completed_chunks:,}/{total_chunks:,} chunks.",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    part_arrays = [
+        np.load(checkpoint_dir / part["file"], mmap_mode="r", allow_pickle=False)
+        for part in checkpoint_parts
+    ]
+    try:
+        vectors = np.concatenate(part_arrays, axis=0).astype(np.float32, copy=False)
+    finally:
+        for part_array in part_arrays:
+            _close_numpy_memmap(part_array)
+    del part_arrays
 
     # Xây dựng FAISS Index nếu có
     faiss_index = None
@@ -556,7 +748,7 @@ def build_dense_index(
 
     manifest = {
         "schema_version": DENSE_SCHEMA_VERSION,
-        "embedding_model": embedding_model_name,
+        "embedding_model": model_identity,
         "dimension": int(vectors.shape[1]),
         "similarity": "dot_product",
         "pooling": "cls",
@@ -565,7 +757,7 @@ def build_dense_index(
         "max_chunk_words": max_chunk_words,
         "overlap_words": overlap_words,
         "embedding_max_length": embedding_max_length,
-        "corpus_sha256": corpus_hasher.hexdigest(),
+        "corpus_sha256": corpus_sha256,
     }
     dense_index = DenseVectorIndex(
         vectors=vectors,
@@ -596,12 +788,14 @@ def build_dense_index(
         for path in temp_paths.values():
             if path.is_file():
                 path.unlink()
+    _clear_dense_checkpoint(checkpoint_dir)
     elapsed = time.time() - started
 
     stats = {
         "documents": doc_count,
         "chunks": total_chunks,
         "embedding_dim": int(vectors.shape[1]),
+        "resumed_chunks": resumed_chunks,
         "elapsed_seconds": round(elapsed, 2),
         "output_path": str(output_path.resolve()),
     }

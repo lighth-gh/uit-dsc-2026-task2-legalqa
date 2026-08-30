@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from legalqa_baseline.hardware import cuda_supports_bfloat16, recommended_cuda_dtype
+from legalqa_baseline.hardware import (
+    MODEL_IDENTITY_FILENAME,
+    cuda_supports_bfloat16,
+    recommended_cuda_dtype,
+    resolve_model_identity,
+)
 
 
 class _FakeCuda:
@@ -31,6 +39,17 @@ class HardwareTests(unittest.TestCase):
         torch_module = _FakeTorch((8, 0))
         self.assertTrue(cuda_supports_bfloat16(torch_module))
         self.assertEqual(recommended_cuda_dtype(torch_module), "bfloat16")
+
+    def test_local_snapshot_resolves_to_stable_hub_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            model_dir = Path(directory) / "saved-model"
+            model_dir.mkdir()
+            (model_dir / MODEL_IDENTITY_FILENAME).write_text(
+                json.dumps({"repo_id": "owner/model-name"}),
+                encoding="utf-8",
+            )
+            self.assertEqual(resolve_model_identity(str(model_dir)), "owner/model-name")
+            self.assertEqual(resolve_model_identity("owner/model-name"), "owner/model-name")
 
 
 if __name__ == "__main__":

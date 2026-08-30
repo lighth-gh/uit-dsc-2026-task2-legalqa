@@ -1,8 +1,10 @@
+import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -13,6 +15,7 @@ from legalqa_baseline.dense import (
     DenseVectorIndex,
     VietnameseEmbeddingModel,
     _tensor_to_float32_numpy,
+    build_dense_index,
 )
 from legalqa_baseline.pipeline import LegalQABaseline, reciprocal_rank_fusion
 from legalqa_baseline.reranker import VietnameseReranker
@@ -344,6 +347,90 @@ class TestDenseRAG(unittest.TestCase):
         )
         pred = pipeline.predict_one("Mức phạt?", mode="rag")
         self.assertEqual(pred.evidence["num_contexts"], 2)
+
+    def test_10_dense_build_resumes_from_atomic_parts(self) -> None:
+        import numpy as np
+
+        chunks = [f"chunk {index} with enough deterministic content" for index in range(5)]
+
+        class InterruptingEncoder:
+            calls = 0
+
+            def __init__(self, **_: Any) -> None:
+                pass
+
+            def encode(self, texts: list[str], **_: Any) -> Any:
+                type(self).calls += 1
+                if type(self).calls == 2:
+                    raise RuntimeError("simulated interruption")
+                return np.full((len(texts), 4), type(self).calls, dtype=np.float32)
+
+        class CompletingEncoder:
+            encoded_texts: list[str] = []
+
+            def __init__(self, **_: Any) -> None:
+                pass
+
+            def encode(self, texts: list[str], **_: Any) -> Any:
+                type(self).encoded_texts.extend(texts)
+                rows = [
+                    np.array([float(index), 1.0, 2.0, 3.0], dtype=np.float32)
+                    for index, _text in enumerate(texts, start=1)
+                ]
+                return np.vstack(rows)
+
+        contexts = [
+            {"id": "doc-1", "name": "Document", "link": "", "passage": "text"}
+        ]
+
+        def fake_contexts(_path: Any) -> Any:
+            return iter(contexts)
+
+        def fake_chunks(*_args: Any, **_kwargs: Any) -> list[str]:
+            return chunks
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "dense"
+            with (
+                patch("legalqa_baseline.dense.iter_contexts", side_effect=fake_contexts),
+                patch("legalqa_baseline.dense.chunk_passage", side_effect=fake_chunks),
+                patch("legalqa_baseline.dense.VietnameseEmbeddingModel", InterruptingEncoder),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "simulated interruption"):
+                    build_dense_index(
+                        "contexts.zip",
+                        output,
+                        embedding_model_name="owner/model",
+                        checkpoint_chunks=2,
+                        resume=True,
+                    )
+
+            checkpoint_dir = Path(f"{output}.dense-checkpoint")
+            state = json.loads((checkpoint_dir / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["completed_chunks"], 2)
+            self.assertEqual(len(state["parts"]), 1)
+
+            with (
+                patch("legalqa_baseline.dense.iter_contexts", side_effect=fake_contexts),
+                patch("legalqa_baseline.dense.chunk_passage", side_effect=fake_chunks),
+                patch("legalqa_baseline.dense.VietnameseEmbeddingModel", CompletingEncoder),
+            ):
+                stats = build_dense_index(
+                    "contexts.zip",
+                    output,
+                    embedding_model_name="owner/model",
+                    checkpoint_chunks=2,
+                    resume=True,
+                )
+
+            self.assertEqual(stats["resumed_chunks"], 2)
+            self.assertEqual(
+                CompletingEncoder.encoded_texts,
+                [f"Document: {chunk}" for chunk in chunks[2:]],
+            )
+            self.assertTrue(output.with_suffix(".meta.json").is_file())
+            self.assertTrue(output.with_suffix(".npy").is_file())
+            self.assertFalse(checkpoint_dir.exists())
 
 
 if __name__ == "__main__":

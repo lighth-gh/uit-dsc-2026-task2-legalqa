@@ -126,6 +126,17 @@ def make_parser() -> argparse.ArgumentParser:
     build_dense.add_argument("--max-chunk-words", type=int, default=620)
     build_dense.add_argument("--overlap-words", type=int, default=100)
     build_dense.add_argument("--embedding-max-length", type=int, default=2048)
+    build_dense.add_argument(
+        "--resume",
+        action="store_true",
+        help="Tiếp tục dense build từ các part checkpoint đã lưu",
+    )
+    build_dense.add_argument(
+        "--checkpoint-chunks",
+        type=int,
+        default=4096,
+        help="Số chunk embedding giữa hai checkpoint dense build",
+    )
     build_dense.add_argument("--force", action="store_true")
 
     predict = subparsers.add_parser("predict", help="Sinh tệp submission")
@@ -136,7 +147,12 @@ def make_parser() -> argparse.ArgumentParser:
         "--mode", choices=VALID_MODES, default="hybrid"
     )
     predict.add_argument("--resume", action="store_true", help="Tiếp tục từ checkpoint đã lưu nếu có")
-    predict.add_argument("--checkpoint-interval", type=int, default=10, help="Số mẫu lưu checkpoint định kỳ")
+    predict.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=1,
+        help="Số mẫu giữa hai lần ghi checkpoint + partial submission",
+    )
     _add_pipeline_args(predict)
 
     validate = subparsers.add_parser("validate", help="Leave-one-out validation")
@@ -342,6 +358,8 @@ def command_build_dense_index(args: argparse.Namespace) -> int:
         overlap_words=args.overlap_words,
         embedding_max_length=args.embedding_max_length,
         force=args.force,
+        resume=args.resume,
+        checkpoint_chunks=args.checkpoint_chunks,
     )
     print(json.dumps(stats, ensure_ascii=False, indent=2))
     return 0
@@ -403,6 +421,17 @@ def _write_checkpoint(
     tmp_path.replace(checkpoint_path)
 
 
+def _write_prediction_progress(
+    checkpoint_path: Path,
+    output_path: Path,
+    predictions: dict[str, str],
+    routes: dict[str, int],
+) -> None:
+    """Persist resumable state and a readable partial submission atomically."""
+    _write_checkpoint(checkpoint_path, predictions, routes)
+    write_predictions(output_path, predictions)
+
+
 def command_predict(args: argparse.Namespace) -> int:
     data = load_qa(args.input)
     output_path = Path(args.output)
@@ -412,23 +441,26 @@ def command_predict(args: argparse.Namespace) -> int:
     predictions: dict[str, str] = {}
     routes: dict[str, int] = {}
 
-    if getattr(args, "resume", False) and checkpoint_path.exists():
-        try:
-            predictions, routes = _load_checkpoint(checkpoint_path, set(data))
-            print(
-                f"[predict] Đã nạp lại checkpoint: {len(predictions):,}/{len(data):,} câu đã xong.",
-                file=sys.stderr,
-                flush=True,
-            )
-        except Exception as exc:
-            print(f"[predict] Bỏ checkpoint không hợp lệ: {exc}", file=sys.stderr)
-            predictions = {}
-            routes = {}
+    if getattr(args, "resume", False):
+        resume_path = checkpoint_path if checkpoint_path.exists() else output_path
+        if resume_path.exists():
+            try:
+                predictions, routes = _load_checkpoint(resume_path, set(data))
+                print(
+                    f"[predict] Đã nạp lại {resume_path.name}: "
+                    f"{len(predictions):,}/{len(data):,} câu đã xong.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            except Exception as exc:
+                print(f"[predict] Bỏ tiến độ không hợp lệ: {exc}", file=sys.stderr)
+                predictions = {}
+                routes = {}
 
     started = time.time()
     need_generator = args.mode in ("rag", "hybrid_rag")
     total = len(data)
-    interval = getattr(args, "checkpoint_interval", 10)
+    interval = getattr(args, "checkpoint_interval", 1)
     if interval <= 0:
         raise ValueError("checkpoint_interval phải lớn hơn 0")
 
@@ -460,7 +492,12 @@ def command_predict(args: argparse.Namespace) -> int:
 
             # Lưu checkpoint định kỳ
             if processed_count % interval == 0 or number == total:
-                _write_checkpoint(checkpoint_path, predictions, routes)
+                _write_prediction_progress(
+                    checkpoint_path,
+                    output_path,
+                    predictions,
+                    routes,
+                )
 
             if pbar:
                 pbar.set_postfix({
@@ -486,14 +523,19 @@ def command_predict(args: argparse.Namespace) -> int:
         if pbar:
             pbar.close()
         if processed_count:
-            _write_checkpoint(checkpoint_path, predictions, routes)
+            _write_prediction_progress(
+                checkpoint_path,
+                output_path,
+                predictions,
+                routes,
+            )
 
-    write_predictions(output_path, predictions)
-    if checkpoint_path.exists():
-        try:
-            checkpoint_path.unlink()
-        except Exception:
-            pass
+    _write_prediction_progress(
+        checkpoint_path,
+        output_path,
+        predictions,
+        routes,
+    )
 
     summary = {
         "samples": len(predictions),
@@ -510,6 +552,7 @@ def command_predict(args: argparse.Namespace) -> int:
         },
         "elapsed_seconds": round(time.time() - started, 2),
         "output": str(output_path.resolve()),
+        "checkpoint": str(checkpoint_path.resolve()),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0

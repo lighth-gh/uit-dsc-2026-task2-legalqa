@@ -9,6 +9,9 @@ artifacts/*.npy
 artifacts/*.meta.json
 artifacts/*.checkpoint.json
 artifacts/*.checkpoint.json.tmp
+artifacts/models/
+artifacts/hf-cache/
+*.dense-checkpoint/
 *.zip
 !data/*.zip
 .env
