@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from legalqa_baseline.metrics import meteor_exact, rouge_l_f1
+from legalqa_baseline.metrics import answer_token_f1, meteor_exact, rouge_l_f1
 from legalqa_baseline.pipeline import question_similarity
 from legalqa_baseline.storage import load_qa, write_predictions
 from legalqa_baseline.text import best_excerpt, chunk_passage, query_terms
@@ -36,6 +36,7 @@ class MetricTests(unittest.TestCase):
         text = "a b c d"
         self.assertAlmostEqual(rouge_l_f1(text, text), 1.0)
         self.assertGreater(meteor_exact(text, text), 0.99)
+        self.assertAlmostEqual(answer_token_f1(text, text), 1.0)
 
     def test_question_similarity(self) -> None:
         same = question_similarity("Mức xử phạt là bao nhiêu?", "Mức xử phạt là bao nhiêu?")

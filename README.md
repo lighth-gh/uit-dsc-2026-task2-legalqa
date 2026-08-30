@@ -71,10 +71,41 @@ python -m legalqa_baseline validate \
   --db artifacts/legalqa.sqlite \
   --output artifacts/validation.json \
   --limit 300 \
-  --modes extractive,knn,hybrid
+  --modes extractive,knn,hybrid \
+  --official-metrics
 ```
 
-`validate` mặc định dùng METEOR exact-token gần đúng và ROUGE-L để không phải tải dữ liệu NLTK. Phần ROUGE-L mô phỏng cả tokenizer ASCII-only trong mã chấm BTC. Điểm dùng để so sánh nhanh giữa các cấu hình, không nên ghi vào báo cáo như điểm chính thức.
+Đánh giá retrieval theo từng tầng sau khi BM25 và Dense index đã sẵn sàng:
+
+```bash
+python -m legalqa_baseline evaluate-retrieval \
+  --train data/train.json \
+  --db artifacts/legalqa.sqlite \
+  --dense-index artifacts/legalqa_dense \
+  --output artifacts/retrieval_eval.json \
+  --limit 100 \
+  --ks 1,3,5 \
+  --device cuda
+```
+
+Lệnh này báo chi tiết các chỉ số cho từng tầng (BM25, Dense, RRF, Reranker):
+- **Recall@1, Recall@3, Recall@5** (và Hit@K)
+- **MRR, MRR@1, MRR@3, MRR@5** (Mean Reciprocal Rank)
+- **NDCG@1, NDCG@3, NDCG@5** (Normalized Discounted Cumulative Gain)
+- **MAP@1, MAP@3, MAP@5** (Mean Average Precision)
+- **Gold Chunk Recall@K & Precision@K**
+
+Vì Train không có nhãn `context_id/chunk_id`, evaluator tạo pseudo-gold bằng cách truy xuất theo answer rồi đo độ phủ token và cụm 5-token trong chunk. Báo cáo luôn chứa `pseudo_gold_coverage`; không được trình bày các số này như recall trên nhãn do con người gán.
+
+`validate` và lệnh `score` báo cáo đầy đủ các chỉ số tương đồng câu trả lời:
+- **METEOR exact-token** (mô phỏng nhẹ không cần NLTK)
+- **ROUGE-L** (mô phỏng tokenizer BTC `[a-z0-9]`)
+- **Answer Token-F1, Precision, Recall** (multiset token similarity)
+- **Exact Match (EM)**
+- **BLEU-1, BLEU-2, BLEU-4** (với brevity penalty và smoothing)
+- **Độ dài trung bình và Length Ratio** (tỷ lệ độ dài câu trả lời dự đoán / tham chiếu)
+
+Cờ `--official-metrics` tính thêm `competition_meteor` và `competition_rougeL` bằng đúng hai thư viện trong scoring program BTC; cần cài `requirements-metrics.txt` và NLTK WordNet.
 
 Để chạy công thức giống file chấm BTC:
 

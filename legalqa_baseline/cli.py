@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from .metrics import aggregate_scores
+from .metrics import aggregate_official_scores, aggregate_scores
 from .pipeline import LegalQABaseline
 from .storage import SearchIndex, build_index, load_qa, write_predictions
 
@@ -141,7 +141,44 @@ def make_parser() -> argparse.ArgumentParser:
     validate.add_argument("--modes", default="extractive,knn,hybrid")
     validate.add_argument("--limit", type=int, default=300)
     validate.add_argument("--seed", type=int, default=2026)
+    validate.add_argument(
+        "--official-metrics",
+        action="store_true",
+        help="TÃ­nh thÃªm METEOR/ROUGE-L theo scoring program cá»§a BTC",
+    )
     _add_pipeline_args(validate)
+
+    retrieval_eval = subparsers.add_parser(
+        "evaluate-retrieval",
+        help="TÃ­nh pseudo Recall@K cho BM25, Dense, RRF vÃ  Reranker",
+    )
+    retrieval_eval.add_argument("--train", required=True)
+    retrieval_eval.add_argument("--db", required=True)
+    retrieval_eval.add_argument("--output", required=True)
+    retrieval_eval.add_argument("--limit", type=int, default=100)
+    retrieval_eval.add_argument("--seed", type=int, default=2026)
+    retrieval_eval.add_argument("--ks", default="1,3,5")
+    retrieval_eval.add_argument("--dense-index", default=None)
+    retrieval_eval.add_argument(
+        "--embedding-model",
+        default="AITeamVN/Vietnamese_Embedding_v2",
+    )
+    retrieval_eval.add_argument(
+        "--reranker-model",
+        default="AITeamVN/Vietnamese_Reranker",
+    )
+    retrieval_eval.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
+    retrieval_eval.add_argument("--bm25-top-k", type=int, default=50)
+    retrieval_eval.add_argument("--dense-top-k", type=int, default=50)
+    retrieval_eval.add_argument("--rrf-k", type=int, default=60)
+    retrieval_eval.add_argument("--rrf-top-k", type=int, default=50)
+    retrieval_eval.add_argument("--dense-query-max-length", type=int, default=256)
+    retrieval_eval.add_argument("--reranker-max-length", type=int, default=2304)
+    retrieval_eval.add_argument("--gold-candidate-k", type=int, default=100)
+    retrieval_eval.add_argument("--gold-max-chunks", type=int, default=5)
+    retrieval_eval.add_argument("--gold-min-score", type=float, default=0.20)
+    retrieval_eval.add_argument("--gold-relative-score", type=float, default=0.85)
+    retrieval_eval.add_argument("--gold-min-answer-tokens", type=int, default=8)
 
     inspect = subparsers.add_parser("inspect", help="Xem evidence của một câu hỏi")
     inspect.add_argument("--db", required=True)
@@ -151,9 +188,14 @@ def make_parser() -> argparse.ArgumentParser:
     )
     _add_pipeline_args(inspect)
 
-    score = subparsers.add_parser("score", help="Metric nhẹ, không cần NLTK")
+    score = subparsers.add_parser("score", help="Tính toàn bộ các metrics tương đồng câu trả lời")
     score.add_argument("--reference", required=True)
     score.add_argument("--prediction", required=True)
+    score.add_argument(
+        "--official-metrics",
+        action="store_true",
+        help="Tính thêm METEOR/ROUGE-L chính thức theo scoring program của BTC",
+    )
     return parser
 
 
@@ -514,6 +556,8 @@ def command_validate(args: argparse.Namespace) -> int:
                         flush=True,
                     )
             scores = aggregate_scores(predictions, references)
+            if getattr(args, "official_metrics", False):
+                scores.update(aggregate_official_scores(predictions, references))
             scores["routes"] = routes
             report["results"][mode] = scores  # type: ignore[index]
 
@@ -521,6 +565,71 @@ def command_validate(args: argparse.Namespace) -> int:
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=2)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
+
+
+def command_evaluate_retrieval(args: argparse.Namespace) -> int:
+    from .retrieval_eval import evaluate_retrieval
+
+    data = load_qa(args.train)
+    try:
+        ks = tuple(int(value.strip()) for value in args.ks.split(",") if value.strip())
+    except ValueError as exc:
+        raise ValueError("--ks pháº£i lÃ  danh sÃ¡ch sá»‘ nguyÃªn, vÃ­ dá»¥ 1,3,5") from exc
+
+    dense_index = None
+    embedding_model = None
+    reranker = None
+    with SearchIndex(args.db) as index:
+        if args.dense_index:
+            from .dense import DenseVectorIndex, VietnameseEmbeddingModel
+
+            dense_index = DenseVectorIndex.load(
+                args.dense_index,
+                expected_model_name=args.embedding_model,
+            )
+            dense_index.validate_against_bm25(index.metadata())
+            embedding_model = VietnameseEmbeddingModel(
+                model_name_or_path=args.embedding_model,
+                device=args.device,
+            )
+        if args.reranker_model:
+            from .reranker import VietnameseReranker
+
+            reranker = VietnameseReranker(
+                model_name_or_path=args.reranker_model,
+                device=args.device,
+            )
+
+        report = evaluate_retrieval(
+            data,
+            index,
+            dense_index=dense_index,
+            embedding_model=embedding_model,
+            reranker=reranker,
+            limit=args.limit,
+            seed=args.seed,
+            ks=ks,
+            bm25_top_k=args.bm25_top_k,
+            dense_top_k=args.dense_top_k,
+            rrf_k=args.rrf_k,
+            rrf_top_k=args.rrf_top_k,
+            dense_query_max_length=args.dense_query_max_length,
+            reranker_max_length=args.reranker_max_length,
+            gold_candidate_k=args.gold_candidate_k,
+            gold_max_chunks=args.gold_max_chunks,
+            gold_min_score=args.gold_min_score,
+            gold_relative_score=args.gold_relative_score,
+            gold_min_answer_tokens=args.gold_min_answer_tokens,
+        )
+
+    target = Path(args.output)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp_target = target.with_suffix(target.suffix + ".tmp")
+    with tmp_target.open("w", encoding="utf-8") as handle:
+        json.dump(report, handle, ensure_ascii=False, indent=2)
+    tmp_target.replace(target)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
@@ -556,7 +665,10 @@ def command_score(args: argparse.Namespace) -> int:
         raise ValueError(f"ID lệch: missing={len(missing)}, extra={len(extra)}")
     predictions = [str(prediction_data[key]["answer"]) for key in reference]
     references = [str(reference[key].get("answer") or "") for key in reference]
-    print(json.dumps(aggregate_scores(predictions, references), indent=2))
+    scores = aggregate_scores(predictions, references)
+    if getattr(args, "official_metrics", False):
+        scores.update(aggregate_official_scores(predictions, references))
+    print(json.dumps(scores, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -571,6 +683,7 @@ def main(argv: list[str] | None = None) -> int:
         "build-dense-index": command_build_dense_index,
         "predict": command_predict,
         "validate": command_validate,
+        "evaluate-retrieval": command_evaluate_retrieval,
         "inspect": command_inspect,
         "score": command_score,
     }
