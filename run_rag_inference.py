@@ -107,6 +107,7 @@ def parse_args() -> argparse.Namespace:
         default="AITeamVN/Vietnamese_Embedding_v2",
         help="Tên mô hình Dense Embedding tiếng Việt",
     )
+    parser.add_argument("--embedding-revision", type=str, default=None)
     parser.add_argument(
         "--reranker-model",
         type=str,
@@ -233,9 +234,11 @@ def main() -> int:
                 dense_index = DenseVectorIndex.load(
                     p,
                     expected_model_name=args.embedding_model,
+                    expected_model_revision=args.embedding_revision,
                 )
                 embedding_model = VietnameseEmbeddingModel(
                     model_name_or_path=args.embedding_model,
+                    revision=args.embedding_revision,
                     device=args.device,
                 )
                 print(f"[Dense] Nạp index thành công ({len(dense_index.metadata):,} chunks)")

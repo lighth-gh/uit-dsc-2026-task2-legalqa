@@ -34,8 +34,11 @@ def recommended_cuda_dtype(torch_module: Any, device: Any = 0) -> Any:
     )
 
 
-def resolve_model_identity(model_name_or_path: str) -> str:
-    """Return a stable repo ID for either a Hub ID or portable local snapshot."""
+def resolve_model_identity(
+    model_name_or_path: str,
+    revision: str | None = None,
+) -> str:
+    """Return a revision-aware identity for a Hub ID or portable snapshot."""
     model_path = Path(model_name_or_path)
     marker_path = model_path / MODEL_IDENTITY_FILENAME
     if model_path.is_dir() and marker_path.is_file():
@@ -46,5 +49,11 @@ def resolve_model_identity(model_name_or_path: str) -> str:
         if isinstance(payload, dict):
             repo_id = payload.get("repo_id")
             if isinstance(repo_id, str) and repo_id.strip():
+                snapshot_revision = payload.get("revision")
+                if isinstance(snapshot_revision, str) and snapshot_revision.strip():
+                    return f"{repo_id.strip()}@{snapshot_revision.strip()}"
                 return repo_id.strip()
-    return str(model_name_or_path)
+    identity = str(model_name_or_path)
+    if revision and revision.strip():
+        return f"{identity}@{revision.strip()}"
+    return identity

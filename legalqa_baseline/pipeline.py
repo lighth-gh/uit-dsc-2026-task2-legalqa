@@ -206,7 +206,10 @@ class LegalQABaseline:
         dense_candidates: list[dict[str, Any]] = []
         if self.dense_index is not None and self.embedding_model is not None:
             try:
-                normalize = getattr(self.dense_index, "similarity", "cosine") == "cosine"
+                normalize = (
+                    getattr(self.dense_index, "normalization", "l2") == "l2"
+                    or getattr(self.dense_index, "similarity", "cosine") == "cosine"
+                )
                 try:
                     encoded_query = self.embedding_model.encode(
                         [question],

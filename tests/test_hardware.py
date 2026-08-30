@@ -45,11 +45,18 @@ class HardwareTests(unittest.TestCase):
             model_dir = Path(directory) / "saved-model"
             model_dir.mkdir()
             (model_dir / MODEL_IDENTITY_FILENAME).write_text(
-                json.dumps({"repo_id": "owner/model-name"}),
+                json.dumps({"repo_id": "owner/model-name", "revision": "abc123"}),
                 encoding="utf-8",
             )
-            self.assertEqual(resolve_model_identity(str(model_dir)), "owner/model-name")
+            self.assertEqual(
+                resolve_model_identity(str(model_dir)),
+                "owner/model-name@abc123",
+            )
             self.assertEqual(resolve_model_identity("owner/model-name"), "owner/model-name")
+            self.assertEqual(
+                resolve_model_identity("owner/model-name", "abc123"),
+                "owner/model-name@abc123",
+            )
 
 
 if __name__ == "__main__":

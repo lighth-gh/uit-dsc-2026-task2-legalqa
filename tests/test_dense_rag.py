@@ -15,6 +15,7 @@ from legalqa_baseline.dense import (
     DenseVectorIndex,
     VietnameseEmbeddingModel,
     _tensor_to_float32_numpy,
+    _validate_embedding_matrix,
     build_dense_index,
 )
 from legalqa_baseline.pipeline import LegalQABaseline, reciprocal_rank_fusion
@@ -117,7 +118,7 @@ class TestDenseRAG(unittest.TestCase):
             self.assertAlmostEqual(norm, 1.0, places=5)
 
     def test_2_dense_index_search(self) -> None:
-        """2. Kiểm tra tìm kiếm cosine vector qua DenseVectorIndex và lưu/tải index."""
+        """2. Kiểm tra dot product trên các vector đã L2-normalize và lưu/tải index."""
         import numpy as np
 
         mock_model = MockEmbeddingModel(dim=4)
@@ -130,12 +131,14 @@ class TestDenseRAG(unittest.TestCase):
             vectors=vectors,
             metadata=metadata,
             manifest={
-                "schema_version": 3,
+                "schema_version": 4,
                 "embedding_model": "mock-embedding",
                 "dimension": 4,
-                "similarity": "cosine",
+                "similarity": "dot_product",
                 "pooling": "cls",
+                "normalization": "l2",
             },
+            similarity="dot_product",
         )
 
         q_vec = mock_model.encode(["Xử phạt giao thông"])[0]
@@ -165,9 +168,27 @@ class TestDenseRAG(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "không tương thích"):
                 loaded_index.validate_against_bm25({"chunks": "3"})
-            loaded_index.manifest["schema_version"] = 2
+            loaded_index.manifest["schema_version"] = 3
             loaded_index.save(save_path)
-            with self.assertRaisesRegex(ValueError, "old pooling schema"):
+            with self.assertRaisesRegex(ValueError, "old embedding recipe"):
+                DenseVectorIndex.load(
+                    save_path,
+                    expected_model_name="mock-embedding",
+                )
+
+            loaded_index.manifest["schema_version"] = 4
+            loaded_index.manifest.pop("normalization")
+            loaded_index.save(save_path)
+            with self.assertRaisesRegex(ValueError, "L2 normalization"):
+                DenseVectorIndex.load(
+                    save_path,
+                    expected_model_name="mock-embedding",
+                )
+
+            loaded_index.manifest["normalization"] = "l2"
+            loaded_index.manifest["similarity"] = "cosine"
+            loaded_index.save(save_path)
+            with self.assertRaisesRegex(ValueError, "dot-product search"):
                 DenseVectorIndex.load(
                     save_path,
                     expected_model_name="mock-embedding",
@@ -323,7 +344,15 @@ class TestDenseRAG(unittest.TestCase):
         )
 
         class FixedEmbedding:
-            def encode(self, texts: list[str], **_: Any) -> Any:
+            normalize_flags: list[bool] = []
+
+            def encode(
+                self,
+                texts: list[str],
+                normalize_embeddings: bool = False,
+                **_: Any,
+            ) -> Any:
+                type(self).normalize_flags.append(normalize_embeddings)
                 return np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
 
         pipeline = LegalQABaseline(
@@ -335,6 +364,7 @@ class TestDenseRAG(unittest.TestCase):
         pred = pipeline.predict_one("Mức phạt?", mode="rag")
         self.assertEqual(pred.evidence["top_contexts"][0]["context_id"], "dense-only")
         self.assertGreater(pred.confidence, 0.0)
+        self.assertEqual(FixedEmbedding.normalize_flags, [True])
 
     def test_9_context_top_k_controls_prompt_evidence(self) -> None:
         pipeline = LegalQABaseline(
@@ -355,29 +385,43 @@ class TestDenseRAG(unittest.TestCase):
 
         class InterruptingEncoder:
             calls = 0
+            normalize_flags: list[bool] = []
 
             def __init__(self, **_: Any) -> None:
                 pass
 
-            def encode(self, texts: list[str], **_: Any) -> Any:
+            def encode(
+                self,
+                texts: list[str],
+                normalize_embeddings: bool = False,
+                **_: Any,
+            ) -> Any:
                 type(self).calls += 1
+                type(self).normalize_flags.append(normalize_embeddings)
                 if type(self).calls == 2:
                     raise RuntimeError("simulated interruption")
-                return np.full((len(texts), 4), type(self).calls, dtype=np.float32)
+                rows = np.zeros((len(texts), 4), dtype=np.float32)
+                rows[:, 0] = 1.0
+                return rows
 
         class CompletingEncoder:
             encoded_texts: list[str] = []
+            normalize_flags: list[bool] = []
 
             def __init__(self, **_: Any) -> None:
                 pass
 
-            def encode(self, texts: list[str], **_: Any) -> Any:
+            def encode(
+                self,
+                texts: list[str],
+                normalize_embeddings: bool = False,
+                **_: Any,
+            ) -> Any:
                 type(self).encoded_texts.extend(texts)
-                rows = [
-                    np.array([float(index), 1.0, 2.0, 3.0], dtype=np.float32)
-                    for index, _text in enumerate(texts, start=1)
-                ]
-                return np.vstack(rows)
+                type(self).normalize_flags.append(normalize_embeddings)
+                rows = np.zeros((len(texts), 4), dtype=np.float32)
+                rows[:, 0] = 1.0
+                return rows
 
         contexts = [
             {"id": "doc-1", "name": "Document", "link": "", "passage": "text"}
@@ -407,6 +451,7 @@ class TestDenseRAG(unittest.TestCase):
 
             checkpoint_dir = Path(f"{output}.dense-checkpoint")
             state = json.loads((checkpoint_dir / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["schema_version"], 2)
             self.assertEqual(state["completed_chunks"], 2)
             self.assertEqual(len(state["parts"]), 1)
 
@@ -424,6 +469,8 @@ class TestDenseRAG(unittest.TestCase):
                 )
 
             self.assertEqual(stats["resumed_chunks"], 2)
+            self.assertTrue(all(InterruptingEncoder.normalize_flags))
+            self.assertTrue(all(CompletingEncoder.normalize_flags))
             self.assertEqual(
                 CompletingEncoder.encoded_texts,
                 [f"Document: {chunk}" for chunk in chunks[2:]],
@@ -431,6 +478,30 @@ class TestDenseRAG(unittest.TestCase):
             self.assertTrue(output.with_suffix(".meta.json").is_file())
             self.assertTrue(output.with_suffix(".npy").is_file())
             self.assertFalse(checkpoint_dir.exists())
+            payload = json.loads(
+                output.with_suffix(".meta.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(payload["manifest"]["schema_version"], 4)
+            self.assertEqual(payload["manifest"]["normalization"], "l2")
+
+    def test_11_embedding_validation_rejects_raw_or_non_finite_vectors(self) -> None:
+        import numpy as np
+
+        valid = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+        _validate_embedding_matrix(valid, np, expected_rows=2, require_l2=True)
+
+        with self.assertRaisesRegex(ValueError, "not L2-normalized"):
+            _validate_embedding_matrix(
+                np.array([[2.0, 0.0]], dtype=np.float32),
+                np,
+                require_l2=True,
+            )
+        with self.assertRaisesRegex(ValueError, "NaN or infinity"):
+            _validate_embedding_matrix(
+                np.array([[np.nan, 0.0]], dtype=np.float32),
+                np,
+                require_l2=True,
+            )
 
 
 if __name__ == "__main__":

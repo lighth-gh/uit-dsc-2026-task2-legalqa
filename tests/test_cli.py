@@ -36,6 +36,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.context_top_k, 3)
         self.assertEqual(args.temperature, 0.0)
         self.assertEqual(args.checkpoint_interval, 1)
+        self.assertIsNone(args.embedding_revision)
         self.assertFalse(args.allow_retrieval_fallback)
 
     def test_checkpoint_filters_ids_and_keeps_route_counts_consistent(self) -> None:
@@ -94,6 +95,8 @@ class CliTests(unittest.TestCase):
                 "dense",
                 "--embedding-max-length",
                 "1024",
+                "--embedding-revision",
+                "abc123",
                 "--resume",
                 "--checkpoint-chunks",
                 "16",
@@ -102,6 +105,7 @@ class CliTests(unittest.TestCase):
         with patch("legalqa_baseline.dense.build_dense_index", return_value={}) as mocked_dense:
             self.assertEqual(command_build_dense_index(dense_args), 0)
         self.assertEqual(mocked_dense.call_args.kwargs["embedding_max_length"], 1024)
+        self.assertEqual(mocked_dense.call_args.kwargs["embedding_model_revision"], "abc123")
         self.assertTrue(mocked_dense.call_args.kwargs["resume"])
         self.assertEqual(mocked_dense.call_args.kwargs["checkpoint_chunks"], 16)
 

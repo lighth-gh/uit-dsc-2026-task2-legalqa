@@ -45,6 +45,12 @@ def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
         help="Tên mô hình Embedding tiếng Việt (HuggingFace ID hoặc path)",
     )
     parser.add_argument(
+        "--embedding-revision",
+        type=str,
+        default=None,
+        help="Commit/revision Hugging Face cố định của embedding model",
+    )
+    parser.add_argument(
         "--reranker-model",
         type=str,
         default="AITeamVN/Vietnamese_Reranker",
@@ -116,6 +122,7 @@ def make_parser() -> argparse.ArgumentParser:
         default="AITeamVN/Vietnamese_Embedding_v2",
         help="Tên mô hình Embedding tiếng Việt",
     )
+    build_dense.add_argument("--embedding-revision", type=str, default=None)
     build_dense.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu"])
     build_dense.add_argument(
         "--batch-size",
@@ -184,6 +191,7 @@ def make_parser() -> argparse.ArgumentParser:
         "--embedding-model",
         default="AITeamVN/Vietnamese_Embedding_v2",
     )
+    retrieval_eval.add_argument("--embedding-revision", default=None)
     retrieval_eval.add_argument(
         "--reranker-model",
         default="AITeamVN/Vietnamese_Reranker",
@@ -285,13 +293,16 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
                     embedding_name = getattr(
                         args, "embedding_model", "AITeamVN/Vietnamese_Embedding_v2"
                     )
+                    embedding_revision = getattr(args, "embedding_revision", None)
                     dense_index = DenseVectorIndex.load(
                         p,
                         expected_model_name=embedding_name,
+                        expected_model_revision=embedding_revision,
                     )
                     dense_index.validate_against_bm25(index.metadata())
                     embedding_model = VietnameseEmbeddingModel(
                         model_name_or_path=embedding_name,
+                        revision=embedding_revision,
                         device=getattr(args, "device", "auto"),
                     )
                     print(f"[pipeline] Đã nạp Dense Index: {len(dense_index.metadata):,} chunks", file=sys.stderr)
@@ -352,6 +363,7 @@ def command_build_dense_index(args: argparse.Namespace) -> int:
         contexts_path=args.contexts,
         output_index_path=args.dense_index,
         embedding_model_name=args.embedding_model,
+        embedding_model_revision=args.embedding_revision,
         device=args.device,
         batch_size=args.batch_size,
         max_chunk_words=args.max_chunk_words,
@@ -636,10 +648,12 @@ def command_evaluate_retrieval(args: argparse.Namespace) -> int:
             dense_index = DenseVectorIndex.load(
                 args.dense_index,
                 expected_model_name=args.embedding_model,
+                expected_model_revision=args.embedding_revision,
             )
             dense_index.validate_against_bm25(index.metadata())
             embedding_model = VietnameseEmbeddingModel(
                 model_name_or_path=args.embedding_model,
+                revision=args.embedding_revision,
                 device=args.device,
             )
         if args.reranker_model:

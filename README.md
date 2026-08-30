@@ -175,7 +175,7 @@ python -m legalqa_baseline build-dense-index \
   --device cuda
 ```
 
-Dense index của bản 0.1 dùng mean-pooling/cosine không còn tương thích. Encoder hiện dùng đúng CLS-pooling và dot product theo model card; nếu CLI báo schema cũ, hãy build lại với `--force`.
+Dense schema 4 dùng đúng recipe của model: lấy CLS, chuẩn hóa L2 ở FP32, rồi tìm kiếm bằng dot product. Index schema 3 trở xuống (kể cả bản CLS nhưng chưa chuẩn hóa) không còn tương thích; notebook tự build lại, còn CLI có thể build lại với `--force`. Muốn khóa tuyệt đối model Hub khi chạy ngoài notebook, truyền thêm `--embedding-revision <commit-sha>` cho cả lệnh build và predict/evaluate.
 
 Khi có nhiều GPU CUDA, dense encoder tự động dùng DataParallel trên tất cả GPU hiện diện. `--batch-size` là batch tổng (không phải batch mỗi GPU); batch 8 là mức an toàn cho 2x Tesla T4. Nếu vẫn hết VRAM, encoder tự động retry với batch nhỏ hơn. T4 dùng FP16; BF16 chỉ được chọn trên GPU Ampere trở lên.
 
@@ -183,7 +183,7 @@ Khi có nhiều GPU CUDA, dense encoder tự động dùng DataParallel trên t�
 
 ### Chạy lâu trên Kaggle
 
-Notebook `uit-dsc-2026-task2-legalqa.ipynb` ghi toàn bộ submission, checkpoint, BM25/Dense index và snapshot ba model vào `/kaggle/working`. Sau khi chạy, chọn **Save Version** để Kaggle lưu Output. Lần sau, chọn **Add Data** và thêm Output của version trước; notebook sẽ tự tìm lại model/index/checkpoint và resume. Các model ở đây là pretrained checkpoint được tải về, pipeline không có bước fine-tune nên không cần train lại.
+Notebook `uit-dsc-2026-task2-legalqa.ipynb` ghi toàn bộ submission, checkpoint, BM25/Dense index và snapshot ba model vào `/kaggle/working`. Snapshot được khóa theo commit Hugging Face và bỏ các file ONNX không dùng để giảm dung lượng Output. Sau khi chạy, chọn **Save Version** để Kaggle lưu Output. Lần sau, chọn **Add Data** và thêm Output của version trước; notebook sẽ tự tìm lại model/index/checkpoint và resume. Các model ở đây là pretrained checkpoint được tải về, pipeline không có bước fine-tune nên không cần train lại.
 
 Hoặc sử dụng script chạy RAG chuyên biệt:
 

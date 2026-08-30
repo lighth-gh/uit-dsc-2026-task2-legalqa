@@ -14,9 +14,10 @@ from .storage import iter_contexts
 from .text import chunk_passage
 
 
-DENSE_SCHEMA_VERSION = 3
-DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION = 1
+DENSE_SCHEMA_VERSION = 4
+DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION = 2
 VALID_SIMILARITIES = {"cosine", "dot_product"}
+VALID_NORMALIZATIONS = {"none", "l2"}
 
 
 def _tensor_to_float32_numpy(tensor: Any) -> Any:
@@ -46,6 +47,33 @@ def _close_numpy_memmap(array: Any) -> None:
         mmap_handle.close()
 
 
+def _validate_embedding_matrix(
+    vectors: Any,
+    np_module: Any,
+    *,
+    expected_rows: int | None = None,
+    require_l2: bool = False,
+) -> None:
+    """Reject malformed, non-finite, or unexpectedly unnormalized vectors."""
+    if getattr(vectors, "ndim", None) != 2:
+        raise ValueError(f"Embedding matrix must be 2D, got shape={getattr(vectors, 'shape', None)}")
+    if expected_rows is not None and int(vectors.shape[0]) != expected_rows:
+        raise ValueError(
+            f"Embedding row count mismatch: got={vectors.shape[0]}, expected={expected_rows}"
+        )
+    if int(vectors.shape[1]) <= 0:
+        raise ValueError("Embedding dimension must be greater than 0")
+    if not bool(np_module.isfinite(vectors).all()):
+        raise ValueError("Embedding matrix contains NaN or infinity")
+    if require_l2 and len(vectors):
+        norms = np_module.linalg.norm(vectors, axis=1)
+        max_error = float(np_module.max(np_module.abs(norms - 1.0)))
+        if max_error > 1e-3:
+            raise ValueError(
+                f"Embedding matrix is not L2-normalized (max norm error={max_error:.6f})"
+            )
+
+
 def _clear_dense_checkpoint(checkpoint_dir: Path) -> None:
     """Remove only files created inside one explicitly scoped checkpoint dir."""
     if not checkpoint_dir.is_dir():
@@ -71,8 +99,10 @@ class VietnameseEmbeddingModel:
         model_name_or_path: str = "AITeamVN/Vietnamese_Embedding_v2",
         device: str = "auto",
         batch_size: int = 8,
+        revision: str | None = None,
     ) -> None:
         self.model_name_or_path = model_name_or_path
+        self.model_revision = revision
         self.device_setting = device
         if batch_size <= 0:
             raise ValueError("batch_size must be greater than 0")
@@ -111,9 +141,15 @@ class VietnameseEmbeddingModel:
             file=sys.stderr,
             flush=True,
         )
+        revision_kwargs = (
+            {"revision": self.model_revision}
+            if self.model_revision
+            else {}
+        )
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_name_or_path,
             trust_remote_code=False,
+            **revision_kwargs,
         )
         model_dtype = None
         if self._device.type == "cuda":
@@ -122,6 +158,7 @@ class VietnameseEmbeddingModel:
             self.model_name_or_path,
             torch_dtype=model_dtype,
             trust_remote_code=False,
+            **revision_kwargs,
         ).to(self._device)
         base_model.eval()
         self._hidden_size = int(getattr(base_model.config, "hidden_size", 0))
@@ -181,7 +218,7 @@ class VietnameseEmbeddingModel:
         texts: list[str],
         batch_size: int | None = None,
         max_length: int = 2048,
-        normalize_embeddings: bool = False,
+        normalize_embeddings: bool = True,
         show_progress: bool | None = None,
     ) -> Any:
         """Sinh embedding (N, D); chỉ L2-normalize khi được yêu cầu."""
@@ -226,7 +263,10 @@ class VietnameseEmbeddingModel:
                     # pooling and returns a plain tensor for DataParallel.
                     embeddings = active_model(**encoded)
                     if normalize_embeddings:
-                        embeddings = F.normalize(embeddings, p=2, dim=1)
+                        # The released SentenceTransformer recipe ends with a
+                        # Normalize module. Normalize in FP32 to reproduce it
+                        # accurately even when T4 inference uses FP16 weights.
+                        embeddings = F.normalize(embeddings.float(), p=2, dim=1)
                     # NumPy does not support torch.bfloat16. Convert explicitly
                     # so reduced-precision CUDA inference remains portable.
                     all_embeddings.append(_tensor_to_float32_numpy(embeddings))
@@ -299,12 +339,19 @@ class DenseVectorIndex:
         if similarity not in VALID_SIMILARITIES:
             raise ValueError(f"Similarity không hỗ trợ: {similarity}")
         self.similarity = similarity
+        default_normalization = "l2" if similarity == "cosine" else "none"
+        self.normalization = str(
+            self.manifest.get("normalization") or default_normalization
+        )
+        if self.normalization not in VALID_NORMALIZATIONS:
+            raise ValueError(f"Normalization không hỗ trợ: {self.normalization}")
 
     @classmethod
     def load(
         cls,
         path: str | Path,
         expected_model_name: str | None = None,
+        expected_model_revision: str | None = None,
     ) -> "DenseVectorIndex":
         """Nạp Dense index từ đĩa (.faiss hoặc .npy + .meta.json)."""
         import numpy as np
@@ -375,7 +422,7 @@ class DenseVectorIndex:
             )
         manifest_model = manifest.get("embedding_model")
         expected_model_identity = (
-            resolve_model_identity(expected_model_name)
+            resolve_model_identity(expected_model_name, expected_model_revision)
             if expected_model_name
             else None
         )
@@ -392,9 +439,15 @@ class DenseVectorIndex:
                 f"Dense index dùng model {manifest_model!r}, không phải {expected_model_identity!r}"
             )
         if expected_model_name and int(manifest.get("schema_version") or 0) < DENSE_SCHEMA_VERSION:
-            raise ValueError("Dense index uses an old pooling schema; rebuild it with CLS pooling")
+            raise ValueError(
+                "Dense index uses an old embedding recipe; rebuild it with CLS + L2 normalization"
+            )
         if expected_model_name and manifest.get("pooling") != "cls":
             raise ValueError("Dense index does not use CLS pooling; rebuild the index")
+        if expected_model_name and manifest.get("normalization") != "l2":
+            raise ValueError("Dense index does not use L2 normalization; rebuild the index")
+        if expected_model_name and manifest.get("similarity") != "dot_product":
+            raise ValueError("Dense index does not use dot-product search; rebuild the index")
         similarity = str(manifest.get("similarity") or "cosine")
         return cls(
             vectors=vectors,
@@ -470,7 +523,7 @@ class DenseVectorIndex:
 
         if query_vector.ndim != 2 or query_vector.shape[0] != 1:
             raise ValueError("query_vector phải có shape (D,) hoặc (1, D)")
-        if self.similarity == "cosine":
+        if self.similarity == "cosine" or self.normalization == "l2":
             norm = np.linalg.norm(query_vector, axis=1, keepdims=True)
             query_vector = query_vector / np.maximum(norm, 1e-9)
 
@@ -524,6 +577,7 @@ def build_dense_index(
     force: bool = False,
     resume: bool = False,
     checkpoint_chunks: int = 4096,
+    embedding_model_revision: str | None = None,
 ) -> dict[str, Any]:
     """Xây dựng Dense Vector Index từ kho văn bản selected-contexts."""
     import numpy as np
@@ -546,6 +600,7 @@ def build_dense_index(
     print(f"[BuildDense] Khởi tạo encoder: {embedding_model_name}...", file=sys.stderr, flush=True)
     encoder = VietnameseEmbeddingModel(
         model_name_or_path=embedding_model_name,
+        revision=embedding_model_revision,
         device=device,
         batch_size=batch_size,
     )
@@ -597,7 +652,10 @@ def build_dense_index(
     )
 
     corpus_sha256 = corpus_hasher.hexdigest()
-    model_identity = resolve_model_identity(embedding_model_name)
+    model_identity = resolve_model_identity(
+        embedding_model_name,
+        embedding_model_revision,
+    )
     checkpoint_fingerprint = hashlib.sha256(
         json.dumps(
             {
@@ -607,6 +665,9 @@ def build_dense_index(
                 "max_chunk_words": max_chunk_words,
                 "overlap_words": overlap_words,
                 "total_chunks": total_chunks,
+                "pooling": "cls",
+                "normalization": "l2",
+                "similarity": "dot_product",
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -644,10 +705,16 @@ def build_dense_index(
                     raise ValueError("non-contiguous checkpoint parts")
                 part_path = checkpoint_dir / file_name
                 part_array = np.load(part_path, mmap_mode="r", allow_pickle=False)
-                part_shape = tuple(part_array.shape)
-                _close_numpy_memmap(part_array)
-                if len(part_shape) != 2 or part_shape[0] != part_end - part_start:
-                    raise ValueError("checkpoint part shape mismatch")
+                try:
+                    _validate_embedding_matrix(
+                        part_array,
+                        np,
+                        expected_rows=part_end - part_start,
+                        require_l2=True,
+                    )
+                    part_shape = tuple(part_array.shape)
+                finally:
+                    _close_numpy_memmap(part_array)
                 if expected_dimension is None:
                     expected_dimension = int(part_shape[1])
                 elif int(part_shape[1]) != expected_dimension:
@@ -665,7 +732,7 @@ def build_dense_index(
                 file=sys.stderr,
                 flush=True,
             )
-        except (OSError, ValueError, TypeError, KeyError) as exc:
+        except (OSError, EOFError, ValueError, TypeError, KeyError) as exc:
             print(
                 f"[BuildDense] Bỏ checkpoint không tương thích ({exc}); xây lại từ đầu.",
                 file=sys.stderr,
@@ -696,12 +763,19 @@ def build_dense_index(
             chunk_texts[part_start:part_end],
             batch_size=batch_size,
             max_length=embedding_max_length,
-            normalize_embeddings=False,
+            normalize_embeddings=True,
+        )
+        part_vectors = np.asarray(part_vectors, dtype=np.float32)
+        _validate_embedding_matrix(
+            part_vectors,
+            np,
+            expected_rows=part_end - part_start,
+            require_l2=True,
         )
         part_file_name = f"part-{part_start:09d}-{part_end:09d}.npy"
         _save_numpy_atomic(
             checkpoint_dir / part_file_name,
-            part_vectors.astype(np.float32, copy=False),
+            part_vectors,
             np,
         )
         checkpoint_parts.append(
@@ -734,6 +808,12 @@ def build_dense_index(
         for part_array in part_arrays:
             _close_numpy_memmap(part_array)
     del part_arrays
+    _validate_embedding_matrix(
+        vectors,
+        np,
+        expected_rows=total_chunks,
+        require_l2=True,
+    )
 
     # Xây dựng FAISS Index nếu có
     faiss_index = None
@@ -752,6 +832,7 @@ def build_dense_index(
         "dimension": int(vectors.shape[1]),
         "similarity": "dot_product",
         "pooling": "cls",
+        "normalization": "l2",
         "documents": doc_count,
         "chunks": total_chunks,
         "max_chunk_words": max_chunk_words,
