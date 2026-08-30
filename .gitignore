@@ -10,5 +10,6 @@ artifacts/*.meta.json
 artifacts/*.checkpoint.json
 artifacts/*.checkpoint.json.tmp
 *.zip
+!data/*.zip
 .env
 .DS_Store
