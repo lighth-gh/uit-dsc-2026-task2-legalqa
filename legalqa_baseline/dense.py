@@ -86,9 +86,11 @@ class VietnameseEmbeddingModel:
         batch_size: int | None = None,
         max_length: int = 2048,
         normalize_embeddings: bool = False,
+        show_progress: bool | None = None,
     ) -> Any:
         """Sinh embedding (N, D); chỉ L2-normalize khi được yêu cầu."""
         self._load_model()
+        import time
         import numpy as np
         import torch
         import torch.nn.functional as F
@@ -97,8 +99,14 @@ class VietnameseEmbeddingModel:
         if bs <= 0 or max_length <= 0:
             raise ValueError("batch_size and max_length must be greater than 0")
         all_embeddings: list[np.ndarray] = []
+        total_texts = len(texts)
+        if show_progress is None:
+            show_progress = total_texts >= 50
 
-        for i in range(0, len(texts), bs):
+        started = time.time()
+        last_log = started
+
+        for i in range(0, total_texts, bs):
             batch_texts = [str(t or "") for t in texts[i : i + bs]]
             encoded = self._tokenizer(
                 batch_texts,
@@ -118,6 +126,21 @@ class VietnameseEmbeddingModel:
                 # NumPy does not support torch.bfloat16. Convert explicitly so
                 # BF16-capable Kaggle GPUs do not fail during index building.
                 all_embeddings.append(_tensor_to_float32_numpy(embeddings))
+
+            done = min(i + bs, total_texts)
+            now = time.time()
+            if show_progress and (now - last_log >= 10.0 or done == total_texts or done <= bs * 2):
+                elapsed = now - started
+                speed = done / max(elapsed, 0.001)
+                eta = (total_texts - done) / max(speed, 0.001)
+                pct = (done / total_texts) * 100
+                print(
+                    f"[DenseEmbedding] Đang tạo vector: {done:,}/{total_texts:,} ({pct:.1f}%) | "
+                    f"Tốc độ: {speed:.1f} chunks/s | Đã chạy: {elapsed:.0f}s | ETA: {eta:.0f}s",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                last_log = now
 
         if not all_embeddings:
             hidden_size = int(getattr(self._model.config, "hidden_size", 0))
@@ -352,7 +375,7 @@ def build_dense_index(
     output_index_path: str | Path,
     embedding_model_name: str = "AITeamVN/Vietnamese_Embedding_v2",
     device: str = "auto",
-    batch_size: int = 8,
+    batch_size: int = 32,
     max_chunk_words: int = 620,
     overlap_words: int = 100,
     embedding_max_length: int = 2048,
@@ -422,7 +445,7 @@ def build_dense_index(
     if total_chunks == 0:
         raise ValueError("Corpus không tạo được chunk nào để xây Dense index")
     print(
-        f"[BuildDense] Đã tạo {total_chunks:,} chunks từ {doc_count:,} văn bản. Đang mã hóa vector...",
+        f"[BuildDense] Đã tạo {total_chunks:,} chunks từ {doc_count:,} văn bản. Bắt đầu tạo vector ngữ nghĩa...",
         file=sys.stderr,
         flush=True,
     )
