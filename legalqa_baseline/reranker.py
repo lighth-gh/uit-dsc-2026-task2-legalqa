@@ -11,10 +11,12 @@ class VietnameseReranker:
         self,
         model_name_or_path: str = "AITeamVN/Vietnamese_Reranker",
         device: str = "auto",
-        batch_size: int = 32,
+        batch_size: int = 4,
     ) -> None:
         self.model_name_or_path = model_name_or_path
         self.device_setting = device
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than 0")
         self.batch_size = batch_size
         self._tokenizer: Any = None
         self._model: Any = None
@@ -45,11 +47,19 @@ class VietnameseReranker:
         )
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_name_or_path,
-            trust_remote_code=True,
+            trust_remote_code=False,
         )
+        model_dtype = None
+        if self._device.type == "cuda":
+            model_dtype = (
+                torch.bfloat16
+                if getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+                else torch.float16
+            )
         self._model = AutoModelForSequenceClassification.from_pretrained(
             self.model_name_or_path,
-            trust_remote_code=True,
+            torch_dtype=model_dtype,
+            trust_remote_code=False,
         ).to(self._device)
         self._model.eval()
 
@@ -58,11 +68,13 @@ class VietnameseReranker:
         question: str,
         candidates: list[dict[str, Any]],
         top_k: int = 3,
-        max_length: int = 512,
+        max_length: int = 2304,
     ) -> list[dict[str, Any]]:
         """Tái xếp hạng danh sách candidate chunks và chọn Top-K chunks liên quan nhất."""
         if not candidates:
             return []
+        if top_k <= 0 or max_length <= 0:
+            raise ValueError("top_k and max_length must be greater than 0")
 
         self._load_model()
         import torch

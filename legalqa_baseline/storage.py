@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import sys
@@ -13,7 +14,7 @@ from typing import Any
 from .text import chunk_passage, query_terms
 
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "4"
 
 
 def load_qa(path: str | Path) -> dict[str, dict[str, Any]]:
@@ -31,8 +32,10 @@ def write_predictions(path: str | Path, predictions: dict[str, str]) -> None:
     output = {str(key): {"answer": str(answer)} for key, answer in predictions.items()}
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w", encoding="utf-8") as handle:
+    tmp_target = target.with_suffix(target.suffix + ".tmp")
+    with tmp_target.open("w", encoding="utf-8") as handle:
         json.dump(output, handle, ensure_ascii=False, indent=2)
+    tmp_target.replace(target)
 
 
 def iter_contexts(path: str | Path) -> Iterator[dict[str, Any]]:
@@ -128,6 +131,7 @@ def build_index(
         doc_count = 0
         chunk_count = 0
         empty_docs = 0
+        corpus_hasher = hashlib.sha256()
         batch: list[tuple[str, int, str, str, str]] = []
         for context in iter_contexts(contexts_path):
             doc_count += 1
@@ -144,6 +148,16 @@ def build_index(
             name = str(context.get("name") or "")
             link = str(context.get("link") or "")
             for chunk_no, text in enumerate(chunks):
+                corpus_hasher.update(context_id.encode("utf-8"))
+                corpus_hasher.update(b"\0")
+                corpus_hasher.update(str(chunk_no).encode("ascii"))
+                corpus_hasher.update(b"\0")
+                corpus_hasher.update(name.encode("utf-8"))
+                corpus_hasher.update(b"\0")
+                corpus_hasher.update(link.encode("utf-8"))
+                corpus_hasher.update(b"\0")
+                corpus_hasher.update(text.encode("utf-8"))
+                corpus_hasher.update(b"\0")
                 batch.append((context_id, chunk_no, name, link, text))
                 chunk_count += 1
                 if len(batch) >= 1000:
@@ -174,6 +188,7 @@ def build_index(
             "documents": str(doc_count),
             "chunks": str(chunk_count),
             "train_samples": str(len(train_rows)),
+            "corpus_sha256": corpus_hasher.hexdigest(),
         }
         connection.executemany(
             "INSERT INTO metadata(key, value) VALUES (?, ?)", metadata.items()

@@ -86,7 +86,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--temperature",
         type=float,
-        default=0.1,
+        default=0.0,
         help="Nhiệt độ sampling",
     )
     parser.add_argument(
@@ -134,7 +134,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--rrf-top-k",
         type=int,
-        default=12,
+        default=50,
         help="Số candidate sau khi RRF fusion",
     )
     parser.add_argument(
@@ -142,6 +142,15 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=3,
         help="Số chunk chọn lọc sau khi qua Reranker",
+    )
+    parser.add_argument("--dense-query-max-length", type=int, default=256)
+    parser.add_argument("--reranker-max-length", type=int, default=2304)
+    parser.add_argument("--max-input-tokens", type=int, default=7168)
+    parser.add_argument("--generation-seed", type=int, default=2026)
+    parser.add_argument(
+        "--allow-retrieval-fallback",
+        action="store_true",
+        help="Cho phép fallback BM25 khi Dense/Reranker lỗi",
     )
     parser.add_argument(
         "--mode",
@@ -209,6 +218,8 @@ def main() -> int:
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
         top_p=args.top_p,
+        max_input_tokens=args.max_input_tokens,
+        seed=args.generation_seed,
     )
 
     dense_index = None
@@ -219,14 +230,23 @@ def main() -> int:
         if p.exists() or meta_p.exists():
             try:
                 from legalqa_baseline.dense import DenseVectorIndex, VietnameseEmbeddingModel
-                dense_index = DenseVectorIndex.load(p)
+                dense_index = DenseVectorIndex.load(
+                    p,
+                    expected_model_name=args.embedding_model,
+                )
                 embedding_model = VietnameseEmbeddingModel(
                     model_name_or_path=args.embedding_model,
                     device=args.device,
                 )
                 print(f"[Dense] Nạp index thành công ({len(dense_index.metadata):,} chunks)")
             except Exception as exc:
+                if not args.allow_retrieval_fallback:
+                    print(f"[Dense] Lỗi nạp dense index: {exc}", file=sys.stderr)
+                    return 1
                 print(f"[Dense] Cảnh báo lỗi nạp dense index ({exc}), fallback BM25.", file=sys.stderr)
+        elif not args.allow_retrieval_fallback:
+            print(f"[Dense] Không tìm thấy index được yêu cầu: {p}", file=sys.stderr)
+            return 1
 
     reranker = None
     if args.reranker_model:
@@ -245,6 +265,16 @@ def main() -> int:
     started = time.time()
 
     with SearchIndex(db_path) as index:
+        if dense_index is not None:
+            try:
+                dense_index.validate_against_bm25(index.metadata())
+            except Exception as exc:
+                if not args.allow_retrieval_fallback:
+                    print(f"[Dense] Index không tương thích với BM25: {exc}", file=sys.stderr)
+                    return 1
+                print(f"[Dense] {exc}; fallback BM25.", file=sys.stderr)
+                dense_index = None
+                embedding_model = None
         pipeline = LegalQABaseline(
             index=index,
             top_k=args.top_k,
@@ -259,6 +289,9 @@ def main() -> int:
             rrf_k=args.rrf_k,
             rrf_top_k=args.rrf_top_k,
             rerank_top_k=args.rerank_top_k,
+            dense_query_max_length=args.dense_query_max_length,
+            reranker_max_length=args.reranker_max_length,
+            allow_retrieval_fallback=args.allow_retrieval_fallback,
         )
 
         total = len(sample_ids)
@@ -284,6 +317,7 @@ def main() -> int:
     print(f"[✓] Hoàn thành sinh câu trả lời cho {len(predictions):,} câu hỏi.")
     print(f"[✓] Tổng thời gian: {total_elapsed:.2f} giây.")
     print(f"[✓] File kết quả: {output_path.resolve()}")
+    print(f"[✓] Dense active: {dense_index is not None} | Reranker configured: {reranker is not None}")
     print("=" * 60)
     return 0
 

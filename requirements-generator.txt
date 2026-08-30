@@ -1,8 +1,9 @@
-torch>=2.1.0
-transformers>=4.40.0
-accelerate>=0.28.0
+torch>=2.1.0,<3
+transformers>=4.51.0,<5
+accelerate>=0.28.0,<2
 sentencepiece>=0.2.0
 protobuf
 tqdm>=4.66.0
-numpy>=1.24.0
-faiss-cpu>=1.7.4
+numpy>=1.24.0,<3
+faiss-cpu>=1.7.4,<2
+safetensors>=0.4.0

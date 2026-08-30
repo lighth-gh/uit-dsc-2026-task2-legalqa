@@ -23,8 +23,15 @@ def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--bm25-top-k", type=int, default=50, help="Số candidate truy xuất bằng BM25")
     parser.add_argument("--dense-top-k", type=int, default=50, help="Số candidate truy xuất bằng Dense FAISS")
     parser.add_argument("--rrf-k", type=int, default=60, help="Hệ số RRF fusion k (mặc định 60)")
-    parser.add_argument("--rrf-top-k", type=int, default=12, help="Số candidate sau khi RRF fusion")
+    parser.add_argument("--rrf-top-k", type=int, default=50, help="Số candidate sau khi RRF fusion")
     parser.add_argument("--rerank-top-k", type=int, default=3, help="Số chunk chọn lọc sau khi qua Reranker")
+    parser.add_argument("--dense-query-max-length", type=int, default=256)
+    parser.add_argument("--reranker-max-length", type=int, default=2304)
+    parser.add_argument(
+        "--allow-retrieval-fallback",
+        action="store_true",
+        help="Cho phép tiếp tục bằng BM25/RRF khi Dense hoặc Reranker lỗi",
+    )
     parser.add_argument(
         "--dense-index",
         type=str,
@@ -72,7 +79,7 @@ def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--temperature",
         type=float,
-        default=0.1,
+        default=0.0,
         help="Nhiệt độ lấy mẫu (0.0: greedy search)",
     )
     parser.add_argument(
@@ -81,6 +88,8 @@ def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
         default=0.9,
         help="Top-p sampling",
     )
+    parser.add_argument("--max-input-tokens", type=int, default=7168)
+    parser.add_argument("--generation-seed", type=int, default=2026)
 
 
 def make_parser() -> argparse.ArgumentParser:
@@ -108,9 +117,10 @@ def make_parser() -> argparse.ArgumentParser:
         help="Tên mô hình Embedding tiếng Việt",
     )
     build_dense.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu"])
-    build_dense.add_argument("--batch-size", type=int, default=64)
+    build_dense.add_argument("--batch-size", type=int, default=8)
     build_dense.add_argument("--max-chunk-words", type=int, default=620)
     build_dense.add_argument("--overlap-words", type=int, default=100)
+    build_dense.add_argument("--embedding-max-length", type=int, default=2048)
     build_dense.add_argument("--force", action="store_true")
 
     predict = subparsers.add_parser("predict", help="Sinh tệp submission")
@@ -152,32 +162,79 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
     dense_index = None
     embedding_model = None
     reranker = None
+    positive_values = {
+        "top_k": args.top_k,
+        "max_answer_words": args.max_answer_words,
+        "context_top_k": getattr(args, "context_top_k", 3),
+        "bm25_top_k": getattr(args, "bm25_top_k", 50),
+        "dense_top_k": getattr(args, "dense_top_k", 50),
+        "rrf_k": getattr(args, "rrf_k", 60),
+        "rrf_top_k": getattr(args, "rrf_top_k", 50),
+        "rerank_top_k": getattr(args, "rerank_top_k", 3),
+        "dense_query_max_length": getattr(args, "dense_query_max_length", 256),
+        "reranker_max_length": getattr(args, "reranker_max_length", 2304),
+    }
+    invalid = {name: value for name, value in positive_values.items() if value <= 0}
+    if invalid:
+        raise ValueError(f"Các tham số phải lớn hơn 0: {invalid}")
+    if positive_values["context_top_k"] > positive_values["rerank_top_k"]:
+        raise ValueError("context_top_k không được lớn hơn rerank_top_k")
+    if positive_values["rerank_top_k"] > positive_values["rrf_top_k"]:
+        raise ValueError("rerank_top_k không được lớn hơn rrf_top_k")
+    if not 0.0 <= args.knn_threshold <= 1.0:
+        raise ValueError("knn_threshold phải nằm trong [0, 1]")
+    allow_fallback = bool(getattr(args, "allow_retrieval_fallback", False))
 
     if need_generator:
+        if getattr(args, "max_new_tokens", 512) <= 0:
+            raise ValueError("max_new_tokens phải lớn hơn 0")
+        if getattr(args, "max_input_tokens", 7168) <= 0:
+            raise ValueError("max_input_tokens phải lớn hơn 0")
+        if getattr(args, "temperature", 0.0) < 0:
+            raise ValueError("temperature không được âm")
+        if not 0.0 < getattr(args, "top_p", 0.9) <= 1.0:
+            raise ValueError("top_p phải nằm trong (0, 1]")
         from .generator import ViQwenRAGGenerator
         generator = ViQwenRAGGenerator(
             model_name_or_path=getattr(args, "generator_model", "AITeamVN/Vi-Qwen2-1.5B-RAG"),
             device=getattr(args, "device", "auto"),
             torch_dtype=getattr(args, "torch_dtype", "auto"),
             max_new_tokens=getattr(args, "max_new_tokens", 512),
-            temperature=getattr(args, "temperature", 0.1),
+            temperature=getattr(args, "temperature", 0.0),
             top_p=getattr(args, "top_p", 0.9),
+            max_input_tokens=getattr(args, "max_input_tokens", 7168),
+            seed=getattr(args, "generation_seed", 2026),
         )
 
         dense_index_path = getattr(args, "dense_index", None)
         if dense_index_path:
             p = Path(dense_index_path)
             meta_p = p.with_suffix(".meta.json") if p.suffix in (".faiss", ".npy") else p.with_name(f"{p.stem}.meta.json")
-            if p.exists() or meta_p.exists():
+            if not (p.exists() or meta_p.exists()):
+                message = f"Không tìm thấy Dense index/metadata tại {p}"
+                if allow_fallback:
+                    print(f"[pipeline] {message}; fallback BM25.", file=sys.stderr)
+                else:
+                    raise FileNotFoundError(message)
+            else:
                 try:
                     from .dense import DenseVectorIndex, VietnameseEmbeddingModel
-                    dense_index = DenseVectorIndex.load(p)
+                    embedding_name = getattr(
+                        args, "embedding_model", "AITeamVN/Vietnamese_Embedding_v2"
+                    )
+                    dense_index = DenseVectorIndex.load(
+                        p,
+                        expected_model_name=embedding_name,
+                    )
+                    dense_index.validate_against_bm25(index.metadata())
                     embedding_model = VietnameseEmbeddingModel(
-                        model_name_or_path=getattr(args, "embedding_model", "AITeamVN/Vietnamese_Embedding_v2"),
+                        model_name_or_path=embedding_name,
                         device=getattr(args, "device", "auto"),
                     )
                     print(f"[pipeline] Đã nạp Dense Index: {len(dense_index.metadata):,} chunks", file=sys.stderr)
                 except Exception as exc:
+                    if not allow_fallback:
+                        raise
                     print(f"[pipeline] Cảnh báo không nạp được dense index ({exc}), fallback BM25.", file=sys.stderr)
 
         reranker_name = getattr(args, "reranker_model", None)
@@ -205,8 +262,11 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         bm25_top_k=getattr(args, "bm25_top_k", 50),
         dense_top_k=getattr(args, "dense_top_k", 50),
         rrf_k=getattr(args, "rrf_k", 60),
-        rrf_top_k=getattr(args, "rrf_top_k", 12),
+        rrf_top_k=getattr(args, "rrf_top_k", 50),
         rerank_top_k=getattr(args, "rerank_top_k", 3),
+        dense_query_max_length=getattr(args, "dense_query_max_length", 256),
+        reranker_max_length=getattr(args, "reranker_max_length", 2304),
+        allow_retrieval_fallback=allow_fallback,
     )
 
 
@@ -233,10 +293,67 @@ def command_build_dense_index(args: argparse.Namespace) -> int:
         batch_size=args.batch_size,
         max_chunk_words=args.max_chunk_words,
         overlap_words=args.overlap_words,
+        embedding_max_length=args.embedding_max_length,
         force=args.force,
     )
     print(json.dumps(stats, ensure_ascii=False, indent=2))
     return 0
+
+
+def _load_checkpoint(
+    checkpoint_path: Path,
+    valid_ids: set[str],
+) -> tuple[dict[str, str], dict[str, int]]:
+    with checkpoint_path.open("r", encoding="utf-8") as f:
+        saved = json.load(f)
+    routes: dict[str, int] = {}
+    if isinstance(saved, dict) and saved.get("schema_version") == 1:
+        raw_predictions = saved.get("predictions", {})
+        raw_routes = saved.get("routes", {})
+        if not isinstance(raw_predictions, dict) or not isinstance(raw_routes, dict):
+            raise ValueError("Checkpoint schema không hợp lệ")
+        routes = {
+            str(route): int(count)
+            for route, count in raw_routes.items()
+            if int(count) >= 0
+        }
+    elif isinstance(saved, dict):
+        # Tương thích checkpoint cũ có cùng schema với submission.
+        raw_predictions = saved
+    else:
+        raise ValueError("Checkpoint phải là JSON object")
+
+    predictions: dict[str, str] = {}
+    for sample_id, item in raw_predictions.items():
+        key = str(sample_id)
+        if key not in valid_ids or not isinstance(item, dict):
+            continue
+        answer = item.get("answer")
+        if isinstance(answer, str) and answer.strip():
+            predictions[key] = answer
+    if routes and sum(routes.values()) != len(predictions):
+        routes = {}
+    if predictions and not routes:
+        routes["resumed_unknown"] = len(predictions)
+    return predictions, routes
+
+
+def _write_checkpoint(
+    checkpoint_path: Path,
+    predictions: dict[str, str],
+    routes: dict[str, int],
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "predictions": {
+            str(key): {"answer": str(answer)} for key, answer in predictions.items()
+        },
+        "routes": routes,
+    }
+    tmp_path = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+    tmp_path.replace(checkpoint_path)
 
 
 def command_predict(args: argparse.Namespace) -> int:
@@ -250,21 +367,23 @@ def command_predict(args: argparse.Namespace) -> int:
 
     if getattr(args, "resume", False) and checkpoint_path.exists():
         try:
-            with checkpoint_path.open("r", encoding="utf-8") as f:
-                saved = json.load(f)
-                predictions = {str(k): str(v.get("answer", "")) for k, v in saved.items()}
-                print(
-                    f"[predict] Đã nạp lại checkpoint: {len(predictions):,}/{len(data):,} câu đã xong.",
-                    file=sys.stderr,
-                    flush=True,
-                )
-        except Exception:
+            predictions, routes = _load_checkpoint(checkpoint_path, set(data))
+            print(
+                f"[predict] Đã nạp lại checkpoint: {len(predictions):,}/{len(data):,} câu đã xong.",
+                file=sys.stderr,
+                flush=True,
+            )
+        except Exception as exc:
+            print(f"[predict] Bỏ checkpoint không hợp lệ: {exc}", file=sys.stderr)
             predictions = {}
+            routes = {}
 
     started = time.time()
     need_generator = args.mode in ("rag", "hybrid_rag")
     total = len(data)
     interval = getattr(args, "checkpoint_interval", 10)
+    if interval <= 0:
+        raise ValueError("checkpoint_interval phải lớn hơn 0")
 
     use_tqdm = False
     try:
@@ -294,7 +413,7 @@ def command_predict(args: argparse.Namespace) -> int:
 
             # Lưu checkpoint định kỳ
             if processed_count % interval == 0 or number == total:
-                write_predictions(checkpoint_path, predictions)
+                _write_checkpoint(checkpoint_path, predictions, routes)
 
             if pbar:
                 pbar.set_postfix({
@@ -319,6 +438,8 @@ def command_predict(args: argparse.Namespace) -> int:
 
         if pbar:
             pbar.close()
+        if processed_count:
+            _write_checkpoint(checkpoint_path, predictions, routes)
 
     write_predictions(output_path, predictions)
     if checkpoint_path.exists():
@@ -331,6 +452,15 @@ def command_predict(args: argparse.Namespace) -> int:
         "samples": len(predictions),
         "mode": args.mode,
         "routes": routes,
+        "retrieval": {
+            "dense_active": pipeline.dense_index is not None,
+            "reranker_active": pipeline.reranker is not None,
+            "bm25_top_k": pipeline.bm25_top_k,
+            "dense_top_k": pipeline.dense_top_k,
+            "rrf_top_k": pipeline.rrf_top_k,
+            "rerank_top_k": pipeline.rerank_top_k,
+            "context_top_k": pipeline.context_top_k,
+        },
         "elapsed_seconds": round(time.time() - started, 2),
         "output": str(output_path.resolve()),
     }
@@ -446,7 +576,13 @@ def main(argv: list[str] | None = None) -> int:
     }
     try:
         return commands[args.command](args)
-    except (ValueError, FileNotFoundError, FileExistsError, json.JSONDecodeError) as error:
+    except (
+        ValueError,
+        FileNotFoundError,
+        FileExistsError,
+        ImportError,
+        RuntimeError,
+        json.JSONDecodeError,
+    ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-

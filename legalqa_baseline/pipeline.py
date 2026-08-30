@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import difflib
+import math
+import sys
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -37,7 +39,8 @@ def question_similarity(left: str, right: str) -> float:
 def _context_rerank_score(question: str, result: dict[str, Any]) -> float:
     q_list = query_terms(question, max_terms=60)
     q_terms = set(q_list)
-    bm25 = max(0.0, -float(result["bm25_score"]))
+    raw_bm25 = result.get("bm25_score")
+    bm25 = max(0.0, -float(raw_bm25)) if raw_bm25 is not None else 0.0
     if not q_terms:
         return bm25
     text_tokens = tokenize(f"{result.get('name', '')} {result.get('text', '')}")
@@ -59,11 +62,27 @@ def _context_rerank_score(question: str, result: dict[str, Any]) -> float:
     return bm25 + 2.0 * coverage + 2.0 * phrase_coverage + 6.0 * trigram_coverage
 
 
+def _rag_confidence(question: str, result: dict[str, Any]) -> float:
+    """Điểm chẩn đoán theo scorer mạnh nhất có sẵn, không giả định luôn có BM25."""
+    for key in ("rerank_score", "dense_score"):
+        value = result.get(key)
+        if value is not None:
+            score = float(value)
+            if score >= 0:
+                z = math.exp(-score)
+                return 1.0 / (1.0 + z)
+            z = math.exp(score)
+            return z / (1.0 + z)
+    if result.get("bm25_score") is not None:
+        return min(1.0, _context_rerank_score(question, result) / 20.0)
+    return 0.0
+
+
 def reciprocal_rank_fusion(
     bm25_results: list[dict[str, Any]],
     dense_results: list[dict[str, Any]],
     rrf_k: int = 60,
-    top_k: int = 12,
+    top_k: int = 50,
 ) -> list[dict[str, Any]]:
     """Hợp nhất kết quả từ BM25 và Dense Search bằng Reciprocal Rank Fusion (RRF)."""
     scores: dict[tuple[str, int], float] = {}
@@ -79,6 +98,11 @@ def reciprocal_rank_fusion(
         scores[key] = scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
         if key not in docs:
             docs[key] = dict(doc)
+        else:
+            # Giữ nội dung/BM25 từ nhánh lexical nhưng bổ sung score Dense để audit.
+            for field in ("dense_score", "dense_rank"):
+                if field in doc:
+                    docs[key][field] = doc[field]
 
     sorted_keys = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)
     fused_results: list[dict[str, Any]] = []
@@ -104,9 +128,31 @@ class LegalQABaseline:
         bm25_top_k: int = 50,
         dense_top_k: int = 50,
         rrf_k: int = 60,
-        rrf_top_k: int = 12,
+        rrf_top_k: int = 50,
         rerank_top_k: int = 3,
+        dense_query_max_length: int = 256,
+        reranker_max_length: int = 2304,
+        allow_retrieval_fallback: bool = False,
     ):
+        positive = {
+            "top_k": top_k,
+            "max_answer_words": max_answer_words,
+            "context_top_k": context_top_k,
+            "bm25_top_k": bm25_top_k,
+            "dense_top_k": dense_top_k,
+            "rrf_k": rrf_k,
+            "rrf_top_k": rrf_top_k,
+            "rerank_top_k": rerank_top_k,
+            "dense_query_max_length": dense_query_max_length,
+            "reranker_max_length": reranker_max_length,
+        }
+        invalid = {name: value for name, value in positive.items() if value <= 0}
+        if invalid:
+            raise ValueError(f"Các tham số pipeline phải lớn hơn 0: {invalid}")
+        if not 0.0 <= knn_threshold <= 1.0:
+            raise ValueError("knn_threshold phải nằm trong [0, 1]")
+        if context_top_k > rerank_top_k or rerank_top_k > rrf_top_k:
+            raise ValueError("Cần context_top_k <= rerank_top_k <= rrf_top_k")
         self.index = index
         self.top_k = top_k
         self.max_answer_words = max_answer_words
@@ -121,6 +167,9 @@ class LegalQABaseline:
         self.rrf_k = rrf_k
         self.rrf_top_k = rrf_top_k
         self.rerank_top_k = rerank_top_k or context_top_k
+        self.dense_query_max_length = dense_query_max_length
+        self.reranker_max_length = reranker_max_length
+        self.allow_retrieval_fallback = allow_retrieval_fallback
 
     def _extractive(self, question: str) -> Prediction | None:
         contexts = self.index.search_contexts(question, top_k=self.top_k)
@@ -157,12 +206,24 @@ class LegalQABaseline:
         dense_candidates: list[dict[str, Any]] = []
         if self.dense_index is not None and self.embedding_model is not None:
             try:
-                q_vec = self.embedding_model.encode([question])[0]
+                normalize = getattr(self.dense_index, "similarity", "cosine") == "cosine"
+                try:
+                    encoded_query = self.embedding_model.encode(
+                        [question],
+                        max_length=self.dense_query_max_length,
+                        normalize_embeddings=normalize,
+                    )
+                except TypeError:
+                    # Tương thích encoder tùy biến/mock theo interface cũ.
+                    encoded_query = self.embedding_model.encode([question])
+                q_vec = encoded_query[0]
                 dense_candidates = self.dense_index.search(q_vec, top_k=self.dense_top_k)
             except Exception as exc:
+                if not self.allow_retrieval_fallback:
+                    raise RuntimeError(f"Dense search thất bại: {exc}") from exc
                 print(f"[pipeline] Lỗi dense search ({exc}), fallback BM25.", file=sys.stderr)
 
-        # 3. Hợp nhất RRF (Reciprocal Rank Fusion k=60 -> Top-12) hoặc fallback Heuristic BM25
+        # 3. Hợp nhất RRF (Reciprocal Rank Fusion k=60 -> Top-50) hoặc fallback Heuristic BM25
         if dense_candidates:
             fused_candidates = reciprocal_rank_fusion(
                 bm25_candidates, dense_candidates, rrf_k=self.rrf_k, top_k=self.rrf_top_k
@@ -182,13 +243,21 @@ class LegalQABaseline:
         if self.reranker is not None:
             try:
                 top_chunks = self.reranker.rerank(
-                    question, fused_candidates, top_k=self.rerank_top_k
+                    question,
+                    fused_candidates,
+                    top_k=self.rerank_top_k,
+                    max_length=self.reranker_max_length,
                 )
             except Exception as exc:
+                if not self.allow_retrieval_fallback:
+                    raise RuntimeError(f"Reranker thất bại: {exc}") from exc
                 print(f"[pipeline] Lỗi reranker ({exc}), fallback RRF order.", file=sys.stderr)
                 top_chunks = fused_candidates[: self.rerank_top_k]
         else:
             top_chunks = fused_candidates[: self.rerank_top_k]
+
+        # Reranker có thể trả nhiều candidate để audit; prompt chỉ nhận context_top_k.
+        top_chunks = top_chunks[: self.context_top_k]
 
         context_blocks = []
         for idx, chunk in enumerate(top_chunks, start=1):
@@ -217,7 +286,7 @@ class LegalQABaseline:
             ],
         }
         best = top_chunks[0]
-        confidence = min(1.0, _context_rerank_score(question, best) / 20.0)
+        confidence = _rag_confidence(question, best)
         return Prediction(answer, "rag", confidence, evidence)
 
     def _knn(self, question: str, exclude_id: str | None = None) -> Prediction | None:

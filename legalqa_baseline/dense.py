@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
 from .storage import iter_contexts
 from .text import chunk_passage
+
+
+DENSE_SCHEMA_VERSION = 3
+VALID_SIMILARITIES = {"cosine", "dot_product"}
 
 
 class VietnameseEmbeddingModel:
@@ -17,10 +23,12 @@ class VietnameseEmbeddingModel:
         self,
         model_name_or_path: str = "AITeamVN/Vietnamese_Embedding_v2",
         device: str = "auto",
-        batch_size: int = 32,
+        batch_size: int = 8,
     ) -> None:
         self.model_name_or_path = model_name_or_path
         self.device_setting = device
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than 0")
         self.batch_size = batch_size
         self._tokenizer: Any = None
         self._model: Any = None
@@ -51,11 +59,19 @@ class VietnameseEmbeddingModel:
         )
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_name_or_path,
-            trust_remote_code=True,
+            trust_remote_code=False,
         )
+        model_dtype = None
+        if self._device.type == "cuda":
+            model_dtype = (
+                torch.bfloat16
+                if getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+                else torch.float16
+            )
         self._model = AutoModel.from_pretrained(
             self.model_name_or_path,
-            trust_remote_code=True,
+            torch_dtype=model_dtype,
+            trust_remote_code=False,
         ).to(self._device)
         self._model.eval()
 
@@ -63,15 +79,18 @@ class VietnameseEmbeddingModel:
         self,
         texts: list[str],
         batch_size: int | None = None,
-        max_length: int = 512,
+        max_length: int = 2048,
+        normalize_embeddings: bool = False,
     ) -> Any:
-        """Sinh ma trận embedding (N, D) đã chuẩn hóa L2 (dùng cho Cosine Similarity)."""
+        """Sinh embedding (N, D); chỉ L2-normalize khi được yêu cầu."""
         self._load_model()
         import numpy as np
         import torch
         import torch.nn.functional as F
 
         bs = batch_size or self.batch_size
+        if bs <= 0 or max_length <= 0:
+            raise ValueError("batch_size and max_length must be greater than 0")
         all_embeddings: list[np.ndarray] = []
 
         for i in range(0, len(texts), bs):
@@ -86,41 +105,44 @@ class VietnameseEmbeddingModel:
 
             with torch.inference_mode():
                 outputs = self._model(**encoded)
-                # Mean pooling có xét attention mask
-                token_embeddings = outputs[0]
-                input_mask_expanded = (
-                    encoded["attention_mask"]
-                    .unsqueeze(-1)
-                    .expand(token_embeddings.size())
-                    .float()
-                )
-                sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
-                sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-                mean_pooled = sum_embeddings / sum_mask
-                # L2 normalize để Inner Product tương đương Cosine Similarity
-                normalized = F.normalize(mean_pooled, p=2, dim=1)
-                all_embeddings.append(normalized.cpu().numpy())
+                # Vietnamese_Embedding_v2's Sentence-Transformers pooling
+                # configuration uses the CLS token, not mean pooling.
+                embeddings = outputs[0][:, 0]
+                if normalize_embeddings:
+                    embeddings = F.normalize(embeddings, p=2, dim=1)
+                all_embeddings.append(embeddings.cpu().numpy())
 
         if not all_embeddings:
-            return np.empty((0, 768), dtype=np.float32)
+            hidden_size = int(getattr(self._model.config, "hidden_size", 0))
+            return np.empty((0, hidden_size), dtype=np.float32)
         return np.vstack(all_embeddings).astype(np.float32)
 
 
 class DenseVectorIndex:
-    """Quản lý Index tìm kiếm vector Dense (FAISS IndexFlatIP hoặc NumPy Cosine Search)."""
+    """Quản lý Dense index FAISS/NumPy cho cosine hoặc dot product."""
 
     def __init__(
         self,
         vectors: Any | None = None,
         metadata: list[dict[str, Any]] | None = None,
         faiss_index: Any | None = None,
+        manifest: dict[str, Any] | None = None,
+        similarity: str = "cosine",
     ) -> None:
         self.vectors = vectors
         self.metadata = metadata or []
         self.faiss_index = faiss_index
+        self.manifest = manifest or {}
+        if similarity not in VALID_SIMILARITIES:
+            raise ValueError(f"Similarity không hỗ trợ: {similarity}")
+        self.similarity = similarity
 
     @classmethod
-    def load(cls, path: str | Path) -> "DenseVectorIndex":
+    def load(
+        cls,
+        path: str | Path,
+        expected_model_name: str | None = None,
+    ) -> "DenseVectorIndex":
         """Nạp Dense index từ đĩa (.faiss hoặc .npy + .meta.json)."""
         import numpy as np
 
@@ -134,8 +156,23 @@ class DenseVectorIndex:
             # Thử tìm file metadata cùng tên
             meta_path = base_path.with_name(f"{base_path.stem}.meta.json")
 
+        if not meta_path.is_file():
+            raise FileNotFoundError(f"Không tìm thấy Dense metadata: {meta_path}")
         with meta_path.open("r", encoding="utf-8") as f:
-            meta = json.load(f)
+            payload = json.load(f)
+        if isinstance(payload, list):
+            # Index schema v1 luôn dùng vector đã L2-normalize.
+            meta = payload
+            manifest: dict[str, Any] = {
+                "schema_version": 1,
+                "similarity": "cosine",
+                "legacy": True,
+            }
+        elif isinstance(payload, dict) and isinstance(payload.get("items"), list):
+            meta = payload["items"]
+            manifest = dict(payload.get("manifest") or {})
+        else:
+            raise ValueError(f"Dense metadata không hợp lệ: {meta_path}")
 
         faiss_file = base_path if base_path.suffix == ".faiss" else base_path.with_suffix(".faiss")
         npy_file = base_path if base_path.suffix == ".npy" else base_path.with_suffix(".npy")
@@ -149,13 +186,51 @@ class DenseVectorIndex:
             pass
 
         vectors = None
-        if npy_file.is_file():
-            vectors = np.load(str(npy_file))
-        elif faiss_index is not None:
-            # Nếu chỉ có faiss index
-            pass
+        if faiss_index is None and npy_file.is_file():
+            # Loading as a regular ndarray avoids leaving an open mmap handle on
+            # Windows, which otherwise prevents replacing or cleaning the index.
+            vectors = np.load(str(npy_file), allow_pickle=False)
+        if faiss_index is None and vectors is None:
+            raise FileNotFoundError(
+                f"Dense metadata tồn tại nhưng thiếu vector index: {faiss_file} / {npy_file}"
+            )
 
-        return cls(vectors=vectors, metadata=meta, faiss_index=faiss_index)
+        if vectors is not None and vectors.ndim != 2:
+            raise ValueError(f"Dense vectors must be a 2D matrix, got shape={vectors.shape}")
+
+        expected_count = len(meta)
+        actual_count = int(faiss_index.ntotal) if faiss_index is not None else int(vectors.shape[0])
+        if actual_count != expected_count:
+            raise ValueError(
+                f"Dense index/metadata lệch số lượng: vectors={actual_count}, metadata={expected_count}"
+            )
+        actual_dim = int(faiss_index.d) if faiss_index is not None else int(vectors.shape[1])
+        manifest_dim = manifest.get("dimension")
+        if manifest_dim is not None and int(manifest_dim) != actual_dim:
+            raise ValueError(
+                f"Dense dimension không khớp manifest: index={actual_dim}, manifest={manifest_dim}"
+            )
+        manifest_model = manifest.get("embedding_model")
+        if expected_model_name and not manifest_model:
+            raise ValueError(
+                "Legacy Dense index has no embedding model/pooling metadata; rebuild the index"
+            )
+        if expected_model_name and manifest_model and expected_model_name != manifest_model:
+            raise ValueError(
+                f"Dense index dùng model {manifest_model!r}, không phải {expected_model_name!r}"
+            )
+        if expected_model_name and int(manifest.get("schema_version") or 0) < DENSE_SCHEMA_VERSION:
+            raise ValueError("Dense index uses an old pooling schema; rebuild it with CLS pooling")
+        if expected_model_name and manifest.get("pooling") != "cls":
+            raise ValueError("Dense index does not use CLS pooling; rebuild the index")
+        similarity = str(manifest.get("similarity") or "cosine")
+        return cls(
+            vectors=vectors,
+            metadata=meta,
+            faiss_index=faiss_index,
+            manifest=manifest,
+            similarity=similarity,
+        )
 
     def save(self, path: str | Path) -> None:
         """Lưu Dense index xuống đĩa."""
@@ -164,44 +239,91 @@ class DenseVectorIndex:
         base_path = Path(path)
         base_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Lưu metadata
-        meta_path = base_path.with_suffix(".meta.json")
-        with meta_path.open("w", encoding="utf-8") as f:
-            json.dump(self.metadata, f, ensure_ascii=False)
+        if self.vectors is None and self.faiss_index is None:
+            raise ValueError("Không có vector/FAISS index để lưu")
 
-        # Lưu numpy vectors
+        meta_path = base_path.with_suffix(".meta.json")
+        # Ghi vector trước; metadata là marker hoàn tất và được ghi sau cùng.
         if self.vectors is not None:
             npy_path = base_path.with_suffix(".npy")
-            np.save(str(npy_path), self.vectors)
+            npy_tmp = npy_path.with_suffix(npy_path.suffix + ".tmp")
+            with npy_tmp.open("wb") as f:
+                np.save(f, self.vectors)
+            npy_tmp.replace(npy_path)
 
         # Lưu faiss index nếu có
         if self.faiss_index is not None:
             try:
                 import faiss
                 faiss_path = base_path.with_suffix(".faiss")
-                faiss.write_index(self.faiss_index, str(faiss_path))
+                faiss_tmp = faiss_path.with_suffix(faiss_path.suffix + ".tmp")
+                faiss.write_index(self.faiss_index, str(faiss_tmp))
+                faiss_tmp.replace(faiss_path)
             except ImportError:
                 pass
+
+        meta_tmp = meta_path.with_suffix(meta_path.suffix + ".tmp")
+        with meta_tmp.open("w", encoding="utf-8") as f:
+            json.dump(
+                {"manifest": self.manifest, "items": self.metadata},
+                f,
+                ensure_ascii=False,
+            )
+        meta_tmp.replace(meta_path)
+
+    def validate_against_bm25(self, bm25_metadata: dict[str, str]) -> None:
+        """Từ chối ghép hai index được dựng từ corpus/chunk config khác nhau."""
+        mismatches = []
+        for key in ("chunks", "max_chunk_words", "overlap_words", "corpus_sha256"):
+            dense_value = self.manifest.get(key)
+            bm25_value = bm25_metadata.get(key)
+            if (
+                dense_value is not None
+                and bm25_value is not None
+                and str(dense_value) != str(bm25_value)
+            ):
+                mismatches.append(f"{key}: dense={dense_value}, bm25={bm25_value}")
+        if mismatches:
+            raise ValueError("Dense/BM25 index không tương thích: " + "; ".join(mismatches))
 
     def search(self, query_vector: Any, top_k: int = 50) -> list[dict[str, Any]]:
         """Tìm Top-K chunks tương đồng nhất với vector câu hỏi."""
         import numpy as np
 
+        if top_k <= 0:
+            raise ValueError("top_k phải lớn hơn 0")
+
         if query_vector.ndim == 1:
             query_vector = np.expand_dims(query_vector, axis=0)
 
-        # Chuẩn hóa query vector
-        norm = np.linalg.norm(query_vector, axis=1, keepdims=True)
-        query_vector = query_vector / np.maximum(norm, 1e-9)
+        if query_vector.ndim != 2 or query_vector.shape[0] != 1:
+            raise ValueError("query_vector phải có shape (D,) hoặc (1, D)")
+        if self.similarity == "cosine":
+            norm = np.linalg.norm(query_vector, axis=1, keepdims=True)
+            query_vector = query_vector / np.maximum(norm, 1e-9)
 
         if self.faiss_index is not None:
-            scores, indices = self.faiss_index.search(query_vector.astype(np.float32), int(top_k))
+            if query_vector.shape[1] != int(self.faiss_index.d):
+                raise ValueError(
+                    f"Query dimension {query_vector.shape[1]} != index dimension {self.faiss_index.d}"
+                )
+            k = min(int(top_k), int(self.faiss_index.ntotal))
+            if k == 0:
+                return []
+            scores, indices = self.faiss_index.search(query_vector.astype(np.float32), k)
             matched_indices = indices[0]
             matched_scores = scores[0]
         elif self.vectors is not None:
-            # Cosine similarity bằng ma trận tích vô hướng
+            if len(self.vectors) == 0:
+                return []
+            if query_vector.shape[1] != int(self.vectors.shape[1]):
+                raise ValueError(
+                    f"Query dimension {query_vector.shape[1]} != index dimension {self.vectors.shape[1]}"
+                )
+            # Cả cosine (vector đã chuẩn hóa) và dot product đều dùng tích vô hướng.
             scores = np.dot(self.vectors, query_vector[0])
-            top_k_indices = np.argpartition(-scores, min(top_k, len(scores) - 1))[:top_k]
+            k = min(int(top_k), len(scores))
+            top_k_indices = np.argpartition(-scores, k - 1)[:k]
             top_k_indices = top_k_indices[np.argsort(-scores[top_k_indices])]
             matched_indices = top_k_indices
             matched_scores = scores[top_k_indices]
@@ -223,9 +345,10 @@ def build_dense_index(
     output_index_path: str | Path,
     embedding_model_name: str = "AITeamVN/Vietnamese_Embedding_v2",
     device: str = "auto",
-    batch_size: int = 64,
+    batch_size: int = 8,
     max_chunk_words: int = 620,
     overlap_words: int = 100,
+    embedding_max_length: int = 2048,
     force: bool = False,
 ) -> dict[str, Any]:
     """Xây dựng Dense Vector Index từ kho văn bản selected-contexts."""
@@ -233,8 +356,15 @@ def build_dense_index(
 
     output_path = Path(output_index_path)
     meta_path = output_path.with_suffix(".meta.json")
-    if meta_path.exists() and not force:
+    index_paths = [
+        meta_path,
+        output_path.with_suffix(".npy"),
+        output_path.with_suffix(".faiss"),
+    ]
+    if any(path.exists() for path in index_paths) and not force:
         raise FileExistsError(f"Index đã tồn tại tại {output_path}; thêm --force để xây lại.")
+    if batch_size <= 0 or embedding_max_length <= 0:
+        raise ValueError("batch_size và embedding_max_length phải lớn hơn 0")
 
     started = time.time()
     print(f"[BuildDense] Khởi tạo encoder: {embedding_model_name}...", file=sys.stderr, flush=True)
@@ -247,6 +377,7 @@ def build_dense_index(
     print(f"[BuildDense] Đọc và chunking văn bản từ {contexts_path}...", file=sys.stderr, flush=True)
     metadata: list[dict[str, Any]] = []
     chunk_texts: list[str] = []
+    corpus_hasher = hashlib.sha256()
 
     doc_count = 0
     for context in iter_contexts(contexts_path):
@@ -262,6 +393,16 @@ def build_dense_index(
             # Tạo chuỗi đại diện ngữ nghĩa cho embedding (kết hợp tiêu đề văn bản + đoạn luật)
             dense_input = f"{name}: {text}" if name else text
             chunk_texts.append(dense_input)
+            corpus_hasher.update(context_id.encode("utf-8"))
+            corpus_hasher.update(b"\0")
+            corpus_hasher.update(str(chunk_no).encode("ascii"))
+            corpus_hasher.update(b"\0")
+            corpus_hasher.update(name.encode("utf-8"))
+            corpus_hasher.update(b"\0")
+            corpus_hasher.update(link.encode("utf-8"))
+            corpus_hasher.update(b"\0")
+            corpus_hasher.update(text.encode("utf-8"))
+            corpus_hasher.update(b"\0")
             metadata.append({
                 "context_id": context_id,
                 "chunk_no": chunk_no,
@@ -271,6 +412,8 @@ def build_dense_index(
             })
 
     total_chunks = len(chunk_texts)
+    if total_chunks == 0:
+        raise ValueError("Corpus không tạo được chunk nào để xây Dense index")
     print(
         f"[BuildDense] Đã tạo {total_chunks:,} chunks từ {doc_count:,} văn bản. Đang mã hóa vector...",
         file=sys.stderr,
@@ -278,7 +421,12 @@ def build_dense_index(
     )
 
     # Encode theo batch
-    vectors = encoder.encode(chunk_texts, batch_size=batch_size)
+    vectors = encoder.encode(
+        chunk_texts,
+        batch_size=batch_size,
+        max_length=embedding_max_length,
+        normalize_embeddings=False,
+    )
 
     # Xây dựng FAISS Index nếu có
     faiss_index = None
@@ -291,8 +439,48 @@ def build_dense_index(
     except ImportError:
         print("[BuildDense] FAISS chưa cài đặt, lưu trữ dưới dạng NumPy matrix.", file=sys.stderr, flush=True)
 
-    dense_index = DenseVectorIndex(vectors=vectors, metadata=metadata, faiss_index=faiss_index)
-    dense_index.save(output_path)
+    manifest = {
+        "schema_version": DENSE_SCHEMA_VERSION,
+        "embedding_model": embedding_model_name,
+        "dimension": int(vectors.shape[1]),
+        "similarity": "dot_product",
+        "pooling": "cls",
+        "documents": doc_count,
+        "chunks": total_chunks,
+        "max_chunk_words": max_chunk_words,
+        "overlap_words": overlap_words,
+        "embedding_max_length": embedding_max_length,
+        "corpus_sha256": corpus_hasher.hexdigest(),
+    }
+    dense_index = DenseVectorIndex(
+        vectors=vectors,
+        metadata=metadata,
+        faiss_index=faiss_index,
+        manifest=manifest,
+        similarity="dot_product",
+    )
+    temp_output = output_path.parent / f".{output_path.stem}.{uuid.uuid4().hex}.building"
+    temp_paths = {
+        suffix: temp_output.with_suffix(suffix)
+        for suffix in (".npy", ".faiss", ".meta.json")
+    }
+    final_paths = {
+        suffix: output_path.with_suffix(suffix)
+        for suffix in (".npy", ".faiss", ".meta.json")
+    }
+    try:
+        dense_index.save(temp_output)
+        # Vector trước, metadata marker hoàn tất sau cùng.
+        for suffix in (".npy", ".faiss"):
+            if temp_paths[suffix].is_file():
+                temp_paths[suffix].replace(final_paths[suffix])
+            elif force and final_paths[suffix].is_file():
+                final_paths[suffix].unlink()
+        temp_paths[".meta.json"].replace(final_paths[".meta.json"])
+    finally:
+        for path in temp_paths.values():
+            if path.is_file():
+                path.unlink()
     elapsed = time.time() - started
 
     stats = {

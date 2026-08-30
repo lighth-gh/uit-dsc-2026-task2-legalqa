@@ -4,6 +4,11 @@ __pycache__/
 .pytest_cache/
 artifacts/*.sqlite
 artifacts/*.sqlite-*
+artifacts/*.faiss
+artifacts/*.npy
+artifacts/*.meta.json
+artifacts/*.checkpoint.json
+artifacts/*.checkpoint.json.tmp
 *.zip
 .env
 .DS_Store

@@ -1,18 +1,15 @@
-# UIT DSC 2026 – LegalQA baseline 0.1
+# UIT DSC 2026 – LegalQA retrieval/RAG pipeline
 
-Baseline này chạy hoàn toàn offline và không dùng mô hình học sâu:
+Project có hai nhóm chế độ:
 
-1. Chia 8.532 văn bản theo `Điều`/`Phụ lục`, sau đó dùng cửa sổ từ cho đoạn quá dài.
-2. Lập chỉ mục BM25 bằng SQLite FTS5 (`unicode61`, hỗ trợ tiếng Việt có dấu); mỗi truy vấn ưu tiên 8 token hiếm nhất trong corpus để giảm nhiễu và tăng tốc.
-3. Truy xuất Top-K chunk và rerank nhẹ bằng độ phủ từ khóa câu hỏi.
-4. Sinh câu trả lời bằng cách trích cửa sổ liên quan nhất.
-5. Nếu một câu hỏi Public gần như trùng câu hỏi Train, chế độ `hybrid` dùng đáp án của hàng xóm gần nhất.
+1. `extractive`, `knn`, `hybrid`: baseline lexical cũ, không dùng mô hình học sâu.
+2. `rag`, `hybrid_rag`: BM25 + `Vietnamese_Embedding_v2` → RRF Top 50 → `Vietnamese_Reranker` Top 3 → `Vi-Qwen2-1.5B-RAG`.
 
-Đây là **baseline kiểm tra pipeline và định dạng submission**, chưa phải cấu hình cạnh tranh cuối cùng. Toàn bộ phần retrieval/generation không có tham số học, vì vậy không ảnh hưởng giới hạn tổng số tham số dưới 4B.
+Corpus được chia theo `Điều`/`Phụ lục`, sau đó dùng cửa sổ từ cho đoạn quá dài. BM25 dùng SQLite FTS5; Dense index dùng FAISS `IndexFlatIP` với dot product. Cấu hình RAG không tự ý bỏ qua lỗi Dense/Reranker; muốn fallback BM25 phải truyền rõ `--allow-retrieval-fallback`.
 
 ## 1. Dữ liệu đầu vào
 
-Đặt bốn tệp BTC cung cấp ở một thư mục bất kỳ:
+Đặt ba tệp BTC cung cấp ở một thư mục bất kỳ:
 
 ```text
 data/
@@ -39,7 +36,7 @@ Schema đã được pipeline kiểm tra:
 python -c "import sqlite3; c=sqlite3.connect(':memory:'); c.execute('create virtual table x using fts5(t)'); print('FTS5 OK')"
 ```
 
-Core baseline chỉ dùng Python standard library. Các package trong `requirements-metrics.txt` chỉ cần khi chạy đúng scoring program của BTC.
+Các mode lexical chỉ dùng Python standard library. Mode RAG cần `requirements-generator.txt`; `requirements-metrics.txt` chỉ cần khi chạy đúng scoring program của BTC.
 
 ## 3. Xây index
 
@@ -95,6 +92,10 @@ Một chi tiết cần biết: bản `rouge_score/tokenize.py` BTC gửi dùng r
 
 ## 5. Sinh submission Public
 
+Tệp `submission.json` đang được giữ lại như artifact của baseline lexical cũ;
+không xem đó là kết quả của pipeline RAG 0.2. Submission RAG phải được sinh lại
+thành `artifacts/submission_rag.json` sau khi cả BM25 và Dense index đã sẵn sàng.
+
 Khuyến nghị chạy cả ba mode và nộp thử để biết hướng nào hợp leaderboard:
 
 ```bash
@@ -126,7 +127,7 @@ python -m legalqa_baseline predict \
   --bm25-top-k 50 \
   --dense-top-k 50 \
   --rrf-k 60 \
-  --rrf-top-k 12 \
+  --rrf-top-k 50 \
   --rerank-top-k 3 \
   --device cuda
 ```
@@ -139,6 +140,8 @@ python -m legalqa_baseline build-dense-index \
   --embedding-model AITeamVN/Vietnamese_Embedding_v2 \
   --device cuda
 ```
+
+Dense index của bản 0.1 dùng mean-pooling/cosine không còn tương thích. Encoder hiện dùng đúng CLS-pooling và dot product theo model card; nếu CLI báo schema cũ, hãy build lại với `--force`.
 
 Hoặc sử dụng script chạy RAG chuyên biệt:
 
@@ -155,7 +158,7 @@ python run_rag_inference.py \
   --bm25-top-k 50 \
   --dense-top-k 50 \
   --rrf-k 60 \
-  --rrf-top-k 12 \
+  --rrf-top-k 50 \
   --rerank-top-k 3 \
   --mode rag \
   --device cuda
@@ -165,7 +168,7 @@ Tham số đáng thử:
 
 - `--bm25-top-k` & `--dense-top-k`: 50 (lấy 50 ứng viên từ mỗi nhánh).
 - `--rrf-k`: 60 (tham số Reciprocal Rank Fusion tiêu chuẩn).
-- `--rrf-top-k`: 12 (lấy 12 ứng viên tốt nhất sau khi hợp nhất).
+- `--rrf-top-k`: 50 (giữ Hybrid Top 50 để reranker chấm).
 - `--rerank-top-k`: 3 (chọn đúng 3 Điều luật chính xác nhất đưa vào LLM).
 
 ## 6. Kiểm tra một câu hỏi
@@ -192,12 +195,10 @@ Kết quả cho biết route (`extractive`/`knn`/`rag`), độ tin cậy và `ev
 Theo danh sách mô hình BTC đã phê duyệt, hệ thống kết hợp:
 
 ```text
-BM25 FTS5 (0B) + Vietnamese_Embedding_v2 (110M) [Top 50 + Top 50]
-  → Reciprocal Rank Fusion (rrf_k=60) [Top 12]
-  → Vietnamese_Reranker (110M) [Top 3]
-  → Vi-Qwen2-1.5B-RAG (1.54B) [Sinh đáp án]
+BM25 FTS5 (0B) + Vietnamese_Embedding_v2 (~0.6B) [Top 50 + Top 50]
+  → Reciprocal Rank Fusion (rrf_k=60) [Top 50]
+  → Vietnamese_Reranker (~0.6B) [Top 3]
+  → Vi-Qwen2-1.5B-RAG (~2B theo Hugging Face) [Sinh đáp án]
 ```
 
-👉 **Tổng tham số**: $\approx 1.76\text{B} \ll 4\text{B}$ (Tuyệt đối tuân thủ điều lệ BTC, tối ưu hóa toàn diện cho tiếng Việt và văn bản pháp luật).
-
-
+Tổng theo số làm tròn trên model card khoảng `3.2B`, vẫn dưới `4B`. Trước khi nộp, cần ghi lại số chính xác bằng `sum(p.numel())` cho từng checkpoint/revision thực tế thay vì dựa vào tên model hoặc số làm tròn.

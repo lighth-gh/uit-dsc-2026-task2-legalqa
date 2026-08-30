@@ -18,7 +18,7 @@ class MockEmbeddingModel:
     def __init__(self, dim: int = 4) -> None:
         self.dim = dim
 
-    def encode(self, texts: list[str], batch_size: int = 32) -> Any:
+    def encode(self, texts: list[str], batch_size: int = 32, **_: Any) -> Any:
         import numpy as np
         # Sinh mock vector dựa trên hash chuỗi để có tính xác định
         vecs = []
@@ -32,7 +32,11 @@ class MockEmbeddingModel:
 
 class MockReranker:
     def rerank(
-        self, question: str, candidates: list[dict[str, Any]], top_k: int = 3
+        self,
+        question: str,
+        candidates: list[dict[str, Any]],
+        top_k: int = 3,
+        max_length: int = 2304,
     ) -> list[dict[str, Any]]:
         scored = []
         for idx, c in enumerate(candidates):
@@ -94,7 +98,17 @@ class TestDenseRAG(unittest.TestCase):
             {"context_id": "2", "chunk_no": 0, "name": "Luật B", "text": "Thủ tục cấp phép"},
         ]
         vectors = mock_model.encode([m["text"] for m in metadata])
-        index = DenseVectorIndex(vectors=vectors, metadata=metadata)
+        index = DenseVectorIndex(
+            vectors=vectors,
+            metadata=metadata,
+            manifest={
+                "schema_version": 3,
+                "embedding_model": "mock-embedding",
+                "dimension": 4,
+                "similarity": "cosine",
+                "pooling": "cls",
+            },
+        )
 
         q_vec = mock_model.encode(["Xử phạt giao thông"])[0]
         results = index.search(q_vec, top_k=2)
@@ -106,16 +120,43 @@ class TestDenseRAG(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_dense.npy"
             index.save(save_path)
-            loaded_index = DenseVectorIndex.load(save_path)
+            loaded_index = DenseVectorIndex.load(
+                save_path,
+                expected_model_name="mock-embedding",
+            )
             loaded_results = loaded_index.search(q_vec, top_k=1)
             self.assertEqual(len(loaded_results), 1)
             self.assertEqual(loaded_results[0]["name"], results[0]["name"])
+            with self.assertRaisesRegex(ValueError, "không phải"):
+                DenseVectorIndex.load(save_path, expected_model_name="wrong-model")
+            loaded_index.manifest.update(
+                {"chunks": 2, "max_chunk_words": 620, "overlap_words": 100}
+            )
+            loaded_index.validate_against_bm25(
+                {"chunks": "2", "max_chunk_words": "620", "overlap_words": "100"}
+            )
+            with self.assertRaisesRegex(ValueError, "không tương thích"):
+                loaded_index.validate_against_bm25({"chunks": "3"})
+            loaded_index.manifest["schema_version"] = 2
+            loaded_index.save(save_path)
+            with self.assertRaisesRegex(ValueError, "old pooling schema"):
+                DenseVectorIndex.load(
+                    save_path,
+                    expected_model_name="mock-embedding",
+                )
 
     def test_3_rrf_fusion(self) -> None:
         """3. Kiểm tra thuật toán RRF k=60 hợp nhất thứ hạng từ BM25 và Dense."""
         bm25_res = [
             {"context_id": "A", "chunk_no": 0, "name": "Doc A", "text": "Content A"},
-            {"context_id": "B", "chunk_no": 0, "name": "Doc B", "text": "Content B"},
+            {
+                "context_id": "B",
+                "chunk_no": 0,
+                "name": "Doc B",
+                "text": "Content B",
+                "dense_score": 0.9,
+                "dense_rank": 1,
+            },
         ]
         dense_res = [
             {"context_id": "B", "chunk_no": 0, "name": "Doc B", "text": "Content B"},
@@ -126,6 +167,7 @@ class TestDenseRAG(unittest.TestCase):
         # Doc B xuất hiện ở cả BM25 (rank 2) và Dense (rank 1) -> RRF score cao nhất: 1/(60+2) + 1/(60+1)
         self.assertEqual(fused[0]["context_id"], "B")
         self.assertIn("rrf_score", fused[0])
+        self.assertEqual(fused[0]["dense_score"], 0.9)
         self.assertGreater(fused[0]["rrf_score"], fused[1]["rrf_score"])
 
     def test_4_vietnamese_reranker(self) -> None:
@@ -155,7 +197,7 @@ class TestDenseRAG(unittest.TestCase):
             embedding_model=None,
             reranker=None,
             bm25_top_k=50,
-            rrf_top_k=12,
+            rrf_top_k=50,
             rerank_top_k=3,
         )
         pred = pipeline.predict_one("Câu hỏi kiểm tra fallback?", mode="rag")
@@ -194,7 +236,7 @@ class TestDenseRAG(unittest.TestCase):
             bm25_top_k=50,
             dense_top_k=50,
             rrf_k=60,
-            rrf_top_k=12,
+            rrf_top_k=50,
             rerank_top_k=3,
         )
 
@@ -206,6 +248,77 @@ class TestDenseRAG(unittest.TestCase):
         self.assertIn("rerank_score", top_contexts[0])
         self.assertIn("rrf_score", top_contexts[0])
         print("[Smoke Test OK] Generated answer:", pred.answer)
+
+    def test_7_dense_error_fallback_is_explicit(self) -> None:
+        class BadEmbedding:
+            def encode(self, texts: list[str], **_: Any) -> Any:
+                raise RuntimeError("dense boom")
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            dense_index=object(),
+            embedding_model=BadEmbedding(),
+            allow_retrieval_fallback=True,
+        )
+        pred = pipeline.predict_one("Câu hỏi fallback", mode="rag")
+        self.assertEqual(pred.route, "rag")
+
+        strict_pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            dense_index=object(),
+            embedding_model=BadEmbedding(),
+        )
+        with self.assertRaisesRegex(RuntimeError, "Dense search thất bại"):
+            strict_pipeline.predict_one("Câu hỏi strict", mode="rag")
+
+    def test_8_dense_only_candidate_has_confidence(self) -> None:
+        import numpy as np
+
+        class EmptyBM25(MockSearchIndex):
+            def search_contexts(self, question: str, top_k: int = 50) -> list[dict[str, Any]]:
+                return []
+
+        metadata = [
+            {
+                "context_id": "dense-only",
+                "chunk_no": 0,
+                "name": "Luật Dense",
+                "link": "",
+                "text": "Quy định xử phạt từ Dense.",
+            }
+        ]
+        dense_index = DenseVectorIndex(
+            vectors=np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32),
+            metadata=metadata,
+        )
+
+        class FixedEmbedding:
+            def encode(self, texts: list[str], **_: Any) -> Any:
+                return np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+
+        pipeline = LegalQABaseline(
+            index=EmptyBM25(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            dense_index=dense_index,
+            embedding_model=FixedEmbedding(),
+        )
+        pred = pipeline.predict_one("Mức phạt?", mode="rag")
+        self.assertEqual(pred.evidence["top_contexts"][0]["context_id"], "dense-only")
+        self.assertGreater(pred.confidence, 0.0)
+
+    def test_9_context_top_k_controls_prompt_evidence(self) -> None:
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            reranker=MockReranker(),
+            rrf_top_k=50,
+            rerank_top_k=3,
+            context_top_k=2,
+        )
+        pred = pipeline.predict_one("Mức phạt?", mode="rag")
+        self.assertEqual(pred.evidence["num_contexts"], 2)
 
 
 if __name__ == "__main__":

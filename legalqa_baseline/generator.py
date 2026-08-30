@@ -62,15 +62,25 @@ class ViQwenRAGGenerator:
         device: str = "auto",
         torch_dtype: str = "auto",
         max_new_tokens: int = 512,
-        temperature: float = 0.1,
+        temperature: float = 0.0,
         top_p: float = 0.9,
+        max_input_tokens: int = 7168,
+        seed: int = 2026,
     ) -> None:
+        if max_new_tokens <= 0 or max_input_tokens <= 0:
+            raise ValueError("max_new_tokens and max_input_tokens must be greater than 0")
+        if temperature < 0:
+            raise ValueError("temperature must not be negative")
+        if not 0.0 < top_p <= 1.0:
+            raise ValueError("top_p must be in (0, 1]")
         self.model_name_or_path = model_name_or_path
         self.device_setting = device
         self.torch_dtype_setting = torch_dtype
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
         self.top_p = top_p
+        self.max_input_tokens = max_input_tokens
+        self.seed = seed
 
         self._tokenizer: Any = None
         self._model: Any = None
@@ -91,15 +101,24 @@ class ViQwenRAGGenerator:
         print(f"[Generator] Đang tải tokenizer & model: {self.model_name_or_path}...", file=sys.stderr)
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_name_or_path,
-            trust_remote_code=True,
+            trust_remote_code=False,
         )
+        self._tokenizer.truncation_side = "left"
 
         if self.torch_dtype_setting == "bfloat16":
             dtype = torch.bfloat16
         elif self.torch_dtype_setting == "float16":
             dtype = torch.float16
         else:
-            dtype = "auto"
+            wants_cuda = self.device_setting in ("auto", "cuda") and torch.cuda.is_available()
+            if wants_cuda:
+                dtype = (
+                    torch.bfloat16
+                    if getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+                    else torch.float16
+                )
+            else:
+                dtype = torch.float32
 
         if self.device_setting == "auto":
             device_map = "auto"
@@ -112,7 +131,7 @@ class ViQwenRAGGenerator:
             self.model_name_or_path,
             torch_dtype=dtype,
             device_map=device_map,
-            trust_remote_code=True,
+            trust_remote_code=False,
         )
         self._model.eval()
         print(f"[Generator] Tải model thành công trên device: {self._model.device}", file=sys.stderr)
@@ -132,7 +151,19 @@ class ViQwenRAGGenerator:
         else:
             prompt = format_raw_qwen_prompt(context=context, question=question)
 
-        inputs = self._tokenizer(prompt, return_tensors="pt")
+        model_context = int(
+            getattr(self._model.config, "max_position_embeddings", self.max_input_tokens)
+        )
+        prompt_limit = max(
+            1,
+            min(self.max_input_tokens, model_context - self.max_new_tokens),
+        )
+        inputs = self._tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=prompt_limit,
+        )
         inputs = {k: v.to(self._model.device) for k, v in inputs.items()}
 
         generate_kwargs: dict[str, Any] = {
@@ -148,10 +179,15 @@ class ViQwenRAGGenerator:
         else:
             generate_kwargs["do_sample"] = False
 
+        torch.manual_seed(self.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
         with torch.inference_mode():
             outputs = self._model.generate(**inputs, **generate_kwargs)
 
         input_len = inputs["input_ids"].shape[1]
         response_tokens = outputs[0][input_len:]
         response_text = self._tokenizer.decode(response_tokens, skip_special_tokens=True).strip()
+        if not response_text:
+            raise RuntimeError("Generator trả về answer rỗng")
         return response_text

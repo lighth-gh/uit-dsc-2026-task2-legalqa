@@ -1,5 +1,9 @@
 # Báo cáo baseline 0.1 – UIT DSC 2026 LegalQA
 
+> Báo cáo này chỉ áp dụng cho baseline lexical `extractive/hybrid` ban đầu. Nó
+> không phải kết quả validation của pipeline Dense/RRF/Reranker/Generator 0.2;
+> pipeline 0.2 cần được benchmark riêng bằng model và index thật.
+
 ## 1. Dữ liệu thực tế
 
 | Thành phần | Kết quả kiểm tra |
@@ -62,4 +66,3 @@ Leave-one-out trên 300 mẫu Train, seed 2026:
 3. Rerank Top 50 bằng `AITeamVN/Vietnamese_Reranker` hoặc `Qwen/Qwen3-Reranker-0.6B`.
 4. Fine-tune generator 1,5B bằng `question + retrieved context → answer`; kiểm soát tổng tham số toàn hệ thống dưới 4B.
 5. Tối ưu độ dài answer theo nhóm câu hỏi (`mẫu`, `mức phạt`, `thủ tục`, `trách nhiệm`) thay vì dùng một ngưỡng 520 từ cho tất cả.
-
