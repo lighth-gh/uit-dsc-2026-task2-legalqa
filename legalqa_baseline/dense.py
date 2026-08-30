@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
+from .hardware import recommended_cuda_dtype
 from .storage import iter_contexts
 from .text import chunk_passage
 
@@ -38,11 +40,16 @@ class VietnameseEmbeddingModel:
         self._tokenizer: Any = None
         self._model: Any = None
         self._device: Any = None
+        self._device_ids: list[int] = []
+        self._hidden_size = 0
+        self._multi_gpu = False
 
     def _load_model(self) -> None:
         if self._model is not None:
             return
 
+        # Must be set before importing Torch in a fresh CLI process.
+        os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
         try:
             import torch
             from transformers import AutoModel, AutoTokenizer
@@ -68,16 +75,61 @@ class VietnameseEmbeddingModel:
         )
         model_dtype = None
         if self._device.type == "cuda":
-            model_dtype = (
-                torch.bfloat16
-                if getattr(torch.cuda, "is_bf16_supported", lambda: False)()
-                else torch.float16
-            )
-        self._model = AutoModel.from_pretrained(
+            model_dtype = recommended_cuda_dtype(torch, device=self._device)
+        base_model = AutoModel.from_pretrained(
             self.model_name_or_path,
             torch_dtype=model_dtype,
             trust_remote_code=False,
         ).to(self._device)
+        base_model.eval()
+        self._hidden_size = int(getattr(base_model.config, "hidden_size", 0))
+
+        # Return only the CLS tensor so DataParallel does not need to gather a
+        # Transformers ModelOutput object (which varies between versions).
+        class _CLSEncoder(torch.nn.Module):
+            def __init__(self, encoder: Any) -> None:
+                super().__init__()
+                self.encoder = encoder
+
+            def forward(self, **kwargs: Any) -> Any:
+                outputs = self.encoder(**kwargs)
+                return outputs[0][:, 0]
+
+        cls_encoder = _CLSEncoder(base_model)
+        if self._device.type == "cuda":
+            selected_index = getattr(self._device, "index", None)
+            if selected_index is None:
+                self._device_ids = list(range(torch.cuda.device_count()))
+            else:
+                self._device_ids = [int(selected_index)]
+
+        if len(self._device_ids) > 1:
+            self._model = torch.nn.DataParallel(
+                cls_encoder,
+                device_ids=self._device_ids,
+                output_device=self._device_ids[0],
+            )
+            self._multi_gpu = True
+            gpu_names = [
+                f"{gpu_id}:{torch.cuda.get_device_name(gpu_id)}"
+                for gpu_id in self._device_ids
+            ]
+            print(
+                "[DenseEmbedding] Multi-GPU DataParallel active on "
+                f"{', '.join(gpu_names)} | total batch={self.batch_size} "
+                f"(~{max(1, self.batch_size // len(self._device_ids))}/GPU)",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            self._model = cls_encoder
+            if self._device.type == "cuda":
+                gpu_id = self._device_ids[0] if self._device_ids else 0
+                print(
+                    f"[DenseEmbedding] Using one GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}",
+                    file=sys.stderr,
+                    flush=True,
+                )
         self._model.eval()
 
     def encode(
@@ -95,7 +147,7 @@ class VietnameseEmbeddingModel:
         import torch
         import torch.nn.functional as F
 
-        bs = batch_size or self.batch_size
+        bs = self.batch_size if batch_size is None else batch_size
         if bs <= 0 or max_length <= 0:
             raise ValueError("batch_size and max_length must be greater than 0")
         all_embeddings: list[np.ndarray] = []
@@ -105,29 +157,63 @@ class VietnameseEmbeddingModel:
 
         started = time.time()
         last_log = started
+        reported_parallel_forward = False
 
-        for i in range(0, total_texts, bs):
-            batch_texts = [str(t or "") for t in texts[i : i + bs]]
-            encoded = self._tokenizer(
-                batch_texts,
-                padding=True,
-                truncation=True,
-                max_length=max_length,
-                return_tensors="pt",
-            ).to(self._device)
+        i = 0
+        effective_bs = bs
+        while i < total_texts:
+            current_bs = min(effective_bs, total_texts - i)
+            batch_texts = [str(t or "") for t in texts[i : i + current_bs]]
+            try:
+                encoded = self._tokenizer(
+                    batch_texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=max_length,
+                    return_tensors="pt",
+                ).to(self._device)
 
-            with torch.inference_mode():
-                outputs = self._model(**encoded)
-                # Vietnamese_Embedding_v2's Sentence-Transformers pooling
-                # configuration uses the CLS token, not mean pooling.
-                embeddings = outputs[0][:, 0]
-                if normalize_embeddings:
-                    embeddings = F.normalize(embeddings, p=2, dim=1)
-                # NumPy does not support torch.bfloat16. Convert explicitly so
-                # BF16-capable Kaggle GPUs do not fail during index building.
-                all_embeddings.append(_tensor_to_float32_numpy(embeddings))
+                with torch.inference_mode():
+                    # _CLSEncoder already performs the model-specific CLS
+                    # pooling and returns a plain tensor for DataParallel.
+                    embeddings = self._model(**encoded)
+                    if normalize_embeddings:
+                        embeddings = F.normalize(embeddings, p=2, dim=1)
+                    # NumPy does not support torch.bfloat16. Convert explicitly
+                    # so reduced-precision CUDA inference remains portable.
+                    all_embeddings.append(_tensor_to_float32_numpy(embeddings))
+                    if self._multi_gpu and not reported_parallel_forward:
+                        allocations = ", ".join(
+                            f"GPU {gpu_id}={torch.cuda.memory_allocated(gpu_id) / 1024**3:.2f} GiB"
+                            for gpu_id in self._device_ids
+                        )
+                        print(
+                            f"[DenseEmbedding] First multi-GPU forward OK ({allocations}).",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        reported_parallel_forward = True
+            except RuntimeError as exc:
+                is_cuda_oom = (
+                    self._device.type == "cuda"
+                    and "out of memory" in str(exc).lower()
+                )
+                if not is_cuda_oom or current_bs <= 1:
+                    raise
+                next_bs = max(1, current_bs // 2)
+                for gpu_id in self._device_ids or [0]:
+                    with torch.cuda.device(gpu_id):
+                        torch.cuda.empty_cache()
+                print(
+                    f"[DenseEmbedding] CUDA OOM with batch={current_bs}; retrying batch={next_bs}.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                effective_bs = next_bs
+                continue
 
-            done = min(i + bs, total_texts)
+            i += current_bs
+            done = i
             now = time.time()
             if show_progress and (now - last_log >= 10.0 or done == total_texts or done <= bs * 2):
                 elapsed = now - started
@@ -143,8 +229,7 @@ class VietnameseEmbeddingModel:
                 last_log = now
 
         if not all_embeddings:
-            hidden_size = int(getattr(self._model.config, "hidden_size", 0))
-            return np.empty((0, hidden_size), dtype=np.float32)
+            return np.empty((0, self._hidden_size), dtype=np.float32)
         return np.vstack(all_embeddings).astype(np.float32)
 
 
@@ -375,7 +460,7 @@ def build_dense_index(
     output_index_path: str | Path,
     embedding_model_name: str = "AITeamVN/Vietnamese_Embedding_v2",
     device: str = "auto",
-    batch_size: int = 32,
+    batch_size: int = 8,
     max_chunk_words: int = 620,
     overlap_words: int = 100,
     embedding_max_length: int = 2048,

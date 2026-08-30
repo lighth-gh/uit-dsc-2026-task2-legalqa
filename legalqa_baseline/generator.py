@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+from .hardware import recommended_cuda_dtype
 SYSTEM_PROMPT = """
 Bạn là một trợ lý hỏi đáp pháp luật tiếng Việt.
 Nhiệm vụ của bạn là trả lời câu hỏi dựa hoàn toàn trên các ngữ cảnh pháp luật được cung cấp.
@@ -112,11 +113,7 @@ class ViQwenRAGGenerator:
         else:
             wants_cuda = self.device_setting in ("auto", "cuda") and torch.cuda.is_available()
             if wants_cuda:
-                dtype = (
-                    torch.bfloat16
-                    if getattr(torch.cuda, "is_bf16_supported", lambda: False)()
-                    else torch.float16
-                )
+                dtype = recommended_cuda_dtype(torch)
             else:
                 dtype = torch.float32
 
@@ -134,7 +131,13 @@ class ViQwenRAGGenerator:
             trust_remote_code=False,
         )
         self._model.eval()
-        print(f"[Generator] Tải model thành công trên device: {self._model.device}", file=sys.stderr)
+        device_map_used = getattr(self._model, "hf_device_map", None)
+        if isinstance(device_map_used, dict):
+            mapped_devices = sorted({str(value) for value in device_map_used.values()})
+            placement = ", ".join(mapped_devices)
+        else:
+            placement = str(self._model.device)
+        print(f"[Generator] Tải model thành công trên device(s): {placement}", file=sys.stderr)
 
     def generate(self, context: str, question: str) -> str:
         """Sinh câu trả lời cho một cặp (context, question)."""

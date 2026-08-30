@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+from .hardware import recommended_cuda_dtype
 
 class VietnameseReranker:
     """Mô hình Cross-Encoder Tái xếp hạng (AITeamVN/Vietnamese_Reranker)."""
@@ -51,11 +52,7 @@ class VietnameseReranker:
         )
         model_dtype = None
         if self._device.type == "cuda":
-            model_dtype = (
-                torch.bfloat16
-                if getattr(torch.cuda, "is_bf16_supported", lambda: False)()
-                else torch.float16
-            )
+            model_dtype = recommended_cuda_dtype(torch, device=self._device)
         self._model = AutoModelForSequenceClassification.from_pretrained(
             self.model_name_or_path,
             torch_dtype=model_dtype,

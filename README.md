@@ -169,10 +169,13 @@ python -m legalqa_baseline build-dense-index \
   --contexts data/selected-contexts.zip \
   --dense-index artifacts/legalqa_dense \
   --embedding-model AITeamVN/Vietnamese_Embedding_v2 \
+  --batch-size 8 \
   --device cuda
 ```
 
 Dense index của bản 0.1 dùng mean-pooling/cosine không còn tương thích. Encoder hiện dùng đúng CLS-pooling và dot product theo model card; nếu CLI báo schema cũ, hãy build lại với `--force`.
+
+Khi có nhiều GPU CUDA, dense encoder tự động dùng DataParallel trên tất cả GPU hiện diện. `--batch-size` là batch tổng (không phải batch mỗi GPU); batch 8 là mức an toàn cho 2x Tesla T4. Nếu vẫn hết VRAM, encoder tự động retry với batch nhỏ hơn. T4 dùng FP16; BF16 chỉ được chọn trên GPU Ampere trở lên.
 
 Hoặc sử dụng script chạy RAG chuyên biệt:
 

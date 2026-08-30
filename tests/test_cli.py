@@ -79,6 +79,18 @@ class CliTests(unittest.TestCase):
             self.assertEqual(command_build_dense_index(dense_args), 0)
         self.assertEqual(mocked_dense.call_args.kwargs["embedding_max_length"], 1024)
 
+    def test_dense_batch_default_is_t4_safe(self) -> None:
+        args = make_parser().parse_args(
+            [
+                "build-dense-index",
+                "--contexts",
+                "contexts.zip",
+                "--dense-index",
+                "dense",
+            ]
+        )
+        self.assertEqual(args.batch_size, 8)
+
 
 if __name__ == "__main__":
     unittest.main()
