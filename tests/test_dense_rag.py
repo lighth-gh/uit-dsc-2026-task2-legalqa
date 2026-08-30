@@ -9,7 +9,11 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from legalqa_baseline.dense import DenseVectorIndex, VietnameseEmbeddingModel
+from legalqa_baseline.dense import (
+    DenseVectorIndex,
+    VietnameseEmbeddingModel,
+    _tensor_to_float32_numpy,
+)
 from legalqa_baseline.pipeline import LegalQABaseline, reciprocal_rank_fusion
 from legalqa_baseline.reranker import VietnameseReranker
 
@@ -76,6 +80,27 @@ class MockSearchIndex:
 
 
 class TestDenseRAG(unittest.TestCase):
+    def test_0_bfloat_tensor_is_cast_before_numpy(self) -> None:
+        class FakeTensor:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            def float(self) -> "FakeTensor":
+                self.calls.append("float")
+                return self
+
+            def cpu(self) -> "FakeTensor":
+                self.calls.append("cpu")
+                return self
+
+            def numpy(self) -> str:
+                self.calls.append("numpy")
+                return "array"
+
+        tensor = FakeTensor()
+        self.assertEqual(_tensor_to_float32_numpy(tensor), "array")
+        self.assertEqual(tensor.calls, ["float", "cpu", "numpy"])
+
     def test_1_embedding_encoding(self) -> None:
         """1. Kiểm tra sinh vector và chuẩn hóa L2 của embedding."""
         import numpy as np

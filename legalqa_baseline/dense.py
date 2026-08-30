@@ -16,6 +16,11 @@ DENSE_SCHEMA_VERSION = 3
 VALID_SIMILARITIES = {"cosine", "dot_product"}
 
 
+def _tensor_to_float32_numpy(tensor: Any) -> Any:
+    """Convert CUDA FP16/BF16 tensors to a NumPy-compatible FP32 array."""
+    return tensor.float().cpu().numpy()
+
+
 class VietnameseEmbeddingModel:
     """Mô hình tạo vector embedding tiếng Việt (AITeamVN/Vietnamese_Embedding_v2)."""
 
@@ -110,7 +115,9 @@ class VietnameseEmbeddingModel:
                 embeddings = outputs[0][:, 0]
                 if normalize_embeddings:
                     embeddings = F.normalize(embeddings, p=2, dim=1)
-                all_embeddings.append(embeddings.cpu().numpy())
+                # NumPy does not support torch.bfloat16. Convert explicitly so
+                # BF16-capable Kaggle GPUs do not fail during index building.
+                all_embeddings.append(_tensor_to_float32_numpy(embeddings))
 
         if not all_embeddings:
             hidden_size = int(getattr(self._model.config, "hidden_size", 0))
