@@ -64,12 +64,19 @@ def query_terms(text: str, max_terms: int = 36) -> list[str]:
 
 
 def _split_on_headings(text: str) -> list[str]:
-    matches = sorted(
+    all_matches = sorted(
         [*ARTICLE_RE.finditer(text), *APPENDIX_RE.finditer(text)],
         key=lambda match: match.start(),
     )
-    if not matches:
+    if not all_matches:
         return [text]
+
+    matches = []
+    seen_starts: set[int] = set()
+    for match in all_matches:
+        if match.start() not in seen_starts:
+            seen_starts.add(match.start())
+            matches.append(match)
 
     pieces: list[str] = []
     if matches[0].start() > 0:
@@ -115,8 +122,10 @@ def chunk_passage(
     text = normalize_text(passage)
     chunks: list[str] = []
     for piece in _split_on_headings(text):
+        is_heading_piece = bool(ARTICLE_RE.match(piece) or APPENDIX_RE.match(piece))
+        preserve_short_piece = is_heading_piece and len(piece.split()) < min_words
         for chunk in _word_windows(piece, max_words, overlap_words):
-            if len(chunk.split()) >= min_words:
+            if preserve_short_piece or len(chunk.split()) >= min_words:
                 chunks.append(chunk)
     return chunks
 

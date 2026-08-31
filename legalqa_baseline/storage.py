@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import sys
+import tempfile
 import time
 import unicodedata
 import zipfile
@@ -23,7 +25,11 @@ def load_qa(path: str | Path) -> dict[str, dict[str, Any]]:
     if not isinstance(data, dict):
         raise ValueError(f"{path}: top-level phải là JSON object")
     for sample_id, item in data.items():
-        if not isinstance(item, dict) or not isinstance(item.get("question"), str):
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("question"), str)
+            or not str(item.get("question") or "").strip()
+        ):
             raise ValueError(f"{path}: mẫu {sample_id!r} không có question hợp lệ")
     return {str(key): value for key, value in data.items()}
 
@@ -41,7 +47,13 @@ def write_predictions(path: str | Path, predictions: dict[str, str]) -> None:
 def iter_contexts(path: str | Path) -> Iterator[dict[str, Any]]:
     source = Path(path)
     if source.is_dir():
-        for item_path in sorted(source.rglob("context_*.json")):
+        items = [
+            p
+            for p in source.rglob("context_*.json")
+            if p.is_file() and not p.name.startswith(".") and not any(part.startswith(".") for part in p.parts)
+        ]
+        items.sort(key=lambda p: (p.name, str(p)))
+        for item_path in items:
             with item_path.open("r", encoding="utf-8") as handle:
                 yield json.load(handle)
         return
@@ -49,8 +61,15 @@ def iter_contexts(path: str | Path) -> Iterator[dict[str, Any]]:
     if not zipfile.is_zipfile(source):
         raise ValueError("--contexts phải là thư mục context_*.json hoặc tệp .zip")
     with zipfile.ZipFile(source) as archive:
-        names = sorted(name for name in archive.namelist() if name.endswith(".json"))
-        for name in names:
+        valid_names: list[str] = []
+        for name in archive.namelist():
+            if name.startswith("__MACOSX/") or "/." in f"/{name}":
+                continue
+            file_name = Path(name).name
+            if file_name.startswith("context_") and file_name.endswith(".json") and not file_name.startswith("."):
+                valid_names.append(name)
+        valid_names.sort(key=lambda n: (Path(n).name, n))
+        for name in valid_names:
             yield json.loads(archive.read(name).decode("utf-8"))
 
 
@@ -101,6 +120,49 @@ def _create_schema(connection: sqlite3.Connection, force: bool) -> None:
     )
 
 
+def _sqlite_sidecar_paths(db_path: Path) -> tuple[Path, Path, Path]:
+    return (
+        Path(f"{db_path}-wal"),
+        Path(f"{db_path}-shm"),
+        Path(f"{db_path}-journal"),
+    )
+
+
+def _cleanup_temporary_database(db_path: Path) -> None:
+    for path in (db_path, *_sqlite_sidecar_paths(db_path)):
+        path.unlink(missing_ok=True)
+
+
+def _quiesce_database(db_path: Path) -> None:
+    wal_path, shm_path, journal_path = _sqlite_sidecar_paths(db_path)
+    if not any(path.exists() for path in (wal_path, shm_path, journal_path)):
+        return
+
+    connection = sqlite3.connect(db_path, timeout=1.0)
+    try:
+        connection.execute("PRAGMA busy_timeout=1000")
+        # Reading the schema first lets SQLite recover a hot rollback journal.
+        connection.execute("SELECT count(*) FROM sqlite_master").fetchone()
+        checkpoint = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if checkpoint is not None and int(checkpoint[0]) != 0:
+            raise RuntimeError(
+                "Không thể thay index đang được sử dụng; hãy đóng các SearchIndex đang mở"
+            )
+        journal_mode = connection.execute("PRAGMA journal_mode=DELETE").fetchone()
+        if journal_mode is None or str(journal_mode[0]).lower() != "delete":
+            raise RuntimeError("Không thể hợp nhất WAL trước khi thay index")
+    finally:
+        connection.close()
+
+    remaining = [
+        path for path in (wal_path, shm_path, journal_path) if path.exists()
+    ]
+    if remaining:
+        raise RuntimeError(
+            "Không thể thay index khi SQLite sidecar vẫn đang được sử dụng"
+        )
+
+
 def build_index(
     contexts_path: str | Path,
     train_path: str | Path,
@@ -123,100 +185,145 @@ def build_index(
             f"{train_path}: train sample thiếu answer hợp lệ ({preview}{suffix})"
         )
 
-    connection = _connect(db_path)
+    target_path = Path(db_path).resolve()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    if target_path.exists() and not force:
+        raise FileExistsError("Index đã tồn tại; thêm --force nếu muốn xây lại")
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target_path.name}.",
+        suffix=".building",
+        dir=target_path.parent,
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+
     try:
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=NORMAL")
-        connection.execute("PRAGMA temp_store=MEMORY")
-        connection.execute("PRAGMA cache_size=-200000")
-        _create_schema(connection, force=force)
+        connection = _connect(temporary_path)
+        try:
+            # The temporary database is never queried while it is being built, so
+            # DELETE mode keeps the completed index in a single promotable file.
+            connection.execute("PRAGMA journal_mode=DELETE")
+            connection.execute("PRAGMA synchronous=NORMAL")
+            connection.execute("PRAGMA temp_store=MEMORY")
+            connection.execute("PRAGMA cache_size=-200000")
+            _create_schema(connection, force=False)
 
-        train_rows = [
-            (sample_id, item["question"], str(item.get("answer") or ""))
-            for sample_id, item in train.items()
-        ]
-        connection.executemany(
-            "INSERT INTO train_fts(sample_id, question, answer) VALUES (?, ?, ?)",
-            train_rows,
-        )
-
-        doc_count = 0
-        chunk_count = 0
-        empty_docs = 0
-        corpus_hasher = hashlib.sha256()
-        batch: list[tuple[str, int, str, str, str]] = []
-        for context in iter_contexts(contexts_path):
-            doc_count += 1
-            passage = str(context.get("passage") or "")
-            chunks = chunk_passage(
-                passage,
-                max_words=max_chunk_words,
-                overlap_words=overlap_words,
-            )
-            if not chunks:
-                empty_docs += 1
-                continue
-            context_id = str(context.get("id", ""))
-            name = str(context.get("name") or "")
-            link = str(context.get("link") or "")
-            for chunk_no, text in enumerate(chunks):
-                corpus_hasher.update(context_id.encode("utf-8"))
-                corpus_hasher.update(b"\0")
-                corpus_hasher.update(str(chunk_no).encode("ascii"))
-                corpus_hasher.update(b"\0")
-                corpus_hasher.update(name.encode("utf-8"))
-                corpus_hasher.update(b"\0")
-                corpus_hasher.update(link.encode("utf-8"))
-                corpus_hasher.update(b"\0")
-                corpus_hasher.update(text.encode("utf-8"))
-                corpus_hasher.update(b"\0")
-                batch.append((context_id, chunk_no, name, link, text))
-                chunk_count += 1
-                if len(batch) >= 1000:
-                    connection.executemany(
-                        "INSERT INTO contexts_fts(context_id, chunk_no, name, link, text) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        batch,
-                    )
-                    batch.clear()
-            if doc_count % 250 == 0:
-                connection.commit()
-                print(
-                    f"[build] documents={doc_count:,} chunks={chunk_count:,}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-        if batch:
+            train_rows = [
+                (sample_id, item["question"], str(item.get("answer") or ""))
+                for sample_id, item in train.items()
+            ]
             connection.executemany(
-                "INSERT INTO contexts_fts(context_id, chunk_no, name, link, text) "
-                "VALUES (?, ?, ?, ?, ?)",
-                batch,
+                "INSERT INTO train_fts(sample_id, question, answer) VALUES (?, ?, ?)",
+                train_rows,
             )
 
-        metadata = {
-            "schema_version": SCHEMA_VERSION,
-            "max_chunk_words": str(max_chunk_words),
-            "overlap_words": str(overlap_words),
-            "documents": str(doc_count),
-            "chunks": str(chunk_count),
-            "train_samples": str(len(train_rows)),
-            "corpus_sha256": corpus_hasher.hexdigest(),
-        }
-        connection.executemany(
-            "INSERT INTO metadata(key, value) VALUES (?, ?)", metadata.items()
-        )
-        connection.commit()
-        connection.execute("PRAGMA optimize")
-        elapsed = time.time() - started
-        return {
-            "documents": doc_count,
-            "chunks": chunk_count,
-            "empty_documents": empty_docs,
-            "train_samples": len(train_rows),
-            "elapsed_seconds": round(elapsed, 2),
-        }
+            doc_count = 0
+            chunk_count = 0
+            empty_docs = 0
+            corpus_hasher = hashlib.sha256()
+            batch: list[tuple[str, int, str, str, str]] = []
+            for context in iter_contexts(contexts_path):
+                doc_count += 1
+                passage = str(context.get("passage") or "")
+                chunks = chunk_passage(
+                    passage,
+                    max_words=max_chunk_words,
+                    overlap_words=overlap_words,
+                )
+                if not chunks:
+                    empty_docs += 1
+                    continue
+                context_id = str(context.get("id", ""))
+                name = str(context.get("name") or "")
+                link = str(context.get("link") or "")
+                for chunk_no, text in enumerate(chunks):
+                    corpus_hasher.update(context_id.encode("utf-8"))
+                    corpus_hasher.update(b"\0")
+                    corpus_hasher.update(str(chunk_no).encode("ascii"))
+                    corpus_hasher.update(b"\0")
+                    corpus_hasher.update(name.encode("utf-8"))
+                    corpus_hasher.update(b"\0")
+                    corpus_hasher.update(link.encode("utf-8"))
+                    corpus_hasher.update(b"\0")
+                    corpus_hasher.update(text.encode("utf-8"))
+                    corpus_hasher.update(b"\0")
+                    batch.append((context_id, chunk_no, name, link, text))
+                    chunk_count += 1
+                    if len(batch) >= 1000:
+                        connection.executemany(
+                            "INSERT INTO contexts_fts(context_id, chunk_no, name, link, text) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            batch,
+                        )
+                        batch.clear()
+                if doc_count % 250 == 0:
+                    connection.commit()
+                    print(
+                        f"[build] documents={doc_count:,} chunks={chunk_count:,}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+            if batch:
+                connection.executemany(
+                    "INSERT INTO contexts_fts(context_id, chunk_no, name, link, text) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    batch,
+                )
+
+            metadata = {
+                "schema_version": SCHEMA_VERSION,
+                "max_chunk_words": str(max_chunk_words),
+                "overlap_words": str(overlap_words),
+                "documents": str(doc_count),
+                "chunks": str(chunk_count),
+                "train_samples": str(len(train_rows)),
+                "corpus_sha256": corpus_hasher.hexdigest(),
+            }
+            connection.executemany(
+                "INSERT INTO metadata(key, value) VALUES (?, ?)", metadata.items()
+            )
+            connection.commit()
+            connection.execute("PRAGMA optimize")
+            connection.commit()
+            integrity = connection.execute("PRAGMA quick_check").fetchone()
+            if integrity is None or str(integrity[0]).lower() != "ok":
+                raise RuntimeError(f"SQLite index không toàn vẹn: {integrity}")
+        finally:
+            connection.close()
+
+        temporary_sidecars = [
+            path for path in _sqlite_sidecar_paths(temporary_path) if path.exists()
+        ]
+        if temporary_sidecars:
+            raise RuntimeError(
+                "SQLite index tạm chưa được hợp nhất thành một file hoàn chỉnh"
+            )
+        if target_path.exists():
+            if not force:
+                raise FileExistsError("Index đã tồn tại; thêm --force nếu muốn xây lại")
+            _quiesce_database(target_path)
+        else:
+            orphan_sidecars = [
+                path for path in _sqlite_sidecar_paths(target_path) if path.exists()
+            ]
+            if orphan_sidecars:
+                raise RuntimeError(
+                    "Không thể tạo index cạnh SQLite sidecar mồ côi; "
+                    "hãy khôi phục hoặc dọn các file -wal/-shm/-journal trước"
+                )
+        temporary_path.replace(target_path)
     finally:
-        connection.close()
+        _cleanup_temporary_database(temporary_path)
+
+    elapsed = time.time() - started
+    return {
+        "documents": doc_count,
+        "chunks": chunk_count,
+        "empty_documents": empty_docs,
+        "train_samples": len(train_rows),
+        "elapsed_seconds": round(elapsed, 2),
+    }
 
 
 def _fts_query(terms: list[str]) -> str:
