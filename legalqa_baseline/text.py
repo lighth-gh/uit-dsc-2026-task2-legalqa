@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Iterable
+from typing import Any
 
 
 # Chỉ bỏ các hư từ rất phổ biến. Giữ lại từ khóa pháp lý như "điều", "khoản",
@@ -199,7 +200,70 @@ def best_excerpt(text: str, question: str, max_words: int = 520) -> str:
     last_score = 3.0 * len(terms.intersection(last_tokens)) + min(
         sum(token in terms for token in last_tokens), 2 * len(terms)
     )
-    if last_score > best_score:
-        best_start = last_start
-
     return " ".join(words[best_start : best_start + window_size]).strip()
+
+
+LONG_ANSWER_PATTERNS: tuple[str, ...] = (
+    "mẫu",
+    "biểu mẫu",
+    "phụ lục",
+    "liệt kê",
+    "bao gồm những",
+    "nội dung điều",
+    "nội dung khoản",
+    "các trường hợp",
+    "điều kiện",
+    "hồ sơ gồm",
+    "quyền và nghĩa vụ",
+)
+
+
+def is_long_answer_question(
+    question: str, patterns: Iterable[str] = LONG_ANSWER_PATTERNS
+) -> bool:
+    """Kiểm tra câu hỏi có thuộc nhóm yêu cầu câu trả lời dài/liệt kê/nguyên văn hay không."""
+    if not isinstance(question, str):
+        return False
+    normalized = unicodedata.normalize("NFC", question.casefold())
+    for pattern in patterns:
+        pat_norm = unicodedata.normalize("NFC", str(pattern).casefold().strip())
+        if pat_norm and pat_norm in normalized:
+            return True
+    return False
+
+
+def merge_adjacent_chunks(
+    chunks: list[dict[str, Any]],
+    max_words: int = 800,
+) -> str:
+    """Ghép nội dung các chunk (đã sắp xếp theo chunk_no) thành văn bản trích xuất dài."""
+    if max_words <= 0:
+        raise ValueError("max_words phải lớn hơn 0")
+    if not chunks:
+        return ""
+    sorted_chunks = sorted(chunks, key=lambda c: int(c.get("chunk_no", 0)))
+    merged_texts: list[str] = []
+    total_words = 0
+
+    for chunk in sorted_chunks:
+        text = str(chunk.get("text") or "").strip()
+        if not text:
+            continue
+        words = text.split()
+        if not words:
+            continue
+        # Tránh trùng lặp hoàn toàn nếu 2 chunk liên tiếp giống hệt nhau
+        if merged_texts and text == merged_texts[-1]:
+            continue
+        if total_words + len(words) <= max_words:
+            merged_texts.append(text)
+            total_words += len(words)
+        else:
+            remaining = max_words - total_words
+            if remaining > 0:
+                merged_texts.append(" ".join(words[:remaining]))
+                total_words += remaining
+            break
+
+    return "\n\n".join(merged_texts).strip()
+

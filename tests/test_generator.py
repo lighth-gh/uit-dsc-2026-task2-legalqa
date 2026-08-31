@@ -244,6 +244,18 @@ class GeneratorPromptTests(unittest.TestCase):
         self.assertIn("### Ngữ cảnh:", RAG_TEMPLATE)
         self.assertIn("### Câu hỏi:", RAG_TEMPLATE)
         self.assertIn("### Trả lời:", RAG_TEMPLATE)
+        # Bỏ mọi yêu cầu ngắn gọn / tóm tắt / súc tích
+        self.assertNotIn("ngắn gọn", RAG_TEMPLATE.lower())
+        self.assertNotIn("súc tích", RAG_TEMPLATE.lower())
+        self.assertNotIn("chỉ đưa ra kết luận", RAG_TEMPLATE.lower())
+        self.assertNotIn("concise", RAG_TEMPLATE.lower())
+        self.assertNotIn("brief", RAG_TEMPLATE.lower())
+        # Đảm bảo có các quy tắc trích xuất nguyên văn đầy đủ
+        self.assertIn("Không được tóm tắt hoặc lược bỏ", RAG_TEMPLATE)
+        self.assertIn("trả lời đầy đủ các mục liên quan", RAG_TEMPLATE)
+        self.assertIn("Giữ nguyên số điều, khoản, điểm", RAG_TEMPLATE)
+        self.assertIn("Ưu tiên sao chép nguyên văn nội dung trả lời từ CONTEXT", RAG_TEMPLATE)
+        self.assertIn('Không mở đầu bằng "Dựa trên ngữ cảnh được cung cấp"', RAG_TEMPLATE)
 
     def test_build_user_prompt(self) -> None:
         context = "Điều 1. Quy định chung..."
@@ -291,7 +303,7 @@ class ViQwenRAGGeneratorTests(unittest.TestCase):
 
     def test_generate_budgets_context_without_truncating_chat_envelope(self) -> None:
         tokenizer = _RecordingTokenizer()
-        model = _RecordingModel(max_position_embeddings=1100)
+        model = _RecordingModel(max_position_embeddings=2500)
         generator = self._make_generator(
             tokenizer,
             model,
@@ -324,7 +336,7 @@ class ViQwenRAGGeneratorTests(unittest.TestCase):
         generate_kwargs = model.generate_kwargs or {}
         effective_max_new_tokens = generate_kwargs.get("max_new_tokens", generator.max_new_tokens)
         input_length = generate_kwargs["input_ids"].shape[1]
-        self.assertLessEqual(input_length + effective_max_new_tokens, 1100)
+        self.assertLessEqual(input_length + effective_max_new_tokens, 2500)
 
     def test_generate_rejects_output_budget_at_model_context(self) -> None:
         tokenizer = _RecordingTokenizer()

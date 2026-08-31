@@ -167,6 +167,17 @@ def parse_args() -> argparse.Namespace:
         help="Ngưỡng tương đồng KNN",
     )
     parser.add_argument(
+        "--disable-long-answer-extractive",
+        action="store_true",
+        help="Tắt cơ chế trích xuất đa chunk cho nhóm câu hỏi dài (LONG_ANSWER_PATTERNS)",
+    )
+    parser.add_argument(
+        "--max-long-answer-words",
+        type=int,
+        default=800,
+        help="Số từ tối đa cho đáp án trích xuất đa chunk",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=0,
@@ -295,6 +306,8 @@ def main() -> int:
             dense_query_max_length=args.dense_query_max_length,
             reranker_max_length=args.reranker_max_length,
             allow_retrieval_fallback=args.allow_retrieval_fallback,
+            enable_long_answer_extractive=not args.disable_long_answer_extractive,
+            max_long_answer_words=args.max_long_answer_words,
         )
 
         total = len(sample_ids)

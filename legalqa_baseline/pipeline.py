@@ -9,7 +9,15 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .storage import SearchIndex
-from .text import STOPWORDS, best_excerpt, query_terms, tokenize
+from .text import (
+    LONG_ANSWER_PATTERNS,
+    STOPWORDS,
+    best_excerpt,
+    is_long_answer_question,
+    merge_adjacent_chunks,
+    query_terms,
+    tokenize,
+)
 
 
 Mode = Literal["extractive", "knn", "hybrid", "rag", "hybrid_rag"]
@@ -231,10 +239,13 @@ class LegalQABaseline:
         dense_query_max_length: int = 256,
         reranker_max_length: int = 2304,
         allow_retrieval_fallback: bool = False,
+        enable_long_answer_extractive: bool = True,
+        max_long_answer_words: int = 800,
     ):
         positive = {
             "top_k": top_k,
             "max_answer_words": max_answer_words,
+            "max_long_answer_words": max_long_answer_words,
             "context_top_k": context_top_k,
             "bm25_top_k": bm25_top_k,
             "dense_top_k": dense_top_k,
@@ -256,6 +267,8 @@ class LegalQABaseline:
         self.index = index
         self.top_k = top_k
         self.max_answer_words = max_answer_words
+        self.max_long_answer_words = max_long_answer_words
+        self.enable_long_answer_extractive = bool(enable_long_answer_extractive)
         self.knn_threshold = knn_threshold
         self.generator = generator
         self.context_top_k = context_top_k
@@ -281,6 +294,36 @@ class LegalQABaseline:
             reverse=True,
         )
         best = ranked[0]
+        if self.enable_long_answer_extractive and is_long_answer_question(question):
+            context_id = str(best.get("context_id") or "").strip()
+            chunk_no = int(best.get("chunk_no", 0))
+            adjacent_nos = [chunk_no]
+            if chunk_no > 0:
+                adjacent_nos.append(chunk_no - 1)
+            adjacent_nos.append(chunk_no + 1)
+            adjacent_chunks = self.index.get_context_chunks(
+                context_id, chunk_nos=adjacent_nos
+            )
+            if adjacent_chunks:
+                answer = merge_adjacent_chunks(
+                    adjacent_chunks, max_words=self.max_long_answer_words
+                )
+                evidence = {
+                    "context_id": best["context_id"],
+                    "chunk_no": best["chunk_no"],
+                    "name": best["name"],
+                    "link": best["link"],
+                    "bm25_score": best["bm25_score"],
+                    "merged_chunk_nos": [c["chunk_no"] for c in adjacent_chunks],
+                }
+                score = _context_rerank_score(question, best)
+                confidence = (
+                    max(0.0, min(1.0, score / 20.0))
+                    if math.isfinite(score)
+                    else 0.0
+                )
+                return Prediction(answer, "extractive_long", confidence, evidence)
+
         answer = best_excerpt(
             best["text"], question=question, max_words=self.max_answer_words
         )
@@ -394,6 +437,42 @@ class LegalQABaseline:
         top_chunks = top_chunks[: self.context_top_k]
         if not top_chunks:
             return None
+
+        best = top_chunks[0]
+
+        if self.enable_long_answer_extractive and is_long_answer_question(question):
+            context_id = str(best.get("context_id") or "").strip()
+            chunk_no = int(best.get("chunk_no", 0))
+            adjacent_nos = [chunk_no]
+            if chunk_no > 0:
+                adjacent_nos.append(chunk_no - 1)
+            adjacent_nos.append(chunk_no + 1)
+            adjacent_chunks = self.index.get_context_chunks(
+                context_id, chunk_nos=adjacent_nos
+            )
+            if adjacent_chunks:
+                merged_answer = merge_adjacent_chunks(
+                    adjacent_chunks, max_words=self.max_long_answer_words
+                )
+                if merged_answer:
+                    evidence = {
+                        "num_contexts": len(top_chunks),
+                        "top_contexts": [
+                            {
+                                "context_id": c["context_id"],
+                                "chunk_no": c["chunk_no"],
+                                "name": c.get("name"),
+                                "bm25_score": c.get("bm25_score"),
+                                "dense_score": c.get("dense_score"),
+                                "rrf_score": c.get("rrf_score"),
+                                "rerank_score": c.get("rerank_score"),
+                            }
+                            for c in top_chunks
+                        ],
+                        "merged_chunk_nos": [c["chunk_no"] for c in adjacent_chunks],
+                    }
+                    confidence = _rag_confidence(question, best)
+                    return Prediction(merged_answer, "extractive_long", confidence, evidence)
 
         context_blocks = []
         for idx, chunk in enumerate(top_chunks, start=1):

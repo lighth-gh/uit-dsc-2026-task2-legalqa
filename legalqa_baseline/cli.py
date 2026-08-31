@@ -349,6 +349,8 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         dense_query_max_length=getattr(args, "dense_query_max_length", 256),
         reranker_max_length=getattr(args, "reranker_max_length", 2304),
         allow_retrieval_fallback=allow_fallback,
+        enable_long_answer_extractive=getattr(args, "enable_long_answer_extractive", True),
+        max_long_answer_words=getattr(args, "max_long_answer_words", 800),
     )
 
 

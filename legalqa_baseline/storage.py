@@ -522,3 +522,39 @@ class SearchIndex:
         ).fetchall()
         output = [dict(row) for row in rows if str(row["sample_id"]) != str(exclude_id)]
         return output[:top_k]
+
+    def get_context_chunks(
+        self,
+        context_id: str,
+        chunk_nos: list[int] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Lấy các chunk của một context_id, tùy chọn lọc theo danh sách chunk_no."""
+        cid = str(context_id or "").strip()
+        if not cid:
+            return []
+        if chunk_nos is None:
+            rows = self.connection.execute(
+                """
+                SELECT context_id, chunk_no, name, link, text
+                FROM contexts_fts
+                WHERE context_id = ?
+                ORDER BY CAST(chunk_no AS INTEGER), rowid
+                """,
+                (cid,),
+            ).fetchall()
+        else:
+            valid_nos = [int(no) for no in chunk_nos if isinstance(no, (int, str)) and str(no).isdigit()]
+            if not valid_nos:
+                return []
+            placeholders = ",".join("?" for _ in valid_nos)
+            rows = self.connection.execute(
+                f"""
+                SELECT context_id, chunk_no, name, link, text
+                FROM contexts_fts
+                WHERE context_id = ? AND CAST(chunk_no AS INTEGER) IN ({placeholders})
+                ORDER BY CAST(chunk_no AS INTEGER), rowid
+                """,
+                [cid, *valid_nos],
+            ).fetchall()
+        return [dict(row) for row in rows]
+
