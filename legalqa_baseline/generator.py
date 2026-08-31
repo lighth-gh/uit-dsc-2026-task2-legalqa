@@ -4,6 +4,8 @@ import sys
 from typing import Any
 
 from .hardware import recommended_cuda_dtype
+
+
 SYSTEM_PROMPT = """
 Bạn là một trợ lý hỏi đáp pháp luật tiếng Việt.
 Nhiệm vụ của bạn là trả lời câu hỏi dựa hoàn toàn trên các ngữ cảnh pháp luật được cung cấp.
@@ -104,7 +106,6 @@ class ViQwenRAGGenerator:
             self.model_name_or_path,
             trust_remote_code=False,
         )
-        self._tokenizer.truncation_side = "left"
 
         if self.torch_dtype_setting == "bfloat16":
             dtype = torch.bfloat16
@@ -139,41 +140,124 @@ class ViQwenRAGGenerator:
             placement = str(self._model.device)
         print(f"[Generator] Tải model thành công trên device(s): {placement}", file=sys.stderr)
 
+    def _render_prompt(self, context: str, question: str) -> str:
+        """Render a Qwen chat prompt, with a raw ChatML fallback."""
+        messages = build_chat_messages(context=context, question=question)
+        apply_chat_template = getattr(self._tokenizer, "apply_chat_template", None)
+        chat_template = getattr(self._tokenizer, "chat_template", None)
+        has_default_template = not isinstance(chat_template, dict) or "default" in chat_template
+        if callable(apply_chat_template) and chat_template and has_default_template:
+            return apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        return format_raw_qwen_prompt(context=context, question=question)
+
+    def _tokenize_prompt(self, prompt: str) -> dict[str, Any]:
+        """Tokenize an already formatted chat prompt without adding tokens twice."""
+        return self._tokenizer(
+            prompt,
+            return_tensors="pt",
+            add_special_tokens=False,
+        )
+
+    @staticmethod
+    def _input_length(inputs: dict[str, Any]) -> int:
+        return int(inputs["input_ids"].shape[-1])
+
+    def _prepare_inputs(
+        self,
+        context: str,
+        question: str,
+        prompt_limit: int,
+    ) -> dict[str, Any]:
+        """Fit only the context to the prompt budget, preserving chat framing and question."""
+        prompt = self._render_prompt(context=context, question=question)
+        inputs = self._tokenize_prompt(prompt)
+        if self._input_length(inputs) <= prompt_limit:
+            return inputs
+
+        empty_context_prompt = self._render_prompt(context="", question=question)
+        empty_context_inputs = self._tokenize_prompt(empty_context_prompt)
+        empty_context_length = self._input_length(empty_context_inputs)
+        if empty_context_length > prompt_limit:
+            raise ValueError(
+                "max_input_tokens quá nhỏ để chứa system prompt và question; "
+                "hãy tăng max_input_tokens hoặc giảm max_new_tokens"
+            )
+
+        stripped_context = context.strip()
+        low = 0
+        high = len(stripped_context)
+        best_inputs = empty_context_inputs
+
+        # Keep a valid Unicode prefix containing the highest-ranked chunks. Using
+        # text boundaries avoids replacement characters from decoding a partial
+        # byte-level BPE sequence.
+        while low <= high:
+            keep_characters = (low + high) // 2
+            shortened_context = stripped_context[:keep_characters].rstrip()
+            candidate_prompt = self._render_prompt(
+                context=shortened_context,
+                question=question,
+            )
+            candidate_inputs = self._tokenize_prompt(candidate_prompt)
+            if self._input_length(candidate_inputs) <= prompt_limit:
+                best_inputs = candidate_inputs
+                low = keep_characters + 1
+            else:
+                high = keep_characters - 1
+        return best_inputs
+
+    def _generation_token_ids(self) -> tuple[Any, Any]:
+        """Preserve the checkpoint's multi-EOS and padding configuration."""
+        generation_config = getattr(self._model, "generation_config", None)
+        eos_token_id = getattr(generation_config, "eos_token_id", None)
+        pad_token_id = getattr(generation_config, "pad_token_id", None)
+
+        if eos_token_id is None:
+            eos_token_id = getattr(self._tokenizer, "eos_token_id", None)
+        if pad_token_id is None:
+            pad_token_id = getattr(self._tokenizer, "pad_token_id", None)
+        if pad_token_id is None:
+            tokenizer_eos = getattr(self._tokenizer, "eos_token_id", None)
+            if isinstance(tokenizer_eos, int):
+                pad_token_id = tokenizer_eos
+        return eos_token_id, pad_token_id
+
     def generate(self, context: str, question: str) -> str:
         """Sinh câu trả lời cho một cặp (context, question)."""
         self._load_model()
         import torch
 
-        messages = build_chat_messages(context=context, question=question)
-        if hasattr(self._tokenizer, "apply_chat_template"):
-            prompt = self._tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        else:
-            prompt = format_raw_qwen_prompt(context=context, question=question)
-
         model_context = int(
             getattr(self._model.config, "max_position_embeddings", self.max_input_tokens)
         )
-        prompt_limit = max(
-            1,
-            min(self.max_input_tokens, model_context - self.max_new_tokens),
+        if self.max_new_tokens >= model_context:
+            raise ValueError(
+                "max_new_tokens phải nhỏ hơn context window của model "
+                f"({model_context})"
+            )
+        prompt_limit = min(
+            self.max_input_tokens,
+            model_context - self.max_new_tokens,
         )
-        inputs = self._tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=prompt_limit,
+        inputs = self._prepare_inputs(
+            context=context,
+            question=question,
+            prompt_limit=prompt_limit,
         )
         inputs = {k: v.to(self._model.device) for k, v in inputs.items()}
 
         generate_kwargs: dict[str, Any] = {
             "max_new_tokens": self.max_new_tokens,
-            "pad_token_id": self._tokenizer.eos_token_id,
-            "eos_token_id": self._tokenizer.eos_token_id,
         }
+        eos_token_id, pad_token_id = self._generation_token_ids()
+        if eos_token_id is not None:
+            generate_kwargs["eos_token_id"] = eos_token_id
+        if pad_token_id is not None:
+            generate_kwargs["pad_token_id"] = pad_token_id
 
         if self.temperature > 0.0:
             generate_kwargs["do_sample"] = True
