@@ -35,7 +35,8 @@ class TextTests(unittest.TestCase):
         text = "Mở đầu văn bản.\nĐiều 1. Quy định chung " + "nội dung " * 700
         chunks = chunk_passage(text, max_words=120, overlap_words=20)
         self.assertGreater(len(chunks), 5)
-        self.assertTrue(chunks[0].startswith("Điều 1"))
+        self.assertEqual(chunks[0], "Mở đầu văn bản.")
+        self.assertTrue(any(chunk.startswith("Điều 1") for chunk in chunks))
 
     def test_chunking_preserves_two_short_articles(self) -> None:
         text = (
@@ -74,12 +75,13 @@ class TextTests(unittest.TestCase):
         self.assertLessEqual(len(excerpt.split()), 100)
         self.assertIn("kiểm dịch", excerpt)
 
-    def test_split_on_headings_deduplicates_duplicate_starts(self) -> None:
+    def test_split_on_headings_preserves_preamble_and_headings(self) -> None:
         text = "Lời mở đầu văn bản luật.\nĐiều 1. Phạm vi điều chỉnh\nNội dung điều 1.\nPhụ lục 1. Biểu mẫu\nNội dung phụ lục."
         pieces = _split_on_headings(text)
-        self.assertEqual(len(pieces), 2)
-        self.assertTrue(pieces[0].startswith("Điều 1"))
-        self.assertTrue(pieces[1].startswith("Phụ lục 1"))
+        self.assertEqual(len(pieces), 3)
+        self.assertEqual(pieces[0], "Lời mở đầu văn bản luật.")
+        self.assertTrue(pieces[1].startswith("Điều 1"))
+        self.assertTrue(pieces[2].startswith("Phụ lục 1"))
 
 
 class MetricTests(unittest.TestCase):

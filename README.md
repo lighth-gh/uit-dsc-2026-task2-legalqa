@@ -175,7 +175,7 @@ python -m legalqa_baseline build-dense-index \
   --device cuda
 ```
 
-Dense schema 4 dùng đúng recipe của model: lấy CLS, chuẩn hóa L2 ở FP32, rồi tìm kiếm bằng dot product. Index schema 3 trở xuống (kể cả bản CLS nhưng chưa chuẩn hóa) không còn tương thích; notebook tự build lại, còn CLI có thể build lại với `--force`. Muốn khóa tuyệt đối model Hub khi chạy ngoài notebook, truyền thêm `--embedding-revision <commit-sha>` cho cả lệnh build và predict/evaluate.
+Dense schema 5 dùng đúng recipe của model: lấy CLS, chuẩn hóa L2 ở FP32, rồi tìm kiếm bằng dot product; đồng thời dùng corpus hash v2 có framing an toàn và không phụ thuộc thứ tự file. Index schema 4 trở xuống không còn tương thích; notebook tự build lại, còn CLI có thể build lại với `--force`. Muốn khóa tuyệt đối model Hub khi chạy ngoài notebook, truyền thêm `--embedding-revision <commit-sha>` cho cả lệnh build và predict/evaluate.
 
 Khi có nhiều GPU CUDA, dense encoder tự động dùng DataParallel trên tất cả GPU hiện diện. `--batch-size` là batch tổng (không phải batch mỗi GPU); batch 8 là mức an toàn cho 2x Tesla T4. Nếu vẫn hết VRAM, encoder tự động retry với batch nhỏ hơn. T4 dùng FP16; BF16 chỉ được chọn trên GPU Ampere trở lên.
 

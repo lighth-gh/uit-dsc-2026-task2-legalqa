@@ -31,7 +31,9 @@ def normalize_text(text: str) -> str:
     """Chuẩn hóa lỗi xuống dòng/Unicode nhưng không đổi từ ngữ pháp lý."""
     text = unicodedata.normalize("NFC", str(text or ""))
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\xa0", " ")
-    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    # Chuẩn hóa cả các Unicode space như NARROW NO-BREAK SPACE (U+202F),
+    # thường xuất hiện giữa "Điều" và số điều trong văn bản PDF/OCR.
+    lines = [re.sub(r"\s+", " ", line).strip() for line in text.split("\n")]
     # Loại các dòng trống lặp lại, vẫn giữ một newline để nhận diện Điều/Phụ lục.
     output: list[str] = []
     for line in lines:
@@ -81,7 +83,7 @@ def _split_on_headings(text: str) -> list[str]:
     pieces: list[str] = []
     if matches[0].start() > 0:
         preamble = text[: matches[0].start()].strip()
-        if len(preamble.split()) >= 30:
+        if preamble:
             pieces.append(preamble)
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
@@ -91,7 +93,12 @@ def _split_on_headings(text: str) -> list[str]:
     return pieces
 
 
-def _word_windows(text: str, max_words: int, overlap_words: int) -> Iterable[str]:
+def _word_windows(
+    text: str,
+    max_words: int,
+    overlap_words: int,
+    min_words: int,
+) -> Iterable[str]:
     words = text.split()
     if len(words) <= max_words:
         if words:
@@ -99,14 +106,51 @@ def _word_windows(text: str, max_words: int, overlap_words: int) -> Iterable[str
         return
 
     step = max(1, max_words - overlap_words)
-    start = 0
-    while start < len(words):
-        window = words[start : start + max_words]
-        if window:
-            yield " ".join(window)
-        if start + max_words >= len(words):
-            break
-        start += step
+    anchored_start = len(words) - max_words
+    last_regular_start = (
+        (anchored_start + step - 1) // step
+    ) * step
+    tail_words = len(words) - last_regular_start
+
+    if tail_words >= min_words:
+        for start in range(0, last_regular_start + 1, step):
+            yield " ".join(words[start : start + max_words])
+        return
+
+    # Rebalance hai cửa sổ cuối khi có thể: cửa sổ cuối đạt min_words,
+    # cửa sổ trước được rút ngắn, còn overlap vẫn đúng bằng cấu hình.
+    previous_start = last_regular_start - step
+    balanced_last_start = len(words) - min_words
+    balanced_previous_end = balanced_last_start + overlap_words
+    if balanced_previous_end - previous_start >= min_words:
+        for start in range(0, previous_start, step):
+            yield " ".join(words[start : start + max_words])
+        yield " ".join(words[previous_start:balanced_previous_end])
+        yield " ".join(words[balanced_last_start:])
+        return
+
+    # Với cấu hình như min_words == max_words, không thể vừa giữ mọi token,
+    # vừa buộc cả hai chunk đạt min_words. Ưu tiên không mất dữ liệu và giữ
+    # overlap chính xác; chỉ chunk cuối được phép ngắn hơn min_words.
+    for start in range(0, last_regular_start + 1, step):
+        yield " ".join(words[start : start + max_words])
+
+
+def validate_chunk_parameters(
+    max_words: int,
+    overlap_words: int,
+    min_words: int | None = None,
+) -> None:
+    values = (max_words, overlap_words)
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
+        raise ValueError("Cấu hình chunk phải là số nguyên")
+    if max_words <= 0 or overlap_words < 0 or overlap_words >= max_words:
+        raise ValueError("Cấu hình chunk không hợp lệ")
+    if min_words is not None:
+        if isinstance(min_words, bool) or not isinstance(min_words, int):
+            raise ValueError("min_words phải là số nguyên")
+        if min_words <= 0 or min_words > max_words:
+            raise ValueError("min_words phải nằm trong khoảng 1..max_words")
 
 
 def chunk_passage(
@@ -116,17 +160,12 @@ def chunk_passage(
     min_words: int = 18,
 ) -> list[str]:
     """Chia văn bản ưu tiên theo Điều/Phụ lục rồi mới dùng cửa sổ từ."""
-    if max_words <= 0 or overlap_words < 0 or overlap_words >= max_words:
-        raise ValueError("Cấu hình chunk không hợp lệ")
+    validate_chunk_parameters(max_words, overlap_words, min_words)
 
     text = normalize_text(passage)
     chunks: list[str] = []
     for piece in _split_on_headings(text):
-        is_heading_piece = bool(ARTICLE_RE.match(piece) or APPENDIX_RE.match(piece))
-        preserve_short_piece = is_heading_piece and len(piece.split()) < min_words
-        for chunk in _word_windows(piece, max_words, overlap_words):
-            if preserve_short_piece or len(chunk.split()) >= min_words:
-                chunks.append(chunk)
+        chunks.extend(_word_windows(piece, max_words, overlap_words, min_words))
     return chunks
 
 

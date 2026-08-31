@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from .hardware import recommended_cuda_dtype, resolve_model_identity
-from .storage import iter_contexts
-from .text import chunk_passage
+from .storage import CORPUS_HASH_VERSION, CorpusHasher, iter_contexts
+from .text import chunk_passage, validate_chunk_parameters
 
 
-DENSE_SCHEMA_VERSION = 4
-DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION = 2
+DENSE_SCHEMA_VERSION = 5
+DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION = 3
 VALID_SIMILARITIES = {"cosine", "dot_product"}
 VALID_NORMALIZATIONS = {"none", "l2"}
 
@@ -499,14 +499,20 @@ class DenseVectorIndex:
     def validate_against_bm25(self, bm25_metadata: dict[str, str]) -> None:
         """Từ chối ghép hai index được dựng từ corpus/chunk config khác nhau."""
         mismatches = []
-        for key in ("chunks", "max_chunk_words", "overlap_words", "corpus_sha256"):
+        for key in (
+            "corpus_hash_version",
+            "chunks",
+            "max_chunk_words",
+            "overlap_words",
+            "corpus_sha256",
+        ):
             dense_value = self.manifest.get(key)
             bm25_value = bm25_metadata.get(key)
-            if (
-                dense_value is not None
-                and bm25_value is not None
-                and str(dense_value) != str(bm25_value)
-            ):
+            if dense_value is None or bm25_value is None:
+                mismatches.append(
+                    f"{key}: dense={dense_value}, bm25={bm25_value}"
+                )
+            elif str(dense_value) != str(bm25_value):
                 mismatches.append(f"{key}: dense={dense_value}, bm25={bm25_value}")
         if mismatches:
             raise ValueError("Dense/BM25 index không tương thích: " + "; ".join(mismatches))
@@ -582,6 +588,7 @@ def build_dense_index(
     """Xây dựng Dense Vector Index từ kho văn bản selected-contexts."""
     import numpy as np
 
+    validate_chunk_parameters(max_chunk_words, overlap_words)
     output_path = Path(output_index_path)
     meta_path = output_path.with_suffix(".meta.json")
     index_paths = [
@@ -608,7 +615,7 @@ def build_dense_index(
     print(f"[BuildDense] Đọc và chunking văn bản từ {contexts_path}...", file=sys.stderr, flush=True)
     metadata: list[dict[str, Any]] = []
     chunk_texts: list[str] = []
-    corpus_hasher = hashlib.sha256()
+    corpus_hasher = CorpusHasher()
 
     doc_count = 0
     for context in iter_contexts(contexts_path):
@@ -624,16 +631,7 @@ def build_dense_index(
             # Tạo chuỗi đại diện ngữ nghĩa cho embedding (kết hợp tiêu đề văn bản + đoạn luật)
             dense_input = f"{name}: {text}" if name else text
             chunk_texts.append(dense_input)
-            corpus_hasher.update(context_id.encode("utf-8"))
-            corpus_hasher.update(b"\0")
-            corpus_hasher.update(str(chunk_no).encode("ascii"))
-            corpus_hasher.update(b"\0")
-            corpus_hasher.update(name.encode("utf-8"))
-            corpus_hasher.update(b"\0")
-            corpus_hasher.update(link.encode("utf-8"))
-            corpus_hasher.update(b"\0")
-            corpus_hasher.update(text.encode("utf-8"))
-            corpus_hasher.update(b"\0")
+            corpus_hasher.update(context_id, chunk_no, name, link, text)
             metadata.append({
                 "context_id": context_id,
                 "chunk_no": chunk_no,
@@ -652,6 +650,7 @@ def build_dense_index(
     )
 
     corpus_sha256 = corpus_hasher.hexdigest()
+    ordered_corpus_sha256 = corpus_hasher.ordered_hexdigest()
     model_identity = resolve_model_identity(
         embedding_model_name,
         embedding_model_revision,
@@ -660,6 +659,8 @@ def build_dense_index(
         json.dumps(
             {
                 "corpus_sha256": corpus_sha256,
+                "ordered_corpus_sha256": ordered_corpus_sha256,
+                "corpus_hash_version": CORPUS_HASH_VERSION,
                 "embedding_model": model_identity,
                 "embedding_max_length": embedding_max_length,
                 "max_chunk_words": max_chunk_words,
@@ -688,6 +689,8 @@ def build_dense_index(
                 raise ValueError("checkpoint schema mismatch")
             if state.get("fingerprint") != checkpoint_fingerprint:
                 raise ValueError("checkpoint fingerprint mismatch")
+            if state.get("ordered_corpus_sha256") != ordered_corpus_sha256:
+                raise ValueError("checkpoint corpus order mismatch")
             raw_parts = state.get("parts")
             if not isinstance(raw_parts, list):
                 raise ValueError("checkpoint parts must be a list")
@@ -750,6 +753,7 @@ def build_dense_index(
         {
             "schema_version": DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION,
             "fingerprint": checkpoint_fingerprint,
+            "ordered_corpus_sha256": ordered_corpus_sha256,
             "total_chunks": total_chunks,
             "completed_chunks": completed_chunks,
             "parts": checkpoint_parts,
@@ -787,6 +791,7 @@ def build_dense_index(
             {
                 "schema_version": DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION,
                 "fingerprint": checkpoint_fingerprint,
+                "ordered_corpus_sha256": ordered_corpus_sha256,
                 "total_chunks": total_chunks,
                 "completed_chunks": completed_chunks,
                 "parts": checkpoint_parts,
@@ -828,6 +833,7 @@ def build_dense_index(
 
     manifest = {
         "schema_version": DENSE_SCHEMA_VERSION,
+        "corpus_hash_version": CORPUS_HASH_VERSION,
         "embedding_model": model_identity,
         "dimension": int(vectors.shape[1]),
         "similarity": "dot_product",

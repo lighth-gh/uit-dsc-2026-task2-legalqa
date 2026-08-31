@@ -12,6 +12,8 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from legalqa_baseline.dense import (
+    DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION,
+    DENSE_SCHEMA_VERSION,
     DenseVectorIndex,
     VietnameseEmbeddingModel,
     _tensor_to_float32_numpy,
@@ -20,6 +22,12 @@ from legalqa_baseline.dense import (
 )
 from legalqa_baseline.pipeline import LegalQABaseline, reciprocal_rank_fusion
 from legalqa_baseline.reranker import VietnameseReranker
+from legalqa_baseline.storage import (
+    CORPUS_HASH_VERSION,
+    CorpusHasher,
+    SearchIndex,
+    build_index,
+)
 
 
 class MockEmbeddingModel:
@@ -131,7 +139,7 @@ class TestDenseRAG(unittest.TestCase):
             vectors=vectors,
             metadata=metadata,
             manifest={
-                "schema_version": 4,
+                "schema_version": DENSE_SCHEMA_VERSION,
                 "embedding_model": "mock-embedding",
                 "dimension": 4,
                 "similarity": "dot_product",
@@ -161,14 +169,26 @@ class TestDenseRAG(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "không phải"):
                 DenseVectorIndex.load(save_path, expected_model_name="wrong-model")
             loaded_index.manifest.update(
-                {"chunks": 2, "max_chunk_words": 620, "overlap_words": 100}
+                {
+                    "corpus_hash_version": CORPUS_HASH_VERSION,
+                    "chunks": 2,
+                    "max_chunk_words": 620,
+                    "overlap_words": 100,
+                    "corpus_sha256": "test-hash",
+                }
             )
             loaded_index.validate_against_bm25(
-                {"chunks": "2", "max_chunk_words": "620", "overlap_words": "100"}
+                {
+                    "corpus_hash_version": CORPUS_HASH_VERSION,
+                    "chunks": "2",
+                    "max_chunk_words": "620",
+                    "overlap_words": "100",
+                    "corpus_sha256": "test-hash",
+                }
             )
             with self.assertRaisesRegex(ValueError, "không tương thích"):
                 loaded_index.validate_against_bm25({"chunks": "3"})
-            loaded_index.manifest["schema_version"] = 3
+            loaded_index.manifest["schema_version"] = DENSE_SCHEMA_VERSION - 1
             loaded_index.save(save_path)
             with self.assertRaisesRegex(ValueError, "old embedding recipe"):
                 DenseVectorIndex.load(
@@ -176,7 +196,7 @@ class TestDenseRAG(unittest.TestCase):
                     expected_model_name="mock-embedding",
                 )
 
-            loaded_index.manifest["schema_version"] = 4
+            loaded_index.manifest["schema_version"] = DENSE_SCHEMA_VERSION
             loaded_index.manifest.pop("normalization")
             loaded_index.save(save_path)
             with self.assertRaisesRegex(ValueError, "L2 normalization"):
@@ -500,7 +520,10 @@ class TestDenseRAG(unittest.TestCase):
 
             checkpoint_dir = Path(f"{output}.dense-checkpoint")
             state = json.loads((checkpoint_dir / "state.json").read_text(encoding="utf-8"))
-            self.assertEqual(state["schema_version"], 2)
+            self.assertEqual(
+                state["schema_version"],
+                DENSE_BUILD_CHECKPOINT_SCHEMA_VERSION,
+            )
             self.assertEqual(state["completed_chunks"], 2)
             self.assertEqual(len(state["parts"]), 1)
 
@@ -530,8 +553,203 @@ class TestDenseRAG(unittest.TestCase):
             payload = json.loads(
                 output.with_suffix(".meta.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(payload["manifest"]["schema_version"], 4)
+            self.assertEqual(
+                payload["manifest"]["schema_version"],
+                DENSE_SCHEMA_VERSION,
+            )
             self.assertEqual(payload["manifest"]["normalization"], "l2")
+            self.assertEqual(
+                payload["manifest"]["corpus_hash_version"],
+                CORPUS_HASH_VERSION,
+            )
+            expected_hasher = CorpusHasher()
+            for chunk_no, chunk in enumerate(chunks):
+                expected_hasher.update(
+                    "doc-1",
+                    chunk_no,
+                    "Document",
+                    "",
+                    chunk,
+                )
+            self.assertEqual(
+                payload["manifest"]["corpus_sha256"],
+                expected_hasher.hexdigest(),
+            )
+
+    def test_10b_bm25_and_dense_use_the_same_corpus_hash_contract(self) -> None:
+        import numpy as np
+
+        class FixedEncoder:
+            def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+                pass
+
+            def encode(self, texts: list[str], **_kwargs: Any) -> Any:
+                vectors = np.zeros((len(texts), 4), dtype=np.float32)
+                vectors[:, 0] = 1.0
+                return vectors
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contexts = root / "contexts"
+            contexts.mkdir()
+            (contexts / "context_1.json").write_text(
+                json.dumps(
+                    {
+                        "id": 123,
+                        "name": "Document",
+                        "link": "https://example.test/a\u0000b",
+                        "passage": "Điều 1. Nội dung pháp lý ngắn.",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            train = root / "train.json"
+            train.write_text(
+                json.dumps(
+                    {"1": {"question": "Câu hỏi?", "answer": "Câu trả lời."}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            bm25_path = root / "bm25.sqlite"
+            dense_path = root / "dense"
+            build_index(contexts, train, bm25_path)
+            with patch(
+                "legalqa_baseline.dense.VietnameseEmbeddingModel",
+                FixedEncoder,
+            ):
+                build_dense_index(
+                    contexts,
+                    dense_path,
+                    embedding_model_name="owner/model",
+                )
+
+            with SearchIndex(bm25_path) as index:
+                bm25_metadata = index.metadata()
+            dense_payload = json.loads(
+                dense_path.with_suffix(".meta.json").read_text(encoding="utf-8")
+            )
+            dense_manifest = dense_payload["manifest"]
+            for key in (
+                "corpus_hash_version",
+                "chunks",
+                "max_chunk_words",
+                "overlap_words",
+                "corpus_sha256",
+            ):
+                self.assertEqual(str(dense_manifest[key]), bm25_metadata[key])
+
+    def test_10c_dense_resume_discards_parts_when_corpus_order_changes(self) -> None:
+        import numpy as np
+
+        class InterruptingEncoder:
+            calls = 0
+
+            def __init__(self, **_kwargs: Any) -> None:
+                pass
+
+            def encode(self, texts: list[str], **_kwargs: Any) -> Any:
+                type(self).calls += 1
+                if type(self).calls == 2:
+                    raise RuntimeError("simulated interruption")
+                vectors = np.zeros((len(texts), 4), dtype=np.float32)
+                vectors[:, 0] = 1.0
+                return vectors
+
+        class RecordingEncoder:
+            encoded_texts: list[str] = []
+
+            def __init__(self, **_kwargs: Any) -> None:
+                pass
+
+            def encode(self, texts: list[str], **_kwargs: Any) -> Any:
+                type(self).encoded_texts.extend(texts)
+                vectors = np.zeros((len(texts), 4), dtype=np.float32)
+                vectors[:, 0] = 1.0
+                return vectors
+
+        contexts = [
+            {
+                "id": "alpha",
+                "name": "Alpha",
+                "link": "",
+                "passage": "alpha chunk",
+            },
+            {
+                "id": "beta",
+                "name": "Beta",
+                "link": "",
+                "passage": "beta chunk",
+            },
+        ]
+
+        def fake_contexts(_path: Any) -> Any:
+            return iter(contexts)
+
+        def fake_chunks(passage: str, **_kwargs: Any) -> list[str]:
+            return [passage]
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "dense"
+            with (
+                patch(
+                    "legalqa_baseline.dense.iter_contexts",
+                    side_effect=fake_contexts,
+                ),
+                patch(
+                    "legalqa_baseline.dense.chunk_passage",
+                    side_effect=fake_chunks,
+                ),
+                patch(
+                    "legalqa_baseline.dense.VietnameseEmbeddingModel",
+                    InterruptingEncoder,
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "simulated interruption"):
+                    build_dense_index(
+                        "contexts.zip",
+                        output,
+                        embedding_model_name="owner/model",
+                        checkpoint_chunks=1,
+                        resume=True,
+                    )
+
+            checkpoint_dir = Path(f"{output}.dense-checkpoint")
+            state = json.loads(
+                (checkpoint_dir / "state.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(state["completed_chunks"], 1)
+            self.assertIn("ordered_corpus_sha256", state)
+
+            contexts.reverse()
+            with (
+                patch(
+                    "legalqa_baseline.dense.iter_contexts",
+                    side_effect=fake_contexts,
+                ),
+                patch(
+                    "legalqa_baseline.dense.chunk_passage",
+                    side_effect=fake_chunks,
+                ),
+                patch(
+                    "legalqa_baseline.dense.VietnameseEmbeddingModel",
+                    RecordingEncoder,
+                ),
+            ):
+                stats = build_dense_index(
+                    "contexts.zip",
+                    output,
+                    embedding_model_name="owner/model",
+                    checkpoint_chunks=1,
+                    resume=True,
+                )
+
+            self.assertEqual(stats["resumed_chunks"], 0)
+            self.assertEqual(
+                RecordingEncoder.encoded_texts,
+                ["Beta: beta chunk", "Alpha: alpha chunk"],
+            )
 
     def test_11_embedding_validation_rejects_raw_or_non_finite_vectors(self) -> None:
         import numpy as np

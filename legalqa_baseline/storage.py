@@ -10,13 +10,54 @@ import time
 import unicodedata
 import zipfile
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .text import chunk_passage, query_terms
+from .text import chunk_passage, query_terms, validate_chunk_parameters
 
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
+CORPUS_HASH_VERSION = "2"
+_CORPUS_RECORD_DOMAIN = b"legalqa-corpus-record-v2\0"
+_CORPUS_DOMAIN = b"legalqa-corpus-v2\0"
+_ORDERED_CORPUS_DOMAIN = b"legalqa-corpus-order-v2\0"
+
+
+class CorpusHasher:
+    """Tạo fingerprint không phụ thuộc thứ tự từ các chunk đã canonical hóa."""
+
+    def __init__(self) -> None:
+        self._record_digests: list[bytes] = []
+
+    def update(
+        self,
+        context_id: str,
+        chunk_no: int,
+        name: str,
+        link: str,
+        text: str,
+    ) -> None:
+        record_hasher = hashlib.sha256(_CORPUS_RECORD_DOMAIN)
+        for value in (context_id, str(chunk_no), name, link, text):
+            encoded = value.encode("utf-8")
+            record_hasher.update(len(encoded).to_bytes(8, "big"))
+            record_hasher.update(encoded)
+        self._record_digests.append(record_hasher.digest())
+
+    def hexdigest(self) -> str:
+        corpus_hasher = hashlib.sha256(_CORPUS_DOMAIN)
+        corpus_hasher.update(len(self._record_digests).to_bytes(8, "big"))
+        for digest in sorted(self._record_digests):
+            corpus_hasher.update(digest)
+        return corpus_hasher.hexdigest()
+
+    def ordered_hexdigest(self) -> str:
+        """Fingerprint phụ thuộc thứ tự, dùng cho checkpoint theo vị trí."""
+        corpus_hasher = hashlib.sha256(_ORDERED_CORPUS_DOMAIN)
+        corpus_hasher.update(len(self._record_digests).to_bytes(8, "big"))
+        for digest in self._record_digests:
+            corpus_hasher.update(digest)
+        return corpus_hasher.hexdigest()
 
 
 def load_qa(path: str | Path) -> dict[str, dict[str, Any]]:
@@ -44,33 +85,85 @@ def write_predictions(path: str | Path, predictions: dict[str, str]) -> None:
     tmp_target.replace(target)
 
 
+def _is_context_member(parts: tuple[str, ...]) -> bool:
+    if (
+        not parts
+        or any(part.startswith(".") or part == "__MACOSX" for part in parts)
+        or any(part == ".." for part in parts)
+    ):
+        return False
+    file_name = parts[-1]
+    return file_name.startswith("context_") and file_name.endswith(".json")
+
+
+def _validate_context(
+    value: Any,
+    location: str,
+    seen_ids: set[str],
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{location}: context phải là JSON object")
+
+    raw_id = value.get("id")
+    if isinstance(raw_id, bool) or not isinstance(raw_id, (str, int)):
+        raise ValueError(f"{location}: context id phải là chuỗi hoặc số nguyên")
+    context_id = str(raw_id).strip()
+    if not context_id:
+        raise ValueError(f"{location}: context id không được để trống")
+    if context_id in seen_ids:
+        raise ValueError(f"{location}: context id bị trùng: {context_id!r}")
+
+    passage = value.get("passage")
+    if not isinstance(passage, str):
+        raise ValueError(f"{location}: passage phải là chuỗi")
+
+    normalized = dict(value)
+    normalized["id"] = context_id
+    normalized["passage"] = passage
+    for field in ("name", "link"):
+        field_value = value.get(field)
+        if field_value is None:
+            normalized[field] = ""
+        elif isinstance(field_value, str):
+            normalized[field] = field_value
+        else:
+            raise ValueError(f"{location}: {field} phải là chuỗi hoặc null")
+
+    seen_ids.add(context_id)
+    return normalized
+
+
 def iter_contexts(path: str | Path) -> Iterator[dict[str, Any]]:
     source = Path(path)
+    seen_ids: set[str] = set()
     if source.is_dir():
-        items = [
-            p
-            for p in source.rglob("context_*.json")
-            if p.is_file() and not p.name.startswith(".") and not any(part.startswith(".") for part in p.parts)
-        ]
-        items.sort(key=lambda p: (p.name, str(p)))
-        for item_path in items:
+        items: list[tuple[str, Path]] = []
+        for item_path in source.rglob("*.json"):
+            relative = item_path.relative_to(source)
+            if item_path.is_file() and _is_context_member(relative.parts):
+                items.append((relative.as_posix(), item_path))
+        items.sort(key=lambda item: (PurePosixPath(item[0]).name, item[0]))
+        for relative_name, item_path in items:
             with item_path.open("r", encoding="utf-8") as handle:
-                yield json.load(handle)
+                value = json.load(handle)
+            yield _validate_context(value, str(source / relative_name), seen_ids)
         return
 
     if not zipfile.is_zipfile(source):
         raise ValueError("--contexts phải là thư mục context_*.json hoặc tệp .zip")
     with zipfile.ZipFile(source) as archive:
-        valid_names: list[str] = []
-        for name in archive.namelist():
-            if name.startswith("__MACOSX/") or "/." in f"/{name}":
-                continue
-            file_name = Path(name).name
-            if file_name.startswith("context_") and file_name.endswith(".json") and not file_name.startswith("."):
-                valid_names.append(name)
-        valid_names.sort(key=lambda n: (Path(n).name, n))
-        for name in valid_names:
-            yield json.loads(archive.read(name).decode("utf-8"))
+        valid_members: list[tuple[str, zipfile.ZipInfo]] = []
+        for member in archive.infolist():
+            normalized_name = member.filename.replace("\\", "/")
+            parts = PurePosixPath(normalized_name).parts
+            if not member.is_dir() and _is_context_member(parts):
+                valid_members.append((normalized_name, member))
+        valid_members.sort(
+            key=lambda item: (PurePosixPath(item[0]).name, item[0])
+        )
+        for name, member in valid_members:
+            value = json.loads(archive.read(member).decode("utf-8"))
+            yield _validate_context(value, f"{source}!/{name}", seen_ids)
 
 
 def _connect(path: str | Path, readonly: bool = False) -> sqlite3.Connection:
@@ -172,6 +265,7 @@ def build_index(
     force: bool = False,
 ) -> dict[str, int | float]:
     started = time.time()
+    validate_chunk_parameters(max_chunk_words, overlap_words)
     train = load_qa(train_path)
     missing_answers = [
         sample_id
@@ -221,7 +315,7 @@ def build_index(
             doc_count = 0
             chunk_count = 0
             empty_docs = 0
-            corpus_hasher = hashlib.sha256()
+            corpus_hasher = CorpusHasher()
             batch: list[tuple[str, int, str, str, str]] = []
             for context in iter_contexts(contexts_path):
                 doc_count += 1
@@ -238,16 +332,13 @@ def build_index(
                 name = str(context.get("name") or "")
                 link = str(context.get("link") or "")
                 for chunk_no, text in enumerate(chunks):
-                    corpus_hasher.update(context_id.encode("utf-8"))
-                    corpus_hasher.update(b"\0")
-                    corpus_hasher.update(str(chunk_no).encode("ascii"))
-                    corpus_hasher.update(b"\0")
-                    corpus_hasher.update(name.encode("utf-8"))
-                    corpus_hasher.update(b"\0")
-                    corpus_hasher.update(link.encode("utf-8"))
-                    corpus_hasher.update(b"\0")
-                    corpus_hasher.update(text.encode("utf-8"))
-                    corpus_hasher.update(b"\0")
+                    corpus_hasher.update(
+                        context_id,
+                        chunk_no,
+                        name,
+                        link,
+                        text,
+                    )
                     batch.append((context_id, chunk_no, name, link, text))
                     chunk_count += 1
                     if len(batch) >= 1000:
@@ -271,8 +362,12 @@ def build_index(
                     batch,
                 )
 
+            if chunk_count == 0:
+                raise ValueError("Corpus không tạo được chunk nào để xây index")
+
             metadata = {
                 "schema_version": SCHEMA_VERSION,
+                "corpus_hash_version": CORPUS_HASH_VERSION,
                 "max_chunk_words": str(max_chunk_words),
                 "overlap_words": str(overlap_words),
                 "documents": str(doc_count),
@@ -338,6 +433,11 @@ def _fts_vocab_form(term: str) -> str:
     return "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
 
 
+def _validate_top_k(top_k: int) -> None:
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k <= 0:
+        raise ValueError("top_k phải là số nguyên lớn hơn 0")
+
+
 class SearchIndex:
     def __init__(self, db_path: str | Path):
         self.connection = _connect(db_path, readonly=True)
@@ -382,6 +482,7 @@ class SearchIndex:
         return available[:max_terms] or candidates[:max_terms]
 
     def search_contexts(self, question: str, top_k: int = 12) -> list[dict[str, Any]]:
+        _validate_top_k(top_k)
         query = _fts_query(self._rarest_terms(question, "contexts_vocab", max_terms=8))
         if not query:
             return []
@@ -391,7 +492,7 @@ class SearchIndex:
                    bm25(contexts_fts, 0.0, 0.0, 2.0, 0.0, 1.0) AS bm25_score
             FROM contexts_fts
             WHERE contexts_fts MATCH ?
-            ORDER BY bm25_score
+            ORDER BY bm25_score, context_id, CAST(chunk_no AS INTEGER), rowid
             LIMIT ?
             """,
             (query, int(top_k)),
@@ -404,6 +505,7 @@ class SearchIndex:
         top_k: int = 5,
         exclude_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        _validate_top_k(top_k)
         query = _fts_query(self._rarest_terms(question, "train_vocab", max_terms=12))
         if not query:
             return []
@@ -413,7 +515,7 @@ class SearchIndex:
                    bm25(train_fts, 0.0, 1.0, 0.0) AS bm25_score
             FROM train_fts
             WHERE train_fts MATCH ?
-            ORDER BY bm25_score
+            ORDER BY bm25_score, sample_id, rowid
             LIMIT ?
             """,
             (query, int(top_k + 10)),
