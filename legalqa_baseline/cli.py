@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -284,6 +285,8 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
             if not (p.exists() or meta_p.exists()):
                 message = f"Không tìm thấy Dense index/metadata tại {p}"
                 if allow_fallback:
+                    dense_index = None
+                    embedding_model = None
                     print(f"[pipeline] {message}; fallback BM25.", file=sys.stderr)
                 else:
                     raise FileNotFoundError(message)
@@ -309,6 +312,8 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
                 except Exception as exc:
                     if not allow_fallback:
                         raise
+                    dense_index = None
+                    embedding_model = None
                     print(f"[pipeline] Cảnh báo không nạp được dense index ({exc}), fallback BM25.", file=sys.stderr)
 
         reranker_name = getattr(args, "reranker_model", None)
@@ -321,6 +326,9 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
                 )
                 print(f"[pipeline] Đã nạp Vietnamese_Reranker: {reranker_name}", file=sys.stderr)
             except Exception as exc:
+                if not allow_fallback:
+                    raise
+                reranker = None
                 print(f"[pipeline] Cảnh báo không nạp được reranker ({exc}), fallback RRF order.", file=sys.stderr)
 
     return LegalQABaseline(
@@ -571,16 +579,20 @@ def command_predict(args: argparse.Namespace) -> int:
 
 
 def command_validate(args: argparse.Namespace) -> int:
+    if args.limit <= 0:
+        raise ValueError("limit phải lớn hơn 0")
+    modes = [mode.strip() for mode in args.modes.split(",") if mode.strip()]
+    if not modes:
+        raise ValueError("--modes không được rỗng, phải chứa ít nhất một mode hợp lệ")
+    invalid = set(modes) - set(VALID_MODES)
+    if invalid:
+        raise ValueError(f"Mode không hợp lệ: {sorted(invalid)}")
+
     data = load_qa(args.train)
     sample_ids = list(data)
     rng = random.Random(args.seed)
     rng.shuffle(sample_ids)
-    if args.limit > 0:
-        sample_ids = sample_ids[: args.limit]
-    modes = [mode.strip() for mode in args.modes.split(",") if mode.strip()]
-    invalid = set(modes) - set(VALID_MODES)
-    if invalid:
-        raise ValueError(f"Mode không hợp lệ: {sorted(invalid)}")
+    sample_ids = sample_ids[: args.limit]
 
     report: dict[str, object] = {
         "config": {
@@ -633,10 +645,36 @@ def command_evaluate_retrieval(args: argparse.Namespace) -> int:
     from .retrieval_eval import evaluate_retrieval
 
     data = load_qa(args.train)
+    raw_ks = [value.strip() for value in str(args.ks).split(",") if value.strip()]
+    if not raw_ks:
+        raise ValueError("--ks không được rỗng, ví dụ: 1,3,5")
     try:
-        ks = tuple(int(value.strip()) for value in args.ks.split(",") if value.strip())
+        ks = tuple(int(value) for value in raw_ks)
     except ValueError as exc:
-        raise ValueError("--ks pháº£i lÃ  danh sÃ¡ch sá»‘ nguyÃªn, vÃ­ dá»¥ 1,3,5") from exc
+        raise ValueError(f"--ks phải là danh sách số nguyên dương phân tách bởi dấu phẩy: {exc}") from exc
+    if any(k <= 0 for k in ks):
+        raise ValueError(f"--ks chỉ chấp nhận các số nguyên dương: {ks}")
+
+    positive_values = {
+        "limit": args.limit,
+        "bm25_top_k": args.bm25_top_k,
+        "dense_top_k": args.dense_top_k,
+        "rrf_k": args.rrf_k,
+        "rrf_top_k": args.rrf_top_k,
+        "dense_query_max_length": args.dense_query_max_length,
+        "reranker_max_length": args.reranker_max_length,
+        "gold_candidate_k": args.gold_candidate_k,
+        "gold_max_chunks": args.gold_max_chunks,
+        "gold_min_answer_tokens": args.gold_min_answer_tokens,
+    }
+    invalid = {name: value for name, value in positive_values.items() if value <= 0}
+    if invalid:
+        raise ValueError(f"Các tham số phải lớn hơn 0: {invalid}")
+
+    if not 0.0 <= args.gold_min_score <= 1.0:
+        raise ValueError("gold_min_score phải nằm trong [0, 1]")
+    if not 0.0 <= args.gold_relative_score <= 1.0:
+        raise ValueError("gold_relative_score phải nằm trong [0, 1]")
 
     dense_index = None
     embedding_model = None
@@ -721,11 +759,25 @@ def command_score(args: argparse.Namespace) -> int:
     reference = load_qa(args.reference)
     with Path(args.prediction).open("r", encoding="utf-8") as handle:
         prediction_data = json.load(handle)
+    if not isinstance(prediction_data, dict):
+        raise ValueError("Prediction JSON phải là một dictionary/object ánh xạ id -> {'answer': ...}")
     if set(reference) != set(prediction_data):
         missing = set(reference) - set(prediction_data)
         extra = set(prediction_data) - set(reference)
         raise ValueError(f"ID lệch: missing={len(missing)}, extra={len(extra)}")
-    predictions = [str(prediction_data[key]["answer"]) for key in reference]
+    predictions: list[str] = []
+    for key in reference:
+        item = prediction_data[key]
+        if not isinstance(item, dict):
+            raise ValueError(f"Prediction cho sample '{key}' phải là một dictionary/object")
+        if "answer" not in item:
+            raise ValueError(f"Prediction cho sample '{key}' thiếu trường 'answer'")
+        answer = item["answer"]
+        if not isinstance(answer, str):
+            raise ValueError(
+                f"Trường 'answer' của sample '{key}' phải là chuỗi (string), nhận được {type(answer).__name__}"
+            )
+        predictions.append(answer)
     references = [str(reference[key].get("answer") or "") for key in reference]
     scores = aggregate_scores(predictions, references)
     if getattr(args, "official_metrics", False):
@@ -758,6 +810,9 @@ def main(argv: list[str] | None = None) -> int:
         ImportError,
         RuntimeError,
         json.JSONDecodeError,
+        sqlite3.Error,
+        OSError,
+        KeyError,
     ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
