@@ -110,6 +110,19 @@ def build_index(
     force: bool = False,
 ) -> dict[str, int | float]:
     started = time.time()
+    train = load_qa(train_path)
+    missing_answers = [
+        sample_id
+        for sample_id, item in train.items()
+        if not str(item.get("answer") or "").strip()
+    ]
+    if missing_answers:
+        preview = ", ".join(repr(sample_id) for sample_id in missing_answers[:5])
+        suffix = "..." if len(missing_answers) > 5 else ""
+        raise ValueError(
+            f"{train_path}: train sample thiếu answer hợp lệ ({preview}{suffix})"
+        )
+
     connection = _connect(db_path)
     try:
         connection.execute("PRAGMA journal_mode=WAL")
@@ -118,7 +131,6 @@ def build_index(
         connection.execute("PRAGMA cache_size=-200000")
         _create_schema(connection, force=force)
 
-        train = load_qa(train_path)
         train_rows = [
             (sample_id, item["question"], str(item.get("answer") or ""))
             for sample_id, item in train.items()

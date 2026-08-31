@@ -322,6 +322,55 @@ class TestDenseRAG(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Dense search thất bại"):
             strict_pipeline.predict_one("Câu hỏi strict", mode="rag")
 
+    def test_7b_internal_encoder_type_error_is_not_retried(self) -> None:
+        class InternalTypeErrorEmbedding:
+            calls = 0
+
+            def encode(self, texts: list[str]) -> Any:
+                type(self).calls += 1
+                raise TypeError("internal encoder bug")
+
+        embedding = InternalTypeErrorEmbedding()
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            dense_index=object(),
+            embedding_model=embedding,
+            allow_retrieval_fallback=True,
+        )
+        prediction = pipeline.predict_one("Câu hỏi fallback", mode="rag")
+        self.assertEqual(prediction.route, "rag")
+        self.assertEqual(InternalTypeErrorEmbedding.calls, 1)
+
+    def test_7c_empty_reranker_result_uses_explicit_fallback(self) -> None:
+        class EmptyReranker:
+            def rerank(
+                self,
+                question: str,
+                candidates: list[dict[str, Any]],
+                top_k: int = 3,
+                max_length: int = 2304,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            reranker=EmptyReranker(),
+            allow_retrieval_fallback=True,
+        )
+        prediction = pipeline.predict_one("Mức phạt?", mode="rag")
+        self.assertEqual(prediction.route, "rag")
+        self.assertEqual(prediction.evidence["num_contexts"], 3)
+
+        strict_pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            reranker=EmptyReranker(),
+        )
+        with self.assertRaisesRegex(RuntimeError, "Reranker thất bại"):
+            strict_pipeline.predict_one("Mức phạt?", mode="rag")
+
     def test_8_dense_only_candidate_has_confidence(self) -> None:
         import numpy as np
 

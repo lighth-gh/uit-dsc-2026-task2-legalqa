@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import difflib
+import inspect
 import math
 import sys
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from .storage import SearchIndex
-from .text import best_excerpt, query_terms, tokenize
+from .text import STOPWORDS, best_excerpt, query_terms, tokenize
 
 
 Mode = Literal["extractive", "knn", "hybrid", "rag", "hybrid_rag"]
@@ -21,9 +23,57 @@ class Prediction:
     evidence: dict[str, Any]
 
 
+def _normalize_similarity_token(token: str) -> str:
+    return "".join(
+        char
+        for char in unicodedata.normalize("NFD", token.casefold())
+        if unicodedata.category(char) != "Mn"
+    )
+
+
+_SIMILARITY_STOPWORDS = {
+    _normalize_similarity_token(term) for term in STOPWORDS
+} - {
+    _normalize_similarity_token(term)
+    for term in ("có", "không", "phải", "được", "bị", "điều", "khoản", "điểm")
+}
+_LEGAL_SINGLE_TOKENS = {"a", "b", "c", "d", "đ"}
+_LEGAL_DISAMBIGUATORS = {
+    _normalize_similarity_token(term)
+    for term in ("có", "không", "phải", "được", "bị", "điều", "khoản", "điểm")
+}
+_LEGAL_DISAMBIGUATORS.update(_LEGAL_SINGLE_TOKENS)
+
+
+def _similarity_terms(text: str) -> list[str]:
+    """Tokenize KNN questions without dropping legal polarity/citations."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw_token in tokenize(text):
+        token = _normalize_similarity_token(raw_token)
+        if (
+            token in _SIMILARITY_STOPWORDS
+            or (len(token) < 2 and not token.isdigit() and token not in _LEGAL_SINGLE_TOKENS)
+            or token in seen
+        ):
+            continue
+        seen.add(token)
+        result.append(token)
+        if len(result) >= 60:
+            break
+    if result:
+        return result
+    return list(
+        dict.fromkeys(
+            _normalize_similarity_token(raw_token)
+            for raw_token in tokenize(text)
+        )
+    )[:60]
+
+
 def question_similarity(left: str, right: str) -> float:
-    left_tokens = query_terms(left, max_terms=60)
-    right_tokens = query_terms(right, max_terms=60)
+    left_tokens = _similarity_terms(left)
+    right_tokens = _similarity_terms(right)
     left_set, right_set = set(left_tokens), set(right_tokens)
     if not left_set or not right_set:
         return 0.0
@@ -33,7 +83,22 @@ def question_similarity(left: str, right: str) -> float:
     sequence = difflib.SequenceMatcher(
         None, " ".join(left_tokens), " ".join(right_tokens), autojunk=False
     ).ratio()
-    return 0.50 * coverage + 0.30 * jaccard + 0.20 * sequence
+    score = 0.50 * coverage + 0.30 * jaccard + 0.20 * sequence
+    left_disambiguators = {
+        token
+        for token in left_tokens
+        if token in _LEGAL_DISAMBIGUATORS or any(char.isdigit() for char in token)
+    }
+    right_disambiguators = {
+        token
+        for token in right_tokens
+        if token in _LEGAL_DISAMBIGUATORS or any(char.isdigit() for char in token)
+    }
+    if left_disambiguators != right_disambiguators:
+        # A different negation, legal role, article, clause, or numeric class
+        # must not pass the high-confidence exact-answer route.
+        score *= 0.5
+    return score
 
 
 def _context_rerank_score(question: str, result: dict[str, Any]) -> float:
@@ -67,14 +132,22 @@ def _rag_confidence(question: str, result: dict[str, Any]) -> float:
     for key in ("rerank_score", "dense_score"):
         value = result.get(key)
         if value is not None:
-            score = float(value)
+            try:
+                score = float(value)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(score):
+                continue
             if score >= 0:
                 z = math.exp(-score)
                 return 1.0 / (1.0 + z)
             z = math.exp(score)
             return z / (1.0 + z)
     if result.get("bm25_score") is not None:
-        return min(1.0, _context_rerank_score(question, result) / 20.0)
+        score = _context_rerank_score(question, result)
+        if not math.isfinite(score):
+            return 0.0
+        return max(0.0, min(1.0, score / 20.0))
     return 0.0
 
 
@@ -85,16 +158,41 @@ def reciprocal_rank_fusion(
     top_k: int = 50,
 ) -> list[dict[str, Any]]:
     """Hợp nhất kết quả từ BM25 và Dense Search bằng Reciprocal Rank Fusion (RRF)."""
+    if rrf_k <= 0:
+        raise ValueError("rrf_k phải lớn hơn 0")
+    if top_k <= 0:
+        raise ValueError("top_k phải lớn hơn 0")
+
+    def ranked_unique(
+        results: list[dict[str, Any]],
+    ) -> list[tuple[tuple[str, int], dict[str, Any]]]:
+        unique: list[tuple[tuple[str, int], dict[str, Any]]] = []
+        seen: set[tuple[str, int]] = set()
+        for doc in results:
+            if not isinstance(doc, dict):
+                raise TypeError("RRF candidate phải là dict")
+            raw_context_id = doc.get("context_id")
+            context_id = "" if raw_context_id is None else str(raw_context_id).strip()
+            if not context_id:
+                raise ValueError("RRF candidate thiếu context_id")
+            try:
+                chunk_no = int(doc["chunk_no"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("RRF candidate có chunk_no không hợp lệ") from exc
+            key = (context_id, chunk_no)
+            if key not in seen:
+                seen.add(key)
+                unique.append((key, doc))
+        return unique
+
     scores: dict[tuple[str, int], float] = {}
     docs: dict[tuple[str, int], dict[str, Any]] = {}
 
-    for rank, doc in enumerate(bm25_results, start=1):
-        key = (str(doc.get("context_id", "")), int(doc.get("chunk_no", 0)))
+    for rank, (key, doc) in enumerate(ranked_unique(bm25_results), start=1):
         scores[key] = scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
         docs[key] = dict(doc)
 
-    for rank, doc in enumerate(dense_results, start=1):
-        key = (str(doc.get("context_id", "")), int(doc.get("chunk_no", 0)))
+    for rank, (key, doc) in enumerate(ranked_unique(dense_results), start=1):
         scores[key] = scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
         if key not in docs:
             docs[key] = dict(doc)
@@ -153,6 +251,8 @@ class LegalQABaseline:
             raise ValueError("knn_threshold phải nằm trong [0, 1]")
         if context_top_k > rerank_top_k or rerank_top_k > rrf_top_k:
             raise ValueError("Cần context_top_k <= rerank_top_k <= rrf_top_k")
+        if (dense_index is None) != (embedding_model is None):
+            raise ValueError("dense_index và embedding_model phải được truyền cùng nhau")
         self.index = index
         self.top_k = top_k
         self.max_answer_words = max_answer_words
@@ -191,7 +291,12 @@ class LegalQABaseline:
             "link": best["link"],
             "bm25_score": best["bm25_score"],
         }
-        confidence = min(1.0, _context_rerank_score(question, best) / 20.0)
+        score = _context_rerank_score(question, best)
+        confidence = (
+            max(0.0, min(1.0, score / 20.0))
+            if math.isfinite(score)
+            else 0.0
+        )
         return Prediction(answer, "extractive", confidence, evidence)
 
     def _rag(self, question: str) -> Prediction | None:
@@ -210,15 +315,21 @@ class LegalQABaseline:
                     getattr(self.dense_index, "normalization", "l2") == "l2"
                     or getattr(self.dense_index, "similarity", "cosine") == "cosine"
                 )
+                encode = self.embedding_model.encode
                 try:
-                    encoded_query = self.embedding_model.encode(
-                        [question],
-                        max_length=self.dense_query_max_length,
-                        normalize_embeddings=normalize,
-                    )
-                except TypeError:
-                    # Tương thích encoder tùy biến/mock theo interface cũ.
-                    encoded_query = self.embedding_model.encode([question])
+                    parameters = inspect.signature(encode).parameters
+                except (TypeError, ValueError):
+                    parameters = {}
+                accepts_kwargs = any(
+                    parameter.kind is inspect.Parameter.VAR_KEYWORD
+                    for parameter in parameters.values()
+                )
+                encode_kwargs: dict[str, Any] = {}
+                if accepts_kwargs or "max_length" in parameters:
+                    encode_kwargs["max_length"] = self.dense_query_max_length
+                if accepts_kwargs or "normalize_embeddings" in parameters:
+                    encode_kwargs["normalize_embeddings"] = normalize
+                encoded_query = encode([question], **encode_kwargs)
                 q_vec = encoded_query[0]
                 dense_candidates = self.dense_index.search(q_vec, top_k=self.dense_top_k)
             except Exception as exc:
@@ -228,9 +339,19 @@ class LegalQABaseline:
 
         # 3. Hợp nhất RRF (Reciprocal Rank Fusion k=60 -> Top-50) hoặc fallback Heuristic BM25
         if dense_candidates:
-            fused_candidates = reciprocal_rank_fusion(
-                bm25_candidates, dense_candidates, rrf_k=self.rrf_k, top_k=self.rrf_top_k
-            )
+            try:
+                fused_candidates = reciprocal_rank_fusion(
+                    bm25_candidates, dense_candidates, rrf_k=self.rrf_k, top_k=self.rrf_top_k
+                )
+            except Exception as exc:
+                if not self.allow_retrieval_fallback:
+                    raise RuntimeError(f"RRF thất bại: {exc}") from exc
+                print(f"[pipeline] Lỗi RRF ({exc}), fallback BM25.", file=sys.stderr)
+                fused_candidates = sorted(
+                    bm25_candidates,
+                    key=lambda item: _context_rerank_score(question, item),
+                    reverse=True,
+                )[: self.rrf_top_k]
         else:
             # Fallback thuần BM25
             fused_candidates = sorted(
@@ -245,12 +366,22 @@ class LegalQABaseline:
         # 4. Tái xếp hạng bằng Vietnamese_Reranker (Top-3 chunks)
         if self.reranker is not None:
             try:
-                top_chunks = self.reranker.rerank(
+                reranked_chunks = self.reranker.rerank(
                     question,
                     fused_candidates,
                     top_k=self.rerank_top_k,
                     max_length=self.reranker_max_length,
                 )
+                if not isinstance(reranked_chunks, list) or not reranked_chunks:
+                    raise ValueError("Reranker trả về danh sách rỗng/không hợp lệ")
+                if any(
+                    not isinstance(chunk, dict)
+                    or not str(chunk.get("context_id") or "").strip()
+                    or "chunk_no" not in chunk
+                    for chunk in reranked_chunks
+                ):
+                    raise ValueError("Reranker trả về candidate không hợp lệ")
+                top_chunks = reranked_chunks[: self.rerank_top_k]
             except Exception as exc:
                 if not self.allow_retrieval_fallback:
                     raise RuntimeError(f"Reranker thất bại: {exc}") from exc
@@ -261,6 +392,8 @@ class LegalQABaseline:
 
         # Reranker có thể trả nhiều candidate để audit; prompt chỉ nhận context_top_k.
         top_chunks = top_chunks[: self.context_top_k]
+        if not top_chunks:
+            return None
 
         context_blocks = []
         for idx, chunk in enumerate(top_chunks, start=1):
@@ -273,6 +406,9 @@ class LegalQABaseline:
         joined_context = "\n\n".join(context_blocks)
 
         answer = self.generator.generate(context=joined_context, question=question)
+        if not isinstance(answer, str) or not answer.strip():
+            raise RuntimeError("Generator trả về answer rỗng/không hợp lệ")
+        answer = answer.strip()
         evidence = {
             "num_contexts": len(top_chunks),
             "top_contexts": [
@@ -294,6 +430,13 @@ class LegalQABaseline:
 
     def _knn(self, question: str, exclude_id: str | None = None) -> Prediction | None:
         neighbors = self.index.search_train(question, top_k=5, exclude_id=exclude_id)
+        neighbors = [
+            neighbor
+            for neighbor in neighbors
+            if isinstance(neighbor, dict)
+            and isinstance(neighbor.get("question"), str)
+            and str(neighbor.get("answer") or "").strip()
+        ]
         if not neighbors:
             return None
         for neighbor in neighbors:
@@ -316,6 +459,17 @@ class LegalQABaseline:
         mode: Mode = "hybrid",
         exclude_id: str | None = None,
     ) -> Prediction:
+        if mode not in ("extractive", "knn", "hybrid", "rag", "hybrid_rag"):
+            raise ValueError(f"Mode không hỗ trợ: {mode}")
+        if not isinstance(question, str):
+            raise TypeError("question phải là chuỗi")
+        if not question.strip():
+            return Prediction(
+                "Không tìm thấy căn cứ phù hợp trong kho văn bản được cung cấp.",
+                "fallback",
+                0.0,
+                {},
+            )
         if mode == "extractive":
             result = self._extractive(question)
         elif mode == "knn":
@@ -325,7 +479,7 @@ class LegalQABaseline:
             if knn is not None and knn.confidence >= self.knn_threshold:
                 result = knn
             else:
-                result = self._extractive(question) or knn
+                result = self._extractive(question)
         elif mode == "rag":
             result = self._rag(question)
         elif mode == "hybrid_rag":
@@ -333,7 +487,7 @@ class LegalQABaseline:
             if knn is not None and knn.confidence >= self.knn_threshold:
                 result = knn
             else:
-                result = self._rag(question) or knn
+                result = self._rag(question)
         else:
             raise ValueError(f"Mode không hỗ trợ: {mode}")
 

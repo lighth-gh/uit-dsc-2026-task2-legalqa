@@ -121,5 +121,18 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(pred.route, "rag")
 
 
+    def test_pipeline_rejects_empty_generator_answer(self) -> None:
+        class EmptyGenerator:
+            def generate(self, context: str, question: str) -> None:
+                return None
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=EmptyGenerator(),
+        )
+        with self.assertRaisesRegex(RuntimeError, "Generator trả về answer"):
+            pipeline.predict_one("Mức phạt?", mode="rag")
+
+
 if __name__ == "__main__":
     unittest.main()
