@@ -6,6 +6,18 @@ from typing import Any
 from .hardware import recommended_cuda_dtype
 
 
+class GenerationTokenLimitReached(RuntimeError):
+    """Raised when generation likely stopped because ``max_new_tokens`` was exhausted."""
+
+    def __init__(self, generated_tokens: int, max_new_tokens: int) -> None:
+        self.generated_tokens = generated_tokens
+        self.max_new_tokens = max_new_tokens
+        super().__init__(
+            "Generator reached its token limit "
+            f"({generated_tokens}/{max_new_tokens} generated tokens)"
+        )
+
+
 SYSTEM_PROMPT = """
 Bạn là một trợ lý hỏi đáp pháp luật tiếng Việt.
 Nhiệm vụ của bạn là trả lời câu hỏi dựa hoàn toàn trên các ngữ cảnh pháp luật được cung cấp.
@@ -73,6 +85,7 @@ class ViQwenRAGGenerator:
         top_p: float = 0.9,
         max_input_tokens: int = 7168,
         seed: int = 2026,
+        repetition_penalty: float = 1.05,
     ) -> None:
         if max_new_tokens <= 0 or max_input_tokens <= 0:
             raise ValueError("max_new_tokens and max_input_tokens must be greater than 0")
@@ -80,6 +93,8 @@ class ViQwenRAGGenerator:
             raise ValueError("temperature must not be negative")
         if not 0.0 < top_p <= 1.0:
             raise ValueError("top_p must be in (0, 1]")
+        if repetition_penalty <= 0.0:
+            raise ValueError("repetition_penalty must be greater than 0")
         self.model_name_or_path = model_name_or_path
         self.device_setting = device
         self.torch_dtype_setting = torch_dtype
@@ -88,6 +103,7 @@ class ViQwenRAGGenerator:
         self.top_p = top_p
         self.max_input_tokens = max_input_tokens
         self.seed = seed
+        self.repetition_penalty = repetition_penalty
 
         self._tokenizer: Any = None
         self._model: Any = None
@@ -170,6 +186,34 @@ class ViQwenRAGGenerator:
     def _input_length(inputs: dict[str, Any]) -> int:
         return int(inputs["input_ids"].shape[-1])
 
+    @staticmethod
+    def _safe_context_prefix(context: str, max_characters: int) -> str:
+        """Cut prompt context at a paragraph, sentence, or word boundary."""
+        stripped = context.strip()
+        if max_characters >= len(stripped):
+            return stripped
+        if max_characters <= 0:
+            return ""
+
+        prefix = stripped[:max_characters].rstrip()
+        structured_boundaries = [
+            prefix.rfind("\n"),
+            prefix.rfind(". "),
+            prefix.rfind("? "),
+            prefix.rfind("! "),
+            prefix.rfind("… "),
+        ]
+        structured_end = max(structured_boundaries)
+        if structured_end > 0 and len(prefix) - structured_end <= 256:
+            if prefix[structured_end] in ".?!…":
+                structured_end += 1
+            return prefix[:structured_end].rstrip()
+
+        word_end = max(prefix.rfind(" "), prefix.rfind("\t"), prefix.rfind("\n"))
+        if word_end > 0:
+            return prefix[:word_end].rstrip()
+        return prefix
+
     def _prepare_inputs(
         self,
         context: str,
@@ -201,7 +245,10 @@ class ViQwenRAGGenerator:
         # byte-level BPE sequence.
         while low <= high:
             keep_characters = (low + high) // 2
-            shortened_context = stripped_context[:keep_characters].rstrip()
+            shortened_context = self._safe_context_prefix(
+                stripped_context,
+                keep_characters,
+            )
             candidate_prompt = self._render_prompt(
                 context=shortened_context,
                 question=question,
@@ -230,22 +277,38 @@ class ViQwenRAGGenerator:
                 pad_token_id = tokenizer_eos
         return eos_token_id, pad_token_id
 
-    def generate(self, context: str, question: str) -> str:
+    def generate(
+        self,
+        context: str,
+        question: str,
+        *,
+        max_input_tokens: int | None = None,
+        max_new_tokens: int | None = None,
+    ) -> str:
         """Sinh câu trả lời cho một cặp (context, question)."""
         self._load_model()
         import torch
 
+        effective_max_input_tokens = (
+            self.max_input_tokens if max_input_tokens is None else max_input_tokens
+        )
+        effective_max_new_tokens = (
+            self.max_new_tokens if max_new_tokens is None else max_new_tokens
+        )
+        if effective_max_input_tokens <= 0 or effective_max_new_tokens <= 0:
+            raise ValueError("generation token budgets must be greater than 0")
+
         model_context = int(
             getattr(self._model.config, "max_position_embeddings", self.max_input_tokens)
         )
-        if self.max_new_tokens >= model_context:
+        if effective_max_new_tokens >= model_context:
             raise ValueError(
                 "max_new_tokens phải nhỏ hơn context window của model "
                 f"({model_context})"
             )
         prompt_limit = min(
-            self.max_input_tokens,
-            model_context - self.max_new_tokens,
+            effective_max_input_tokens,
+            model_context - effective_max_new_tokens,
         )
         inputs = self._prepare_inputs(
             context=context,
@@ -255,7 +318,8 @@ class ViQwenRAGGenerator:
         inputs = {k: v.to(self._model.device) for k, v in inputs.items()}
 
         generate_kwargs: dict[str, Any] = {
-            "max_new_tokens": self.max_new_tokens,
+            "max_new_tokens": effective_max_new_tokens,
+            "repetition_penalty": self.repetition_penalty,
         }
         eos_token_id, pad_token_id = self._generation_token_ids()
         if eos_token_id is not None:
@@ -276,7 +340,21 @@ class ViQwenRAGGenerator:
         with torch.inference_mode():
             outputs = self._model.generate(**inputs, **generate_kwargs)
 
-        input_len = inputs["input_ids"].shape[1]
+        input_len = int(inputs["input_ids"].shape[1])
+        output_shape = getattr(outputs, "shape", None)
+        if output_shape is not None:
+            output_len = int(output_shape[1])
+        else:
+            # Keep lightweight test doubles and compatible generate() wrappers usable.
+            output_len = len(outputs[0])
+        generated_tokens = output_len - input_len
+        hit_token_limit = generated_tokens >= effective_max_new_tokens - 4
+        if hit_token_limit:
+            raise GenerationTokenLimitReached(
+                generated_tokens=generated_tokens,
+                max_new_tokens=effective_max_new_tokens,
+            )
+
         response_tokens = outputs[0][input_len:]
         response_text = self._tokenizer.decode(response_tokens, skip_special_tokens=True).strip()
         if not response_text:

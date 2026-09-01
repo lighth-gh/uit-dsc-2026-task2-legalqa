@@ -170,6 +170,33 @@ def chunk_passage(
     return chunks
 
 
+def truncate_at_text_boundary(text: str, max_words: int) -> str:
+    """Limit text at a paragraph/sentence boundary, with a word-safe fallback."""
+    if isinstance(max_words, bool) or not isinstance(max_words, int) or max_words <= 0:
+        raise ValueError("max_words phải là số nguyên lớn hơn 0")
+    source = str(text or "").strip()
+    word_matches = list(re.finditer(r"\S+", source))
+    if len(word_matches) <= max_words:
+        return source
+
+    char_limit = word_matches[max_words - 1].end()
+    prefix = source[:char_limit].rstrip()
+    boundary_ends: list[int] = []
+
+    # A newline closes a legal-list item/paragraph. Sentence punctuation is
+    # also safe, while the word-limited prefix remains the final fallback for
+    # OCR text that contains neither kind of boundary.
+    boundary_ends.extend(match.start() for match in re.finditer(r"\n+", prefix))
+    boundary_ends.extend(
+        match.end()
+        for match in re.finditer(r"[.!?…](?=(?:[\"'”’\)\]]*)?(?:\s|$))", prefix)
+    )
+    valid_ends = [end for end in boundary_ends if prefix[:end].strip()]
+    if valid_ends:
+        return prefix[: max(valid_ends)].strip()
+    return prefix
+
+
 def best_excerpt(text: str, question: str, max_words: int = 520) -> str:
     """Lấy cửa sổ trong chunk phủ nhiều từ khóa câu hỏi nhất."""
     words = str(text or "").split()
@@ -178,7 +205,7 @@ def best_excerpt(text: str, question: str, max_words: int = 520) -> str:
 
     terms = set(query_terms(question))
     if not terms:
-        return " ".join(words[:max_words]).strip()
+        return truncate_at_text_boundary(str(text or ""), max_words)
 
     window_size = max_words
     step = max(40, window_size // 5)
@@ -200,7 +227,8 @@ def best_excerpt(text: str, question: str, max_words: int = 520) -> str:
     last_score = 3.0 * len(terms.intersection(last_tokens)) + min(
         sum(token in terms for token in last_tokens), 2 * len(terms)
     )
-    return " ".join(words[best_start : best_start + window_size]).strip()
+    selected = " ".join(words[best_start:]).strip()
+    return truncate_at_text_boundary(selected, max_words)
 
 
 LONG_ANSWER_PATTERNS: tuple[str, ...] = (
@@ -261,9 +289,10 @@ def merge_adjacent_chunks(
         else:
             remaining = max_words - total_words
             if remaining > 0:
-                merged_texts.append(" ".join(words[:remaining]))
-                total_words += remaining
+                bounded = truncate_at_text_boundary(text, remaining)
+                if bounded:
+                    merged_texts.append(bounded)
+                    total_words += len(bounded.split())
             break
 
     return "\n\n".join(merged_texts).strip()
-

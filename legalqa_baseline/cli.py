@@ -96,6 +96,9 @@ def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
         help="Top-p sampling",
     )
     parser.add_argument("--max-input-tokens", type=int, default=7168)
+    parser.add_argument("--long-llm-max-input-tokens", type=int, default=6144)
+    parser.add_argument("--long-llm-max-new-tokens", type=int, default=1024)
+    parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--generation-seed", type=int, default=2026)
 
 
@@ -262,6 +265,12 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
             raise ValueError("max_new_tokens phải lớn hơn 0")
         if getattr(args, "max_input_tokens", 7168) <= 0:
             raise ValueError("max_input_tokens phải lớn hơn 0")
+        if getattr(args, "long_llm_max_input_tokens", 6144) <= 0:
+            raise ValueError("long_llm_max_input_tokens phải lớn hơn 0")
+        if getattr(args, "long_llm_max_new_tokens", 1024) <= 0:
+            raise ValueError("long_llm_max_new_tokens phải lớn hơn 0")
+        if getattr(args, "repetition_penalty", 1.05) <= 0:
+            raise ValueError("repetition_penalty phải lớn hơn 0")
         if getattr(args, "temperature", 0.0) < 0:
             raise ValueError("temperature không được âm")
         if not 0.0 < getattr(args, "top_p", 0.9) <= 1.0:
@@ -276,6 +285,7 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
             top_p=getattr(args, "top_p", 0.9),
             max_input_tokens=getattr(args, "max_input_tokens", 7168),
             seed=getattr(args, "generation_seed", 2026),
+            repetition_penalty=getattr(args, "repetition_penalty", 1.05),
         )
 
         dense_index_path = getattr(args, "dense_index", None)
@@ -351,6 +361,8 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         allow_retrieval_fallback=allow_fallback,
         enable_long_answer_extractive=getattr(args, "enable_long_answer_extractive", True),
         max_long_answer_words=getattr(args, "max_long_answer_words", 800),
+        long_llm_max_input_tokens=getattr(args, "long_llm_max_input_tokens", 6144),
+        long_llm_max_new_tokens=getattr(args, "long_llm_max_new_tokens", 1024),
     )
 
 

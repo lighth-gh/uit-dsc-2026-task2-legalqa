@@ -8,6 +8,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .generator import GenerationTokenLimitReached
 from .storage import SearchIndex
 from .text import (
     LONG_ANSWER_PATTERNS,
@@ -241,6 +242,8 @@ class LegalQABaseline:
         allow_retrieval_fallback: bool = False,
         enable_long_answer_extractive: bool = True,
         max_long_answer_words: int = 800,
+        long_llm_max_input_tokens: int = 6144,
+        long_llm_max_new_tokens: int = 1024,
     ):
         positive = {
             "top_k": top_k,
@@ -254,6 +257,8 @@ class LegalQABaseline:
             "rerank_top_k": rerank_top_k,
             "dense_query_max_length": dense_query_max_length,
             "reranker_max_length": reranker_max_length,
+            "long_llm_max_input_tokens": long_llm_max_input_tokens,
+            "long_llm_max_new_tokens": long_llm_max_new_tokens,
         }
         invalid = {name: value for name, value in positive.items() if value <= 0}
         if invalid:
@@ -283,6 +288,67 @@ class LegalQABaseline:
         self.dense_query_max_length = dense_query_max_length
         self.reranker_max_length = reranker_max_length
         self.allow_retrieval_fallback = allow_retrieval_fallback
+        self.long_llm_max_input_tokens = long_llm_max_input_tokens
+        self.long_llm_max_new_tokens = long_llm_max_new_tokens
+
+    def _adjacent_chunks(self, best: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return previous/current/next chunks from the best chunk's document."""
+        context_id = str(best.get("context_id") or "").strip()
+        chunk_no = int(best.get("chunk_no", 0))
+        adjacent_nos = [
+            number
+            for number in (chunk_no - 1, chunk_no, chunk_no + 1)
+            if number >= 0
+        ]
+        get_context_chunks = getattr(self.index, "get_context_chunks", None)
+        fetched = (
+            get_context_chunks(context_id, chunk_nos=adjacent_nos)
+            if context_id and callable(get_context_chunks)
+            else []
+        )
+
+        by_key: dict[tuple[str, int], dict[str, Any]] = {}
+        for chunk in [*fetched, best]:
+            chunk_context_id = str(chunk.get("context_id") or "").strip()
+            try:
+                candidate_no = int(chunk.get("chunk_no", 0))
+            except (TypeError, ValueError):
+                continue
+            if (
+                chunk_context_id == context_id
+                and candidate_no in adjacent_nos
+                and str(chunk.get("text") or "").strip()
+            ):
+                by_key[(chunk_context_id, candidate_no)] = dict(chunk)
+        return sorted(by_key.values(), key=lambda chunk: int(chunk["chunk_no"]))
+
+    @staticmethod
+    def _merge_raw_chunks(chunks: list[dict[str, Any]]) -> str:
+        """Join complete adjacent chunks without a character or word heuristic."""
+        return "\n\n".join(
+            str(chunk.get("text") or "").strip()
+            for chunk in chunks
+            if str(chunk.get("text") or "").strip()
+        )
+
+    @staticmethod
+    def _prioritize_prompt_chunks(
+        adjacent_chunks: list[dict[str, Any]],
+        reranked_chunks: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Put contiguous evidence first, followed by other reranker results."""
+        ordered: list[dict[str, Any]] = []
+        seen: set[tuple[str, int]] = set()
+        for chunk in [*adjacent_chunks, *reranked_chunks]:
+            key = (
+                str(chunk.get("context_id") or "").strip(),
+                int(chunk.get("chunk_no", 0)),
+            )
+            if key in seen or not str(chunk.get("text") or "").strip():
+                continue
+            seen.add(key)
+            ordered.append(chunk)
+        return ordered
 
     def _extractive(self, question: str) -> Prediction | None:
         contexts = self.index.search_contexts(question, top_k=self.top_k)
@@ -295,15 +361,7 @@ class LegalQABaseline:
         )
         best = ranked[0]
         if self.enable_long_answer_extractive and is_long_answer_question(question):
-            context_id = str(best.get("context_id") or "").strip()
-            chunk_no = int(best.get("chunk_no", 0))
-            adjacent_nos = [chunk_no]
-            if chunk_no > 0:
-                adjacent_nos.append(chunk_no - 1)
-            adjacent_nos.append(chunk_no + 1)
-            adjacent_chunks = self.index.get_context_chunks(
-                context_id, chunk_nos=adjacent_nos
-            )
+            adjacent_chunks = self._adjacent_chunks(best)
             if adjacent_chunks:
                 answer = merge_adjacent_chunks(
                     adjacent_chunks, max_words=self.max_long_answer_words
@@ -439,17 +497,9 @@ class LegalQABaseline:
             return None
 
         best = top_chunks[0]
+        adjacent_chunks = self._adjacent_chunks(best)
 
         if self.enable_long_answer_extractive and is_long_answer_question(question):
-            context_id = str(best.get("context_id") or "").strip()
-            chunk_no = int(best.get("chunk_no", 0))
-            adjacent_nos = [chunk_no]
-            if chunk_no > 0:
-                adjacent_nos.append(chunk_no - 1)
-            adjacent_nos.append(chunk_no + 1)
-            adjacent_chunks = self.index.get_context_chunks(
-                context_id, chunk_nos=adjacent_nos
-            )
             if adjacent_chunks:
                 merged_answer = merge_adjacent_chunks(
                     adjacent_chunks, max_words=self.max_long_answer_words
@@ -474,8 +524,12 @@ class LegalQABaseline:
                     confidence = _rag_confidence(question, best)
                     return Prediction(merged_answer, "extractive_long", confidence, evidence)
 
+        # Preserve the legal document's local continuity first. Other reranker
+        # results come later and are retained only while the generator's prompt
+        # budget still has room (the generator truncates context from the tail).
+        prompt_chunks = self._prioritize_prompt_chunks(adjacent_chunks, top_chunks)
         context_blocks = []
-        for idx, chunk in enumerate(top_chunks, start=1):
+        for idx, chunk in enumerate(prompt_chunks, start=1):
             name = str(chunk.get("name") or "").strip()
             text = str(chunk.get("text") or "").strip()
             if name:
@@ -484,7 +538,50 @@ class LegalQABaseline:
                 context_blocks.append(f"[{idx}] {text}")
         joined_context = "\n\n".join(context_blocks)
 
-        answer = self.generator.generate(context=joined_context, question=question)
+        raw_context_answer = self._merge_raw_chunks(adjacent_chunks)
+        use_long_llm_budget = is_long_answer_question(question)
+        generator_kwargs: dict[str, Any] = {
+            "context": joined_context,
+            "question": question,
+        }
+        long_llm_budget_applied = False
+        if use_long_llm_budget:
+            generate = self.generator.generate
+            try:
+                parameters = inspect.signature(generate).parameters
+            except (TypeError, ValueError):
+                parameters = {}
+            accepts_kwargs = any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+            if accepts_kwargs or "max_input_tokens" in parameters:
+                generator_kwargs["max_input_tokens"] = self.long_llm_max_input_tokens
+            if accepts_kwargs or "max_new_tokens" in parameters:
+                generator_kwargs["max_new_tokens"] = self.long_llm_max_new_tokens
+            long_llm_budget_applied = (
+                "max_input_tokens" in generator_kwargs
+                and "max_new_tokens" in generator_kwargs
+            )
+        try:
+            answer = self.generator.generate(**generator_kwargs)
+            route = "rag"
+            generation_evidence: dict[str, Any] = {
+                "long_llm_budget": long_llm_budget_applied,
+            }
+        except GenerationTokenLimitReached as exc:
+            if not raw_context_answer:
+                raise RuntimeError(
+                    "Generator reached its token limit but the context fallback is empty"
+                ) from exc
+            answer = raw_context_answer
+            route = "rag_token_limit_fallback"
+            generation_evidence = {
+                "hit_token_limit": True,
+                "generated_tokens": exc.generated_tokens,
+                "max_new_tokens": exc.max_new_tokens,
+                "long_llm_budget": long_llm_budget_applied,
+            }
         if not isinstance(answer, str) or not answer.strip():
             raise RuntimeError("Generator trả về answer rỗng/không hợp lệ")
         answer = answer.strip()
@@ -502,10 +599,20 @@ class LegalQABaseline:
                 }
                 for c in top_chunks
             ],
+            "adjacent_chunk_nos": [c["chunk_no"] for c in adjacent_chunks],
+            "prompt_contexts": [
+                {
+                    "context_id": c["context_id"],
+                    "chunk_no": c["chunk_no"],
+                    "name": c.get("name"),
+                }
+                for c in prompt_chunks
+            ],
+            **generation_evidence,
         }
         best = top_chunks[0]
         confidence = _rag_confidence(question, best)
-        return Prediction(answer, "rag", confidence, evidence)
+        return Prediction(answer, route, confidence, evidence)
 
     def _knn(self, question: str, exclude_id: str | None = None) -> Prediction | None:
         neighbors = self.index.search_train(question, top_k=5, exclude_id=exclude_id)

@@ -147,6 +147,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dense-query-max-length", type=int, default=256)
     parser.add_argument("--reranker-max-length", type=int, default=2304)
     parser.add_argument("--max-input-tokens", type=int, default=7168)
+    parser.add_argument("--long-llm-max-input-tokens", type=int, default=6144)
+    parser.add_argument("--long-llm-max-new-tokens", type=int, default=1024)
+    parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--generation-seed", type=int, default=2026)
     parser.add_argument(
         "--allow-retrieval-fallback",
@@ -232,6 +235,7 @@ def main() -> int:
         top_p=args.top_p,
         max_input_tokens=args.max_input_tokens,
         seed=args.generation_seed,
+        repetition_penalty=args.repetition_penalty,
     )
 
     dense_index = None
@@ -308,6 +312,8 @@ def main() -> int:
             allow_retrieval_fallback=args.allow_retrieval_fallback,
             enable_long_answer_extractive=not args.disable_long_answer_extractive,
             max_long_answer_words=args.max_long_answer_words,
+            long_llm_max_input_tokens=args.long_llm_max_input_tokens,
+            long_llm_max_new_tokens=args.long_llm_max_new_tokens,
         )
 
         total = len(sample_ids)
