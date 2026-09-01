@@ -447,6 +447,38 @@ class TestDenseRAG(unittest.TestCase):
         pred = pipeline.predict_one("Mức phạt?", mode="rag")
         self.assertEqual(pred.evidence["num_contexts"], 2)
 
+    def test_9b_reranker_scores_only_optimized_candidate_pool(self) -> None:
+        class RecordingReranker(MockReranker):
+            candidate_count = 0
+            seen_max_length = 0
+
+            def rerank(
+                self,
+                question: str,
+                candidates: list[dict[str, Any]],
+                top_k: int = 3,
+                max_length: int = 1024,
+            ) -> list[dict[str, Any]]:
+                type(self).candidate_count = len(candidates)
+                type(self).seen_max_length = max_length
+                return super().rerank(question, candidates, top_k, max_length)
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            reranker=RecordingReranker(),
+            rrf_top_k=50,
+            reranker_candidate_k=20,
+            rerank_top_k=3,
+            reranker_max_length=1024,
+        )
+        pred = pipeline.predict_one("Mức phạt?", mode="rag")
+
+        self.assertEqual(RecordingReranker.candidate_count, 20)
+        self.assertEqual(RecordingReranker.seen_max_length, 1024)
+        self.assertEqual(pred.evidence["reranker_candidates"], 20)
+        self.assertIn("reranker", pred.evidence["stage_seconds"])
+
     def test_10_dense_build_resumes_from_atomic_parts(self) -> None:
         import numpy as np
 

@@ -172,6 +172,14 @@ class ViQwenRAGGenerator:
             trust_remote_code=False,
         )
         self._model.eval()
+        generation_config = getattr(self._model, "generation_config", None)
+        if generation_config is not None and self.temperature <= 0.0:
+            # Một số snapshot lưu sampling flags dù chạy greedy, khiến
+            # Transformers cảnh báo temperature/top_p/top_k bị ignored.
+            generation_config.do_sample = False
+            generation_config.temperature = None
+            generation_config.top_p = None
+            generation_config.top_k = None
         device_map_used = getattr(self._model, "hf_device_map", None)
         if isinstance(device_map_used, dict):
             mapped_devices = sorted({str(value) for value in device_map_used.values()})

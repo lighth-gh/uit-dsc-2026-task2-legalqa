@@ -115,7 +115,7 @@ class VietnameseReranker:
         question: str,
         candidates: list[dict[str, Any]],
         top_k: int = 3,
-        max_length: int = 2304,
+        max_length: int = 1024,
     ) -> list[dict[str, Any]]:
         """Tái xếp hạng danh sách candidate chunks và chọn Top-K chunks liên quan nhất."""
         if top_k <= 0 or max_length <= 0:

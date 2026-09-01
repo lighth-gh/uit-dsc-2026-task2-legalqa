@@ -39,7 +39,9 @@ class CliTests(unittest.TestCase):
             ]
         )
         self.assertEqual(args.rrf_top_k, 50)
+        self.assertEqual(args.reranker_candidate_k, 20)
         self.assertEqual(args.rerank_top_k, 3)
+        self.assertEqual(args.reranker_max_length, 1024)
         self.assertEqual(args.context_top_k, 3)
         self.assertEqual(args.temperature, 0.0)
         self.assertEqual(args.max_input_tokens, 7168)

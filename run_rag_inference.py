@@ -145,13 +145,19 @@ def parse_args() -> argparse.Namespace:
         help="Số candidate sau khi RRF fusion",
     )
     parser.add_argument(
+        "--reranker-candidate-k",
+        type=int,
+        default=20,
+        help="Số candidate đầu RRF thực sự đưa qua cross-encoder",
+    )
+    parser.add_argument(
         "--rerank-top-k",
         type=int,
         default=3,
         help="Số chunk chọn lọc sau khi qua Reranker",
     )
     parser.add_argument("--dense-query-max-length", type=int, default=256)
-    parser.add_argument("--reranker-max-length", type=int, default=2304)
+    parser.add_argument("--reranker-max-length", type=int, default=1024)
     parser.add_argument("--max-input-tokens", type=int, default=7168)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--min-llm-answer-tokens", type=int, default=8)
@@ -229,7 +235,11 @@ def main() -> int:
     print(f"• Dense Index: {args.dense_index}")
     print(f"• Embedding: {args.embedding_model}")
     print(f"• Reranker: {args.reranker_model}")
-    print(f"• Mode: {args.mode} | RRF k={args.rrf_k} | Top {args.rerank_top_k} chunks")
+    print(
+        f"• Mode: {args.mode} | RRF Top {args.rrf_top_k} -> "
+        f"Reranker pool {args.reranker_candidate_k}, Top {args.rerank_top_k}, "
+        f"max_length={args.reranker_max_length}"
+    )
     print(f"• Device: {args.device}")
     print("=" * 60)
 
@@ -319,6 +329,7 @@ def main() -> int:
             dense_top_k=args.dense_top_k,
             rrf_k=args.rrf_k,
             rrf_top_k=args.rrf_top_k,
+            reranker_candidate_k=args.reranker_candidate_k,
             rerank_top_k=args.rerank_top_k,
             dense_query_max_length=args.dense_query_max_length,
             reranker_max_length=args.reranker_max_length,
@@ -335,6 +346,9 @@ def main() -> int:
             pred = pipeline.predict_one(question, mode=args.mode)
             predictions[sample_id] = pred.answer
             routes[pred.route] = routes.get(pred.route, 0) + 1
+            stage_seconds = pred.evidence.get("stage_seconds", {})
+            if not isinstance(stage_seconds, dict):
+                stage_seconds = {}
             with audit_path.open("a", encoding="utf-8") as audit_handle:
                 audit_handle.write(
                     json.dumps(
@@ -350,7 +364,10 @@ def main() -> int:
                 avg_time = elapsed / idx
                 print(
                     f"[{idx:,}/{total:,}] | Đã qua: {elapsed:.1f}s | "
-                    f"Tốc độ: {avg_time:.2f}s/câu | Routes: {routes}",
+                    f"Tốc độ: {avg_time:.2f}s/câu | "
+                    f"Rerank: {float(stage_seconds.get('reranker', 0.0)):.2f}s | "
+                    f"Gen: {float(stage_seconds.get('generation', 0.0)):.2f}s | "
+                    f"Routes: {routes}",
                     flush=True,
                 )
 

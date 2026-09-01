@@ -156,7 +156,7 @@ def evaluate_retrieval(
     rrf_k: int = 60,
     rrf_top_k: int = 50,
     dense_query_max_length: int = 256,
-    reranker_max_length: int = 2304,
+    reranker_max_length: int = 1024,
     gold_candidate_k: int = 100,
     gold_max_chunks: int = 5,
     gold_min_score: float = 0.20,

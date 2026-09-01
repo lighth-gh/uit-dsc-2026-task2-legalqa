@@ -158,7 +158,9 @@ python -m legalqa_baseline predict \
   --dense-top-k 50 \
   --rrf-k 60 \
   --rrf-top-k 50 \
+  --reranker-candidate-k 20 \
   --rerank-top-k 3 \
+  --reranker-max-length 1024 \
   --device cuda
 ```
 
@@ -221,8 +223,10 @@ Tham số đáng thử:
 
 - `--bm25-top-k` & `--dense-top-k`: 50 (lấy 50 ứng viên từ mỗi nhánh).
 - `--rrf-k`: 60 (tham số Reciprocal Rank Fusion tiêu chuẩn).
-- `--rrf-top-k`: 50 (giữ Hybrid Top 50 để reranker chấm).
+- `--rrf-top-k`: 50 (giữ thứ hạng Hybrid Top 50 sau fusion để audit/prefilter).
+- `--reranker-candidate-k`: 20 (chỉ cross-encode Top 20 sau RRF; Top 50 vẫn được giữ ở tầng fusion).
 - `--rerank-top-k`: 3 (chọn đúng 3 Điều luật chính xác nhất đưa vào LLM).
+- `--reranker-max-length`: 1024 (giảm mạnh attention cost so với 2304; phù hợp smoke/full inference trên T4).
 
 ## 6. Kiểm tra một câu hỏi
 

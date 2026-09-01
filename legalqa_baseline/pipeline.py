@@ -4,6 +4,7 @@ import difflib
 import inspect
 import math
 import sys
+import time
 import unicodedata
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -65,6 +66,9 @@ def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str,
         "possibly_cut": bool(evidence.get("possibly_cut", False)),
         "top_document_id": top_document_id,
         "reranker_score": reranker_score,
+        "reranker_candidates": evidence.get("reranker_candidates"),
+        "reranker_max_length": evidence.get("reranker_max_length"),
+        "stage_seconds": evidence.get("stage_seconds", {}),
     }
 
 
@@ -272,9 +276,10 @@ class LegalQABaseline:
         dense_top_k: int = 50,
         rrf_k: int = 60,
         rrf_top_k: int = 50,
+        reranker_candidate_k: int = 20,
         rerank_top_k: int = 3,
         dense_query_max_length: int = 256,
-        reranker_max_length: int = 2304,
+        reranker_max_length: int = 1024,
         allow_retrieval_fallback: bool = False,
         enable_long_answer_extractive: bool = True,
         max_long_answer_words: int = 800,
@@ -288,6 +293,7 @@ class LegalQABaseline:
             "dense_top_k": dense_top_k,
             "rrf_k": rrf_k,
             "rrf_top_k": rrf_top_k,
+            "reranker_candidate_k": reranker_candidate_k,
             "rerank_top_k": rerank_top_k,
             "dense_query_max_length": dense_query_max_length,
             "reranker_max_length": reranker_max_length,
@@ -298,8 +304,16 @@ class LegalQABaseline:
             raise ValueError(f"Các tham số pipeline phải lớn hơn 0: {invalid}")
         if not 0.0 <= knn_threshold <= 1.0:
             raise ValueError("knn_threshold phải nằm trong [0, 1]")
-        if context_top_k > rerank_top_k or rerank_top_k > rrf_top_k:
-            raise ValueError("Cần context_top_k <= rerank_top_k <= rrf_top_k")
+        if not (
+            context_top_k
+            <= rerank_top_k
+            <= reranker_candidate_k
+            <= rrf_top_k
+        ):
+            raise ValueError(
+                "Cần context_top_k <= rerank_top_k <= "
+                "reranker_candidate_k <= rrf_top_k"
+            )
         if (dense_index is None) != (embedding_model is None):
             raise ValueError("dense_index và embedding_model phải được truyền cùng nhau")
         self.index = index
@@ -316,6 +330,7 @@ class LegalQABaseline:
         self.dense_top_k = dense_top_k
         self.rrf_k = rrf_k
         self.rrf_top_k = rrf_top_k
+        self.reranker_candidate_k = reranker_candidate_k
         self.rerank_top_k = rerank_top_k or context_top_k
         self.dense_query_max_length = dense_query_max_length
         self.reranker_max_length = reranker_max_length
@@ -460,10 +475,16 @@ class LegalQABaseline:
             from .generator import ViQwenRAGGenerator
             self.generator = ViQwenRAGGenerator()
 
+        rag_started = time.perf_counter()
+        stage_seconds: dict[str, float] = {}
+
         # 1. Truy xuất BM25 Top-50
+        stage_started = time.perf_counter()
         bm25_candidates = self.index.search_contexts(question, top_k=self.bm25_top_k)
+        stage_seconds["bm25"] = round(time.perf_counter() - stage_started, 4)
 
         # 2. Truy xuất Dense FAISS Top-50 (nếu có index và embedding model)
+        stage_started = time.perf_counter()
         dense_candidates: list[dict[str, Any]] = []
         if self.dense_index is not None and self.embedding_model is not None:
             try:
@@ -492,8 +513,10 @@ class LegalQABaseline:
                 if not self.allow_retrieval_fallback:
                     raise RuntimeError(f"Dense search thất bại: {exc}") from exc
                 print(f"[pipeline] Lỗi dense search ({exc}), fallback BM25.", file=sys.stderr)
+        stage_seconds["dense"] = round(time.perf_counter() - stage_started, 4)
 
         # 3. Hợp nhất RRF (Reciprocal Rank Fusion k=60 -> Top-50) hoặc fallback Heuristic BM25
+        stage_started = time.perf_counter()
         if dense_candidates:
             try:
                 fused_candidates = reciprocal_rank_fusion(
@@ -515,16 +538,19 @@ class LegalQABaseline:
                 key=lambda item: _context_rerank_score(question, item),
                 reverse=True,
             )[: self.rrf_top_k]
+        stage_seconds["fusion"] = round(time.perf_counter() - stage_started, 4)
 
         if not fused_candidates:
             return None
 
         # 4. Tái xếp hạng bằng Vietnamese_Reranker (Top-3 chunks)
+        stage_started = time.perf_counter()
         if self.reranker is not None:
             try:
+                rerank_candidates = fused_candidates[: self.reranker_candidate_k]
                 reranked_chunks = self.reranker.rerank(
                     question,
-                    fused_candidates,
+                    rerank_candidates,
                     top_k=self.rerank_top_k,
                     max_length=self.reranker_max_length,
                 )
@@ -545,6 +571,7 @@ class LegalQABaseline:
                 top_chunks = fused_candidates[: self.rerank_top_k]
         else:
             top_chunks = fused_candidates[: self.rerank_top_k]
+        stage_seconds["reranker"] = round(time.perf_counter() - stage_started, 4)
 
         # Reranker có thể trả nhiều candidate để audit; prompt chỉ nhận context_top_k.
         top_chunks = top_chunks[: self.context_top_k]
@@ -560,6 +587,10 @@ class LegalQABaseline:
                 if merged_answer:
                     evidence = {
                         "num_contexts": len(top_chunks),
+                        "reranker_candidates": min(
+                            len(fused_candidates), self.reranker_candidate_k
+                        ),
+                        "reranker_max_length": self.reranker_max_length,
                         "top_contexts": [
                             {
                                 "context_id": c["context_id"],
@@ -578,6 +609,11 @@ class LegalQABaseline:
                         "hit_token_limit": False,
                         "says_no_information": False,
                         "possibly_cut": False,
+                        "stage_seconds": {
+                            **stage_seconds,
+                            "generation": 0.0,
+                            "total": round(time.perf_counter() - rag_started, 4),
+                        },
                     }
                     confidence = _rag_confidence(question, best)
                     return Prediction(merged_answer, "extractive_long", confidence, evidence)
@@ -601,6 +637,7 @@ class LegalQABaseline:
             "context": joined_context,
             "question": question,
         }
+        generation_started = time.perf_counter()
         try:
             raw_generated_answer = self.generator.generate(**generator_kwargs)
             answer = clean_answer(raw_generated_answer)
@@ -651,11 +688,20 @@ class LegalQABaseline:
                 "says_no_information": False,
                 "possibly_cut": True,
             }
+        finally:
+            stage_seconds["generation"] = round(
+                time.perf_counter() - generation_started,
+                4,
+            )
         if not isinstance(answer, str) or not answer.strip():
             raise RuntimeError("Generator và raw context đều trả về answer rỗng")
         answer = answer.strip()
         evidence = {
             "num_contexts": len(top_chunks),
+            "reranker_candidates": min(
+                len(fused_candidates), self.reranker_candidate_k
+            ),
+            "reranker_max_length": self.reranker_max_length,
             "top_contexts": [
                 {
                     "context_id": c["context_id"],
@@ -678,6 +724,10 @@ class LegalQABaseline:
                 for c in prompt_chunks
             ],
             "context_words": len(tokenize(joined_context)),
+            "stage_seconds": {
+                **stage_seconds,
+                "total": round(time.perf_counter() - rag_started, 4),
+            },
             **generation_evidence,
         }
         best = top_chunks[0]

@@ -25,9 +25,15 @@ def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dense-top-k", type=int, default=50, help="Số candidate truy xuất bằng Dense FAISS")
     parser.add_argument("--rrf-k", type=int, default=60, help="Hệ số RRF fusion k (mặc định 60)")
     parser.add_argument("--rrf-top-k", type=int, default=50, help="Số candidate sau khi RRF fusion")
+    parser.add_argument(
+        "--reranker-candidate-k",
+        type=int,
+        default=20,
+        help="Số candidate đầu RRF thực sự đưa qua cross-encoder",
+    )
     parser.add_argument("--rerank-top-k", type=int, default=3, help="Số chunk chọn lọc sau khi qua Reranker")
     parser.add_argument("--dense-query-max-length", type=int, default=256)
-    parser.add_argument("--reranker-max-length", type=int, default=2304)
+    parser.add_argument("--reranker-max-length", type=int, default=1024)
     parser.add_argument(
         "--allow-retrieval-fallback",
         action="store_true",
@@ -210,7 +216,7 @@ def make_parser() -> argparse.ArgumentParser:
     retrieval_eval.add_argument("--rrf-k", type=int, default=60)
     retrieval_eval.add_argument("--rrf-top-k", type=int, default=50)
     retrieval_eval.add_argument("--dense-query-max-length", type=int, default=256)
-    retrieval_eval.add_argument("--reranker-max-length", type=int, default=2304)
+    retrieval_eval.add_argument("--reranker-max-length", type=int, default=1024)
     retrieval_eval.add_argument("--gold-candidate-k", type=int, default=100)
     retrieval_eval.add_argument("--gold-max-chunks", type=int, default=5)
     retrieval_eval.add_argument("--gold-min-score", type=float, default=0.20)
@@ -249,17 +255,24 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         "dense_top_k": getattr(args, "dense_top_k", 50),
         "rrf_k": getattr(args, "rrf_k", 60),
         "rrf_top_k": getattr(args, "rrf_top_k", 50),
+        "reranker_candidate_k": getattr(args, "reranker_candidate_k", 20),
         "rerank_top_k": getattr(args, "rerank_top_k", 3),
         "dense_query_max_length": getattr(args, "dense_query_max_length", 256),
-        "reranker_max_length": getattr(args, "reranker_max_length", 2304),
+        "reranker_max_length": getattr(args, "reranker_max_length", 1024),
     }
     invalid = {name: value for name, value in positive_values.items() if value <= 0}
     if invalid:
         raise ValueError(f"Các tham số phải lớn hơn 0: {invalid}")
-    if positive_values["context_top_k"] > positive_values["rerank_top_k"]:
-        raise ValueError("context_top_k không được lớn hơn rerank_top_k")
-    if positive_values["rerank_top_k"] > positive_values["rrf_top_k"]:
-        raise ValueError("rerank_top_k không được lớn hơn rrf_top_k")
+    if not (
+        positive_values["context_top_k"]
+        <= positive_values["rerank_top_k"]
+        <= positive_values["reranker_candidate_k"]
+        <= positive_values["rrf_top_k"]
+    ):
+        raise ValueError(
+            "Cần context_top_k <= rerank_top_k <= "
+            "reranker_candidate_k <= rrf_top_k"
+        )
     if not 0.0 <= args.knn_threshold <= 1.0:
         raise ValueError("knn_threshold phải nằm trong [0, 1]")
     allow_fallback = bool(getattr(args, "allow_retrieval_fallback", False))
@@ -357,9 +370,10 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         dense_top_k=getattr(args, "dense_top_k", 50),
         rrf_k=getattr(args, "rrf_k", 60),
         rrf_top_k=getattr(args, "rrf_top_k", 50),
+        reranker_candidate_k=getattr(args, "reranker_candidate_k", 20),
         rerank_top_k=getattr(args, "rerank_top_k", 3),
         dense_query_max_length=getattr(args, "dense_query_max_length", 256),
-        reranker_max_length=getattr(args, "reranker_max_length", 2304),
+        reranker_max_length=getattr(args, "reranker_max_length", 1024),
         allow_retrieval_fallback=allow_fallback,
         enable_long_answer_extractive=getattr(args, "enable_long_answer_extractive", True),
         max_long_answer_words=getattr(args, "max_long_answer_words", 800),
@@ -544,6 +558,9 @@ def command_predict(args: argparse.Namespace) -> int:
             )
             processed_count += 1
             sample_time = time.time() - t0
+            stage_seconds = result.evidence.get("stage_seconds", {})
+            if not isinstance(stage_seconds, dict):
+                stage_seconds = {}
 
             # Lưu checkpoint định kỳ
             if processed_count % interval == 0 or number == total:
@@ -558,6 +575,8 @@ def command_predict(args: argparse.Namespace) -> int:
                 pbar.set_postfix({
                     "routes": str(routes),
                     "last": f"{sample_time:.2f}s",
+                    "rerank": f"{float(stage_seconds.get('reranker', 0.0)):.2f}s",
+                    "gen": f"{float(stage_seconds.get('generation', 0.0)):.2f}s",
                 })
                 pbar.update(1)
             else:
@@ -570,6 +589,8 @@ def command_predict(args: argparse.Namespace) -> int:
                     print(
                         f"[predict:{args.mode}] {number:,}/{total:,} ({percent:.1f}%) | "
                         f"Tốc độ: {avg_time:.2f}s/câu | ETA: {eta:.0f}s | "
+                        f"Rerank: {float(stage_seconds.get('reranker', 0.0)):.2f}s | "
+                        f"Gen: {float(stage_seconds.get('generation', 0.0)):.2f}s | "
                         f"Routes: {routes}",
                         file=sys.stderr,
                         flush=True,
@@ -602,7 +623,9 @@ def command_predict(args: argparse.Namespace) -> int:
             "bm25_top_k": pipeline.bm25_top_k,
             "dense_top_k": pipeline.dense_top_k,
             "rrf_top_k": pipeline.rrf_top_k,
+            "reranker_candidate_k": pipeline.reranker_candidate_k,
             "rerank_top_k": pipeline.rerank_top_k,
+            "reranker_max_length": pipeline.reranker_max_length,
             "context_top_k": pipeline.context_top_k,
         },
         "elapsed_seconds": round(time.time() - started, 2),
