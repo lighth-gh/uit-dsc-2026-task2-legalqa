@@ -575,6 +575,8 @@ def command_predict(args: argparse.Namespace) -> int:
                 pbar.set_postfix({
                     "routes": str(routes),
                     "last": f"{sample_time:.2f}s",
+                    "bm25": f"{float(stage_seconds.get('bm25', 0.0)):.2f}s",
+                    "dense": f"{float(stage_seconds.get('dense', 0.0)):.2f}s",
                     "rerank": f"{float(stage_seconds.get('reranker', 0.0)):.2f}s",
                     "gen": f"{float(stage_seconds.get('generation', 0.0)):.2f}s",
                 })
@@ -589,6 +591,8 @@ def command_predict(args: argparse.Namespace) -> int:
                     print(
                         f"[predict:{args.mode}] {number:,}/{total:,} ({percent:.1f}%) | "
                         f"Tốc độ: {avg_time:.2f}s/câu | ETA: {eta:.0f}s | "
+                        f"BM25: {float(stage_seconds.get('bm25', 0.0)):.2f}s | "
+                        f"Dense: {float(stage_seconds.get('dense', 0.0)):.2f}s | "
                         f"Rerank: {float(stage_seconds.get('reranker', 0.0)):.2f}s | "
                         f"Gen: {float(stage_seconds.get('generation', 0.0)):.2f}s | "
                         f"Routes: {routes}",

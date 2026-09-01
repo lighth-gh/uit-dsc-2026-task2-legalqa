@@ -170,6 +170,12 @@ def _connect(path: str | Path, readonly: bool = False) -> sqlite3.Connection:
     db_path = Path(path).resolve()
     if readonly:
         connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        # FTS5 performs many small random reads. Keep its temporary work and a
+        # useful page cache in RAM; this matters especially on Kaggle mounts.
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("PRAGMA temp_store=MEMORY")
+        connection.execute("PRAGMA cache_size=-200000")
+        connection.execute("PRAGMA mmap_size=1073741824")
     else:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(db_path)
@@ -557,4 +563,3 @@ class SearchIndex:
                 [cid, *valid_nos],
             ).fetchall()
         return [dict(row) for row in rows]
-

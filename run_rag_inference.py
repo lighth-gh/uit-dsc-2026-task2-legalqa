@@ -365,6 +365,8 @@ def main() -> int:
                 print(
                     f"[{idx:,}/{total:,}] | Đã qua: {elapsed:.1f}s | "
                     f"Tốc độ: {avg_time:.2f}s/câu | "
+                    f"BM25: {float(stage_seconds.get('bm25', 0.0)):.2f}s | "
+                    f"Dense: {float(stage_seconds.get('dense', 0.0)):.2f}s | "
                     f"Rerank: {float(stage_seconds.get('reranker', 0.0)):.2f}s | "
                     f"Gen: {float(stage_seconds.get('generation', 0.0)):.2f}s | "
                     f"Routes: {routes}",
