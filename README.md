@@ -123,9 +123,8 @@ Một chi tiết cần biết: bản `rouge_score/tokenize.py` BTC gửi dùng r
 
 ## 5. Sinh submission Public
 
-Tệp `submission.json` đang được giữ lại như artifact của baseline lexical cũ;
-không xem đó là kết quả của pipeline RAG 0.2. Submission RAG phải được sinh lại
-thành `artifacts/submission_rag.json` sau khi cả BM25 và Dense index đã sẵn sàng.
+Kết quả cuối cùng của pipeline RAG được ghi vào `artifacts/submission.json`
+sau khi cả BM25 và Dense index đã sẵn sàng.
 
 Khuyến nghị chạy cả ba mode và nộp thử để biết hướng nào hợp leaderboard:
 
@@ -153,7 +152,7 @@ python -m legalqa_baseline predict \
   --input data/public-official.json \
   --db artifacts/legalqa.sqlite \
   --dense-index artifacts/legalqa_dense \
-  --output artifacts/submission_rag.json \
+  --output artifacts/submission.json \
   --mode rag \
   --bm25-top-k 50 \
   --dense-top-k 50 \
@@ -193,7 +192,7 @@ python run_rag_inference.py \
   --input data/public-official.json \
   --db artifacts/legalqa.sqlite \
   --dense-index artifacts/legalqa_dense \
-  --output artifacts/submission_rag.json \
+  --output artifacts/submission.json \
   --model-name AITeamVN/Vi-Qwen2-1.5B-RAG \
   --embedding-model AITeamVN/Vietnamese_Embedding_v2 \
   --reranker-model AITeamVN/Vietnamese_Reranker \

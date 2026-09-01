@@ -15,7 +15,6 @@ from .text import (
     STOPWORDS,
     best_excerpt,
     is_long_answer_question,
-    merge_adjacent_chunks,
     query_terms,
     tokenize,
 )
@@ -244,11 +243,11 @@ class LegalQABaseline:
         max_long_answer_words: int = 800,
         long_llm_max_input_tokens: int = 6144,
         long_llm_max_new_tokens: int = 1024,
+        min_llm_answer_tokens: int = 8,
     ):
         positive = {
             "top_k": top_k,
             "max_answer_words": max_answer_words,
-            "max_long_answer_words": max_long_answer_words,
             "context_top_k": context_top_k,
             "bm25_top_k": bm25_top_k,
             "dense_top_k": dense_top_k,
@@ -259,6 +258,7 @@ class LegalQABaseline:
             "reranker_max_length": reranker_max_length,
             "long_llm_max_input_tokens": long_llm_max_input_tokens,
             "long_llm_max_new_tokens": long_llm_max_new_tokens,
+            "min_llm_answer_tokens": min_llm_answer_tokens,
         }
         invalid = {name: value for name, value in positive.items() if value <= 0}
         if invalid:
@@ -272,7 +272,6 @@ class LegalQABaseline:
         self.index = index
         self.top_k = top_k
         self.max_answer_words = max_answer_words
-        self.max_long_answer_words = max_long_answer_words
         self.enable_long_answer_extractive = bool(enable_long_answer_extractive)
         self.knn_threshold = knn_threshold
         self.generator = generator
@@ -290,6 +289,7 @@ class LegalQABaseline:
         self.allow_retrieval_fallback = allow_retrieval_fallback
         self.long_llm_max_input_tokens = long_llm_max_input_tokens
         self.long_llm_max_new_tokens = long_llm_max_new_tokens
+        self.min_llm_answer_tokens = min_llm_answer_tokens
 
     def _adjacent_chunks(self, best: dict[str, Any]) -> list[dict[str, Any]]:
         """Return previous/current/next chunks from the best chunk's document."""
@@ -331,6 +331,29 @@ class LegalQABaseline:
             if str(chunk.get("text") or "").strip()
         )
 
+    def _invalid_generation_reason(self, answer: Any) -> str | None:
+        """Classify unusable LLM output that must fall back to raw evidence."""
+        if not isinstance(answer, str) or not answer.strip():
+            return "empty"
+
+        normalized = " ".join(answer.casefold().split()).strip(" .!?:;,-")
+        refusal_markers = (
+            "không đủ thông tin trong ngữ cảnh",
+            "không có đủ thông tin trong ngữ cảnh",
+            "không thể trả lời",
+            "tôi không thể trả lời",
+            "xin lỗi, tôi không thể",
+            "xin lỗi",
+            "tôi không có thông tin",
+            "không có thông tin",
+            "không tìm thấy thông tin",
+        )
+        if any(normalized.startswith(marker) for marker in refusal_markers):
+            return "refusal"
+        if len(tokenize(answer)) < self.min_llm_answer_tokens:
+            return "too_short"
+        return None
+
     @staticmethod
     def _prioritize_prompt_chunks(
         adjacent_chunks: list[dict[str, Any]],
@@ -363,9 +386,7 @@ class LegalQABaseline:
         if self.enable_long_answer_extractive and is_long_answer_question(question):
             adjacent_chunks = self._adjacent_chunks(best)
             if adjacent_chunks:
-                answer = merge_adjacent_chunks(
-                    adjacent_chunks, max_words=self.max_long_answer_words
-                )
+                answer = self._merge_raw_chunks(adjacent_chunks)
                 evidence = {
                     "context_id": best["context_id"],
                     "chunk_no": best["chunk_no"],
@@ -501,9 +522,7 @@ class LegalQABaseline:
 
         if self.enable_long_answer_extractive and is_long_answer_question(question):
             if adjacent_chunks:
-                merged_answer = merge_adjacent_chunks(
-                    adjacent_chunks, max_words=self.max_long_answer_words
-                )
+                merged_answer = self._merge_raw_chunks(adjacent_chunks)
                 if merged_answer:
                     evidence = {
                         "num_contexts": len(top_chunks),
@@ -565,10 +584,23 @@ class LegalQABaseline:
             )
         try:
             answer = self.generator.generate(**generator_kwargs)
-            route = "rag"
-            generation_evidence: dict[str, Any] = {
-                "long_llm_budget": long_llm_budget_applied,
-            }
+            invalid_reason = self._invalid_generation_reason(answer)
+            if invalid_reason is not None:
+                if not raw_context_answer:
+                    raise RuntimeError(
+                        "Generator output is unusable but the context fallback is empty"
+                    )
+                answer = raw_context_answer
+                route = "rag_output_fallback"
+                generation_evidence = {
+                    "fallback_reason": invalid_reason,
+                    "long_llm_budget": long_llm_budget_applied,
+                }
+            else:
+                route = "rag"
+                generation_evidence = {
+                    "long_llm_budget": long_llm_budget_applied,
+                }
         except GenerationTokenLimitReached as exc:
             if not raw_context_answer:
                 raise RuntimeError(
@@ -583,7 +615,7 @@ class LegalQABaseline:
                 "long_llm_budget": long_llm_budget_applied,
             }
         if not isinstance(answer, str) or not answer.strip():
-            raise RuntimeError("Generator trả về answer rỗng/không hợp lệ")
+            raise RuntimeError("Generator và raw context đều trả về answer rỗng")
         answer = answer.strip()
         evidence = {
             "num_contexts": len(top_chunks),

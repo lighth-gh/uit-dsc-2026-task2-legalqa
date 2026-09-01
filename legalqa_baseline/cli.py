@@ -99,6 +99,7 @@ def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--long-llm-max-input-tokens", type=int, default=6144)
     parser.add_argument("--long-llm-max-new-tokens", type=int, default=1024)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
+    parser.add_argument("--min-llm-answer-tokens", type=int, default=8)
     parser.add_argument("--generation-seed", type=int, default=2026)
 
 
@@ -271,6 +272,8 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
             raise ValueError("long_llm_max_new_tokens phải lớn hơn 0")
         if getattr(args, "repetition_penalty", 1.05) <= 0:
             raise ValueError("repetition_penalty phải lớn hơn 0")
+        if getattr(args, "min_llm_answer_tokens", 8) <= 0:
+            raise ValueError("min_llm_answer_tokens phải lớn hơn 0")
         if getattr(args, "temperature", 0.0) < 0:
             raise ValueError("temperature không được âm")
         if not 0.0 < getattr(args, "top_p", 0.9) <= 1.0:
@@ -363,6 +366,7 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         max_long_answer_words=getattr(args, "max_long_answer_words", 800),
         long_llm_max_input_tokens=getattr(args, "long_llm_max_input_tokens", 6144),
         long_llm_max_new_tokens=getattr(args, "long_llm_max_new_tokens", 1024),
+        min_llm_answer_tokens=getattr(args, "min_llm_answer_tokens", 8),
     )
 
 

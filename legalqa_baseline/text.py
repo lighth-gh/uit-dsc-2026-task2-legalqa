@@ -243,6 +243,10 @@ LONG_ANSWER_PATTERNS: tuple[str, ...] = (
     "điều kiện",
     "hồ sơ gồm",
     "quyền và nghĩa vụ",
+    "điều luật",
+    "nguyên văn",
+    "toàn văn",
+    "quy định đầy đủ",
 )
 
 

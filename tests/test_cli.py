@@ -46,6 +46,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.long_llm_max_input_tokens, 6144)
         self.assertEqual(args.long_llm_max_new_tokens, 1024)
         self.assertEqual(args.repetition_penalty, 1.05)
+        self.assertEqual(args.min_llm_answer_tokens, 8)
         self.assertEqual(args.checkpoint_interval, 1)
         self.assertIsNone(args.embedding_revision)
         self.assertFalse(args.allow_retrieval_fallback)

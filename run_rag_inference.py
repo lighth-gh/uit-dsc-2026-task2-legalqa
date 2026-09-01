@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=str,
-        default="artifacts/submission_rag.json",
+        default="artifacts/submission.json",
         help="Đường dẫn file kết quả submission",
     )
     parser.add_argument(
@@ -150,6 +150,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--long-llm-max-input-tokens", type=int, default=6144)
     parser.add_argument("--long-llm-max-new-tokens", type=int, default=1024)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
+    parser.add_argument("--min-llm-answer-tokens", type=int, default=8)
     parser.add_argument("--generation-seed", type=int, default=2026)
     parser.add_argument(
         "--allow-retrieval-fallback",
@@ -178,7 +179,7 @@ def parse_args() -> argparse.Namespace:
         "--max-long-answer-words",
         type=int,
         default=800,
-        help="Số từ tối đa cho đáp án trích xuất đa chunk",
+        help="Tham số tương thích cũ; raw/extractive hiện không giới hạn số từ",
     )
     parser.add_argument(
         "--limit",
@@ -314,6 +315,7 @@ def main() -> int:
             max_long_answer_words=args.max_long_answer_words,
             long_llm_max_input_tokens=args.long_llm_max_input_tokens,
             long_llm_max_new_tokens=args.long_llm_max_new_tokens,
+            min_llm_answer_tokens=args.min_llm_answer_tokens,
         )
 
         total = len(sample_ids)

@@ -357,6 +357,4 @@ class ViQwenRAGGenerator:
 
         response_tokens = outputs[0][input_len:]
         response_text = self._tokenizer.decode(response_tokens, skip_special_tokens=True).strip()
-        if not response_text:
-            raise RuntimeError("Generator trả về answer rỗng")
         return response_text

@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import patch
 
 from legalqa_baseline.generator import (
+    GenerationTokenLimitReached,
     RAG_TEMPLATE,
     SYSTEM_PROMPT,
     ViQwenRAGGenerator,
@@ -417,6 +418,10 @@ class ViQwenRAGGeneratorTests(unittest.TestCase):
 
 
 class RAGPipelineTests(unittest.TestCase):
+    @staticmethod
+    def _raw_answer() -> str:
+        return MockSearchIndex().search_contexts("", top_k=1)[0]["text"]
+
     def test_pipeline_rag_mode(self) -> None:
         mock_index = MockSearchIndex()
         mock_gen = MockGenerator()
@@ -446,17 +451,57 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(pred.route, "rag")
 
 
-    def test_pipeline_rejects_empty_generator_answer(self) -> None:
-        class EmptyGenerator:
-            def generate(self, context: str, question: str) -> None:
-                return None
+    def test_pipeline_falls_back_for_unusable_generator_outputs(self) -> None:
+        unusable_outputs = [
+            ("empty", None),
+            ("too_short", "Có."),
+            ("refusal", "Không đủ thông tin trong ngữ cảnh."),
+            ("refusal", "Xin lỗi, nhưng tôi không thể trả lời câu hỏi này."),
+        ]
+
+        for expected_reason, output in unusable_outputs:
+            with self.subTest(reason=expected_reason):
+                class UnusableGenerator:
+                    def generate(self, context: str, question: str) -> str | None:
+                        return output
+
+                pipeline = LegalQABaseline(
+                    index=MockSearchIndex(),  # type: ignore[arg-type]
+                    generator=UnusableGenerator(),
+                )
+                pred = pipeline.predict_one("Mức phạt?", mode="rag")
+
+                self.assertEqual(pred.answer, self._raw_answer())
+                self.assertEqual(pred.route, "rag_output_fallback")
+                self.assertEqual(pred.evidence["fallback_reason"], expected_reason)
+
+    def test_pipeline_falls_back_when_generator_hits_token_limit(self) -> None:
+        class TokenLimitedGenerator:
+            def generate(self, context: str, question: str) -> str:
+                raise GenerationTokenLimitReached(509, 512)
 
         pipeline = LegalQABaseline(
             index=MockSearchIndex(),  # type: ignore[arg-type]
-            generator=EmptyGenerator(),
+            generator=TokenLimitedGenerator(),
         )
-        with self.assertRaisesRegex(RuntimeError, "Generator trả về answer"):
-            pipeline.predict_one("Mức phạt?", mode="rag")
+        pred = pipeline.predict_one("Mức phạt?", mode="rag")
+
+        self.assertEqual(pred.answer, self._raw_answer())
+        self.assertEqual(pred.route, "rag_token_limit_fallback")
+        self.assertEqual(pred.evidence["generated_tokens"], 509)
+        self.assertEqual(pred.evidence["max_new_tokens"], 512)
+
+    def test_refusal_phrase_inside_valid_legal_answer_is_not_rejected(self) -> None:
+        answer = (
+            "Theo Điều 12, trường hợp hồ sơ không có thông tin về người nộp "
+            "thì cơ quan tiếp nhận yêu cầu bổ sung hồ sơ."
+        )
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+        )
+
+        self.assertIsNone(pipeline._invalid_generation_reason(answer))
 
 
 if __name__ == "__main__":

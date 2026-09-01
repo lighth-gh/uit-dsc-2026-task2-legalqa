@@ -41,6 +41,7 @@ class TestLongAnswerPatterns(unittest.TestCase):
             "nội dung điều", "nội dung khoản",
             "các trường hợp", "điều kiện",
             "hồ sơ gồm", "quyền và nghĩa vụ",
+            "điều luật", "nguyên văn", "toàn văn", "quy định đầy đủ",
         ]
         for pat in expected:
             self.assertIn(pat, LONG_ANSWER_PATTERNS)
@@ -58,6 +59,8 @@ class TestLongAnswerPatterns(unittest.TestCase):
             "Điều kiện để được hưởng trợ cấp thất nghiệp là gì?",
             "Quyền và nghĩa vụ của người lao động được quy định ra sao?",
             "Đối tượng bao gồm những ai?",
+            "Hãy cung cấp nguyên văn Điều 15 của Luật Doanh nghiệp.",
+            "Toàn văn điều luật này quy định thế nào?",
         ]
         for q in test_cases:
             with self.subTest(question=q):
@@ -81,6 +84,22 @@ class TestLongAnswerPatterns(unittest.TestCase):
 
 
 class TestMergeAdjacentChunks(unittest.TestCase):
+    def test_raw_chunk_merge_has_no_800_word_limit(self) -> None:
+        chunks = [
+            {
+                "context_id": "doc",
+                "chunk_no": number,
+                "text": " ".join(f"chunk{number}_word{word}" for word in range(400)),
+            }
+            for number in range(3)
+        ]
+
+        merged = LegalQABaseline._merge_raw_chunks(chunks)
+
+        self.assertEqual(len(merged.split()), 1200)
+        self.assertIn("chunk0_word0", merged)
+        self.assertIn("chunk2_word399", merged)
+
     def test_merge_ordering_and_dedup(self) -> None:
         chunks = [
             {"chunk_no": 2, "text": "Đoạn 3 kết thúc."},
