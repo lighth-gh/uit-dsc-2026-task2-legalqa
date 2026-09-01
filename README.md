@@ -162,6 +162,18 @@ python -m legalqa_baseline predict \
   --device cuda
 ```
 
+Nhánh trả lời cuối là hybrid theo dạng câu hỏi: câu hỏi về thủ tục, hồ sơ,
+danh sách, biểu mẫu hoặc điều luật trả nguyên văn chunk tốt nhất cùng chunk
+trước/sau trong cùng văn bản (`extractive_long`). Các câu còn lại dùng LLM
+512 token (`generated_512`); nếu model từ chối, trả quá ngắn, có dấu hiệu bị
+cắt hoặc chạm token limit thì tự động quay về raw context liền kề
+(`extractive_fallback`). Phần overlap giữa các chunk được loại bỏ nhưng không
+có giới hạn ký tự cứng.
+
+Mỗi lần predict còn ghi `<output>.audit.jsonl` ngay sau từng ID. Log chứa route,
+độ dài answer/context, token sinh, trạng thái token-limit/từ chối/cắt câu,
+document đứng đầu và reranker score để có thể kiểm tra sớm trước khi chạy full.
+
 ### Xây dựng Dense FAISS Vector Index:
 ```bash
 python -m legalqa_baseline build-dense-index \
@@ -229,7 +241,7 @@ python -m legalqa_baseline inspect \
   --question "Vận chuyển động vật không có giấy chứng nhận kiểm dịch bị phạt thế nào?"
 ```
 
-Kết quả cho biết route (`extractive`/`knn`/`rag`), độ tin cậy và `evidence` (top chunks, BM25 score, Dense score, RRF score, Reranker score) đã dùng để LLM sinh câu trả lời.
+Kết quả cho biết route (`extractive_long`/`generated_512`/`extractive_fallback`), độ tin cậy và `evidence` (top chunks, BM25 score, Dense score, RRF score, Reranker score) đã dùng để tạo câu trả lời.
 
 ## 7. Kiến trúc mô hình (< 4B tham số)
 

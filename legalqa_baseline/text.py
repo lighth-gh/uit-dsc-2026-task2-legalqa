@@ -232,25 +232,32 @@ def best_excerpt(text: str, question: str, max_words: int = 520) -> str:
 
 
 LONG_ANSWER_PATTERNS: tuple[str, ...] = (
-    "mẫu",
-    "biểu mẫu",
-    "phụ lục",
-    "liệt kê",
-    "bao gồm những",
-    "nội dung điều",
-    "nội dung khoản",
-    "các trường hợp",
-    "điều kiện",
-    "hồ sơ gồm",
-    "quyền và nghĩa vụ",
-    "điều luật",
-    "nguyên văn",
-    "toàn văn",
-    "quy định đầy đủ",
+    r"\bthủ tục\b",
+    r"\btrình tự\b",
+    r"\bhồ sơ\b",
+    r"\bbao gồm\b",
+    r"\bcác trường hợp\b",
+    r"\bcác bước\b",
+    r"\bđiều kiện\b",
+    r"\bquyền và nghĩa vụ\b",
+    r"\btrách nhiệm\b",
+    r"\bnội dung và phương pháp\b",
+    r"\bbiểu mẫu\b",
+    # Các cách hỏi dài tương đương thường gặp trong bộ LegalQA.
+    r"\bmẫu(?: số)?\b",
+    r"\bphụ lục\b",
+    r"\bliệt kê\b",
+    r"\bnội dung điều\b",
+    r"\bnội dung khoản\b",
+    r"\bđiều luật\b",
+    r"\bnguyên văn\b",
+    r"\btoàn văn\b",
+    r"\bquy định đầy đủ\b",
 )
+LONG_PATTERNS = LONG_ANSWER_PATTERNS
 
 
-def is_long_answer_question(
+def is_long_form_question(
     question: str, patterns: Iterable[str] = LONG_ANSWER_PATTERNS
 ) -> bool:
     """Kiểm tra câu hỏi có thuộc nhóm yêu cầu câu trả lời dài/liệt kê/nguyên văn hay không."""
@@ -259,9 +266,106 @@ def is_long_answer_question(
     normalized = unicodedata.normalize("NFC", question.casefold())
     for pattern in patterns:
         pat_norm = unicodedata.normalize("NFC", str(pattern).casefold().strip())
-        if pat_norm and pat_norm in normalized:
+        if pat_norm and re.search(pat_norm, normalized, flags=re.UNICODE):
             return True
     return False
+
+
+def is_long_answer_question(
+    question: str, patterns: Iterable[str] = LONG_ANSWER_PATTERNS
+) -> bool:
+    """Alias tương thích cho tên hàm cũ."""
+    return is_long_form_question(question, patterns=patterns)
+
+
+BOILERPLATE_PATTERNS: tuple[str, ...] = (
+    r"^\s*dựa trên ngữ cảnh được cung cấp[,:\s]*",
+    r"^\s*theo ngữ cảnh được cung cấp[,:\s]*",
+    r"^\s*dựa trên thông tin được cung cấp[,:\s]*",
+)
+
+
+def clean_answer(answer: str) -> str:
+    """Chỉ bỏ boilerplate ở đầu đáp án, không tóm tắt hoặc cắt nội dung."""
+    cleaned = str(answer or "")
+    for pattern in BOILERPLATE_PATTERNS:
+        cleaned = re.sub(pattern, "", cleaned, count=1, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def possibly_cut(text: str) -> bool:
+    """Phát hiện đáp án có vẻ dừng giữa câu hoặc giữa một mục liệt kê."""
+    answer = str(text or "").strip()
+    if not answer or len(answer.split()) < 8:
+        return False
+    if answer.endswith((".", "!", "?", "…", ")", "]", "}", '"', "”", "’")):
+        return False
+    if answer.endswith((",", ";", ":", "-", "–", "—", "/")):
+        return True
+    normalized = " ".join(answer.casefold().split())
+    dangling_endings = (
+        " và",
+        " hoặc",
+        " bao gồm",
+        " gồm",
+        " như sau",
+        " theo",
+        " tại",
+    )
+    if normalized.endswith(dangling_endings):
+        return True
+    if answer.count("(") > answer.count(")") or answer.count("[") > answer.count("]"):
+        return True
+    return False
+
+
+def deduplicate_overlaps(texts: Iterable[str]) -> str:
+    """Ghép các chunk liên tiếp và bỏ phần word-overlap ở ranh giới chunk."""
+    merged = ""
+    merged_words: list[str] = []
+    for raw_text in texts:
+        text = str(raw_text or "").strip()
+        words = text.split()
+        if not words:
+            continue
+        if not merged_words:
+            merged = text
+            merged_words = words
+            continue
+
+        max_overlap = min(len(merged_words), len(words))
+        overlap = 0
+        normalized_left = [word.casefold() for word in merged_words[-max_overlap:]]
+        normalized_right = [word.casefold() for word in words[:max_overlap]]
+        for size in range(max_overlap, 2, -1):
+            if normalized_left[-size:] == normalized_right[:size]:
+                overlap = size
+                break
+
+        # Vẫn loại chunk ngắn trùng hoàn toàn, nhưng không coi một/hai từ vô
+        # tình giống nhau ở ranh giới Điều là overlap vì có thể làm mất ý luật.
+        if not overlap and len(words) <= len(merged_words):
+            normalized_full = [word.casefold() for word in words]
+            if [word.casefold() for word in merged_words[-len(words):]] == normalized_full:
+                overlap = len(words)
+
+        suffix = words[overlap:]
+        if not suffix:
+            continue
+        merged = f"{merged}\n\n{' '.join(suffix)}"
+        merged_words.extend(suffix)
+    return merged.strip()
+
+
+def build_extractive_answer(chunks: list[dict[str, Any]]) -> str:
+    """Tạo raw answer từ các chunk liền kề của cùng văn bản."""
+    ordered = sorted(
+        chunks,
+        key=lambda chunk: int(chunk.get("chunk_no", chunk.get("chunk_index", 0))),
+    )
+    return deduplicate_overlaps(
+        str(chunk.get("text") or "") for chunk in ordered
+    )
 
 
 def merge_adjacent_chunks(
@@ -273,30 +377,5 @@ def merge_adjacent_chunks(
         raise ValueError("max_words phải lớn hơn 0")
     if not chunks:
         return ""
-    sorted_chunks = sorted(chunks, key=lambda c: int(c.get("chunk_no", 0)))
-    merged_texts: list[str] = []
-    total_words = 0
-
-    for chunk in sorted_chunks:
-        text = str(chunk.get("text") or "").strip()
-        if not text:
-            continue
-        words = text.split()
-        if not words:
-            continue
-        # Tránh trùng lặp hoàn toàn nếu 2 chunk liên tiếp giống hệt nhau
-        if merged_texts and text == merged_texts[-1]:
-            continue
-        if total_words + len(words) <= max_words:
-            merged_texts.append(text)
-            total_words += len(words)
-        else:
-            remaining = max_words - total_words
-            if remaining > 0:
-                bounded = truncate_at_text_boundary(text, remaining)
-                if bounded:
-                    merged_texts.append(bounded)
-                    total_words += len(bounded.split())
-            break
-
-    return "\n\n".join(merged_texts).strip()
+    merged = build_extractive_answer(chunks)
+    return truncate_at_text_boundary(merged, max_words)

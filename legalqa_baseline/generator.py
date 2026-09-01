@@ -49,9 +49,28 @@ Hãy thực hiện các yêu cầu sau:
 """.strip()
 
 
+QUESTION_REQUIREMENTS = """
+YÊU CẦU:
+- Trả lời trực tiếp câu hỏi.
+- Giữ đầy đủ các bước, điều kiện, hồ sơ, biểu mẫu, mốc thời gian, ngoại lệ, mức tiền và căn cứ pháp lý liên quan trong CONTEXT.
+- Không rút gọn danh sách hoặc thủ tục thành kết luận chung.
+- Không mở đầu bằng "Dựa trên ngữ cảnh được cung cấp".
+- Không nói thiếu thông tin nếu CONTEXT có nội dung trả lời.
+""".strip()
+
+
+def build_generation_question(question: str) -> str:
+    """Nối yêu cầu chống rút gọn trực tiếp vào câu hỏi thật."""
+    base_question = str(question or "").strip()
+    return f"{base_question}\n\n{QUESTION_REQUIREMENTS}".strip()
+
+
 def build_user_prompt(context: str, question: str) -> str:
     """Tạo user prompt từ context và question theo đúng khuôn mẫu RAG_TEMPLATE."""
-    return RAG_TEMPLATE.format(context=context.strip(), question=question.strip())
+    return RAG_TEMPLATE.format(
+        context=context.strip(),
+        question=build_generation_question(question),
+    )
 
 
 def build_chat_messages(context: str, question: str) -> list[dict[str, str]]:
@@ -107,6 +126,7 @@ class ViQwenRAGGenerator:
 
         self._tokenizer: Any = None
         self._model: Any = None
+        self.last_generation_stats: dict[str, Any] = {}
 
     def _load_model(self) -> None:
         if self._model is not None:
@@ -289,6 +309,8 @@ class ViQwenRAGGenerator:
         self._load_model()
         import torch
 
+        self.last_generation_stats = {}
+
         effective_max_input_tokens = (
             self.max_input_tokens if max_input_tokens is None else max_input_tokens
         )
@@ -348,7 +370,13 @@ class ViQwenRAGGenerator:
             # Keep lightweight test doubles and compatible generate() wrappers usable.
             output_len = len(outputs[0])
         generated_tokens = output_len - input_len
-        hit_token_limit = generated_tokens >= effective_max_new_tokens - 4
+        hit_token_limit = generated_tokens >= effective_max_new_tokens - 8
+        self.last_generation_stats = {
+            "input_tokens": input_len,
+            "generated_tokens": generated_tokens,
+            "max_new_tokens": effective_max_new_tokens,
+            "hit_token_limit": hit_token_limit,
+        }
         if hit_token_limit:
             raise GenerationTokenLimitReached(
                 generated_tokens=generated_tokens,

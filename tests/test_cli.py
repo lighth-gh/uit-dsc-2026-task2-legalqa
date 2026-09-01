@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from legalqa_baseline.cli import (
+    _append_audit_record,
     _load_checkpoint,
     _pipeline,
     _write_checkpoint,
@@ -43,11 +44,10 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.temperature, 0.0)
         self.assertEqual(args.max_input_tokens, 7168)
         self.assertEqual(args.max_new_tokens, 512)
-        self.assertEqual(args.long_llm_max_input_tokens, 6144)
-        self.assertEqual(args.long_llm_max_new_tokens, 1024)
         self.assertEqual(args.repetition_penalty, 1.05)
         self.assertEqual(args.min_llm_answer_tokens, 8)
         self.assertEqual(args.checkpoint_interval, 1)
+        self.assertIsNone(args.audit_output)
         self.assertIsNone(args.embedding_revision)
         self.assertFalse(args.allow_retrieval_fallback)
 
@@ -80,6 +80,18 @@ class CliTests(unittest.TestCase):
             self.assertEqual(checkpoint_payload["routes"], {"rag": 2})
             self.assertEqual(output_payload["1"], {"answer": "answer one"})
             self.assertEqual(output_payload["2"], {"answer": "answer two"})
+
+    def test_audit_record_is_appended_as_jsonl(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            audit_path = Path(directory) / "submission.audit.jsonl"
+            _append_audit_record(audit_path, {"id": "1", "route": "generated_512"})
+            _append_audit_record(audit_path, {"id": "2", "route": "extractive_long"})
+
+            records = [
+                json.loads(line)
+                for line in audit_path.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual([record["id"] for record in records], ["1", "2"])
 
     def test_build_commands_forward_only_supported_parameters(self) -> None:
         parser = make_parser()

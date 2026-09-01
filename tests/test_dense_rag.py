@@ -270,7 +270,7 @@ class TestDenseRAG(unittest.TestCase):
             rerank_top_k=3,
         )
         pred = pipeline.predict_one("Câu hỏi kiểm tra fallback?", mode="rag")
-        self.assertEqual(pred.route, "rag")
+        self.assertEqual(pred.route, "generated_512")
         self.assertEqual(pred.evidence["num_contexts"], 3)
         self.assertTrue(pred.answer.startswith("Đáp án được sinh"))
 
@@ -310,7 +310,7 @@ class TestDenseRAG(unittest.TestCase):
         )
 
         pred = pipeline.predict_one("Hành vi vi phạm bị phạt như thế nào?", mode="rag")
-        self.assertEqual(pred.route, "rag")
+        self.assertEqual(pred.route, "generated_512")
         self.assertEqual(pred.evidence["num_contexts"], 3)
         top_contexts = pred.evidence["top_contexts"]
         self.assertEqual(len(top_contexts), 3)
@@ -331,7 +331,7 @@ class TestDenseRAG(unittest.TestCase):
             allow_retrieval_fallback=True,
         )
         pred = pipeline.predict_one("Câu hỏi fallback", mode="rag")
-        self.assertEqual(pred.route, "rag")
+        self.assertEqual(pred.route, "generated_512")
 
         strict_pipeline = LegalQABaseline(
             index=MockSearchIndex(),  # type: ignore[arg-type]
@@ -359,7 +359,7 @@ class TestDenseRAG(unittest.TestCase):
             allow_retrieval_fallback=True,
         )
         prediction = pipeline.predict_one("Câu hỏi fallback", mode="rag")
-        self.assertEqual(prediction.route, "rag")
+        self.assertEqual(prediction.route, "generated_512")
         self.assertEqual(InternalTypeErrorEmbedding.calls, 1)
 
     def test_7c_empty_reranker_result_uses_explicit_fallback(self) -> None:
@@ -380,7 +380,7 @@ class TestDenseRAG(unittest.TestCase):
             allow_retrieval_fallback=True,
         )
         prediction = pipeline.predict_one("Mức phạt?", mode="rag")
-        self.assertEqual(prediction.route, "rag")
+        self.assertEqual(prediction.route, "generated_512")
         self.assertEqual(prediction.evidence["num_contexts"], 3)
 
         strict_pipeline = LegalQABaseline(

@@ -19,7 +19,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from legalqa_baseline.generator import SYSTEM_PROMPT, RAG_TEMPLATE, ViQwenRAGGenerator
-from legalqa_baseline.pipeline import LegalQABaseline
+from legalqa_baseline.pipeline import LegalQABaseline, prediction_audit_record
 from legalqa_baseline.storage import SearchIndex, load_qa, write_predictions
 
 
@@ -44,6 +44,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="artifacts/submission.json",
         help="Đường dẫn file kết quả submission",
+    )
+    parser.add_argument(
+        "--audit-output",
+        type=str,
+        default=None,
+        help="JSONL audit từng ID; mặc định là <output>.audit.jsonl",
     )
     parser.add_argument(
         "--model-name",
@@ -147,8 +153,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dense-query-max-length", type=int, default=256)
     parser.add_argument("--reranker-max-length", type=int, default=2304)
     parser.add_argument("--max-input-tokens", type=int, default=7168)
-    parser.add_argument("--long-llm-max-input-tokens", type=int, default=6144)
-    parser.add_argument("--long-llm-max-new-tokens", type=int, default=1024)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--min-llm-answer-tokens", type=int, default=8)
     parser.add_argument("--generation-seed", type=int, default=2026)
@@ -196,6 +200,11 @@ def main() -> int:
     input_path = Path(args.input)
     db_path = Path(args.db)
     output_path = Path(args.output)
+    audit_path = (
+        Path(args.audit_output)
+        if args.audit_output
+        else output_path.with_suffix(".audit.jsonl")
+    )
 
     if not input_path.exists():
         print(f"Lỗi: Không tìm thấy tệp đầu vào: {input_path}", file=sys.stderr)
@@ -208,6 +217,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    audit_path.write_text("", encoding="utf-8")
 
     print("=" * 60)
     print("UIT DSC 2026 - Task 2 LegalQA: RAG Generator Pipeline")
@@ -313,8 +325,6 @@ def main() -> int:
             allow_retrieval_fallback=args.allow_retrieval_fallback,
             enable_long_answer_extractive=not args.disable_long_answer_extractive,
             max_long_answer_words=args.max_long_answer_words,
-            long_llm_max_input_tokens=args.long_llm_max_input_tokens,
-            long_llm_max_new_tokens=args.long_llm_max_new_tokens,
             min_llm_answer_tokens=args.min_llm_answer_tokens,
         )
 
@@ -325,6 +335,15 @@ def main() -> int:
             pred = pipeline.predict_one(question, mode=args.mode)
             predictions[sample_id] = pred.answer
             routes[pred.route] = routes.get(pred.route, 0) + 1
+            with audit_path.open("a", encoding="utf-8") as audit_handle:
+                audit_handle.write(
+                    json.dumps(
+                        prediction_audit_record(sample_id, pred),
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+                audit_handle.flush()
 
             if idx % 10 == 0 or idx == total:
                 elapsed = time.time() - started
@@ -341,6 +360,7 @@ def main() -> int:
     print(f"[✓] Hoàn thành sinh câu trả lời cho {len(predictions):,} câu hỏi.")
     print(f"[✓] Tổng thời gian: {total_elapsed:.2f} giây.")
     print(f"[✓] File kết quả: {output_path.resolve()}")
+    print(f"[✓] Audit log: {audit_path.resolve()}")
     print(f"[✓] Dense active: {dense_index is not None} | Reranker configured: {reranker is not None}")
     print("=" * 60)
     return 0

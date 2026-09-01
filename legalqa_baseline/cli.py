@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from .metrics import aggregate_official_scores, aggregate_scores
-from .pipeline import LegalQABaseline
+from .pipeline import LegalQABaseline, prediction_audit_record
 from .storage import SearchIndex, build_index, load_qa, write_predictions
 
 
@@ -96,8 +96,6 @@ def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
         help="Top-p sampling",
     )
     parser.add_argument("--max-input-tokens", type=int, default=7168)
-    parser.add_argument("--long-llm-max-input-tokens", type=int, default=6144)
-    parser.add_argument("--long-llm-max-new-tokens", type=int, default=1024)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--min-llm-answer-tokens", type=int, default=8)
     parser.add_argument("--generation-seed", type=int, default=2026)
@@ -155,6 +153,11 @@ def make_parser() -> argparse.ArgumentParser:
     predict.add_argument("--input", required=True)
     predict.add_argument("--db", required=True)
     predict.add_argument("--output", required=True)
+    predict.add_argument(
+        "--audit-output",
+        default=None,
+        help="JSONL audit từng ID; mặc định là <output>.audit.jsonl",
+    )
     predict.add_argument(
         "--mode", choices=VALID_MODES, default="hybrid"
     )
@@ -266,10 +269,6 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
             raise ValueError("max_new_tokens phải lớn hơn 0")
         if getattr(args, "max_input_tokens", 7168) <= 0:
             raise ValueError("max_input_tokens phải lớn hơn 0")
-        if getattr(args, "long_llm_max_input_tokens", 6144) <= 0:
-            raise ValueError("long_llm_max_input_tokens phải lớn hơn 0")
-        if getattr(args, "long_llm_max_new_tokens", 1024) <= 0:
-            raise ValueError("long_llm_max_new_tokens phải lớn hơn 0")
         if getattr(args, "repetition_penalty", 1.05) <= 0:
             raise ValueError("repetition_penalty phải lớn hơn 0")
         if getattr(args, "min_llm_answer_tokens", 8) <= 0:
@@ -364,8 +363,6 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         allow_retrieval_fallback=allow_fallback,
         enable_long_answer_extractive=getattr(args, "enable_long_answer_extractive", True),
         max_long_answer_words=getattr(args, "max_long_answer_words", 800),
-        long_llm_max_input_tokens=getattr(args, "long_llm_max_input_tokens", 6144),
-        long_llm_max_new_tokens=getattr(args, "long_llm_max_new_tokens", 1024),
         min_llm_answer_tokens=getattr(args, "min_llm_answer_tokens", 8),
     )
 
@@ -470,11 +467,23 @@ def _write_prediction_progress(
     write_predictions(output_path, predictions)
 
 
+def _append_audit_record(audit_path: Path, record: dict[str, object]) -> None:
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    with audit_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        handle.flush()
+
+
 def command_predict(args: argparse.Namespace) -> int:
     data = load_qa(args.input)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     checkpoint_path = output_path.with_suffix(".checkpoint.json")
+    audit_path = (
+        Path(args.audit_output)
+        if getattr(args, "audit_output", None)
+        else output_path.with_suffix(".audit.jsonl")
+    )
 
     predictions: dict[str, str] = {}
     routes: dict[str, int] = {}
@@ -494,6 +503,10 @@ def command_predict(args: argparse.Namespace) -> int:
                 print(f"[predict] Bỏ tiến độ không hợp lệ: {exc}", file=sys.stderr)
                 predictions = {}
                 routes = {}
+
+    if not getattr(args, "resume", False) or not audit_path.exists():
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        audit_path.write_text("", encoding="utf-8")
 
     started = time.time()
     need_generator = args.mode in ("rag", "hybrid_rag")
@@ -525,6 +538,10 @@ def command_predict(args: argparse.Namespace) -> int:
             result = pipeline.predict_one(item["question"], mode=args.mode)
             predictions[sample_id] = result.answer
             routes[result.route] = routes.get(result.route, 0) + 1
+            _append_audit_record(
+                audit_path,
+                prediction_audit_record(sample_id, result),
+            )
             processed_count += 1
             sample_time = time.time() - t0
 
@@ -591,6 +608,7 @@ def command_predict(args: argparse.Namespace) -> int:
         "elapsed_seconds": round(time.time() - started, 2),
         "output": str(output_path.resolve()),
         "checkpoint": str(checkpoint_path.resolve()),
+        "audit": str(audit_path.resolve()),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0

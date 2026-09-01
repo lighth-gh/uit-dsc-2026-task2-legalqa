@@ -8,8 +8,13 @@ from legalqa_baseline.pipeline import LegalQABaseline
 from legalqa_baseline.storage import SearchIndex, build_index
 from legalqa_baseline.text import (
     LONG_ANSWER_PATTERNS,
+    build_extractive_answer,
+    clean_answer,
+    deduplicate_overlaps,
     is_long_answer_question,
+    is_long_form_question,
     merge_adjacent_chunks,
+    possibly_cut,
 )
 
 
@@ -36,15 +41,13 @@ class DummyReranker:
 class TestLongAnswerPatterns(unittest.TestCase):
     def test_patterns_presence(self) -> None:
         expected = [
-            "mẫu", "biểu mẫu", "phụ lục",
-            "liệt kê", "bao gồm những",
-            "nội dung điều", "nội dung khoản",
-            "các trường hợp", "điều kiện",
-            "hồ sơ gồm", "quyền và nghĩa vụ",
-            "điều luật", "nguyên văn", "toàn văn", "quy định đầy đủ",
+            "thủ tục", "trình tự", "hồ sơ", "bao gồm", "các trường hợp",
+            "các bước", "điều kiện", "quyền và nghĩa vụ", "trách nhiệm",
+            "nội dung và phương pháp", "biểu mẫu",
         ]
         for pat in expected:
-            self.assertIn(pat, LONG_ANSWER_PATTERNS)
+            with self.subTest(pattern=pat):
+                self.assertTrue(is_long_answer_question(f"Cho biết {pat} theo quy định?"))
 
     def test_is_long_answer_question_positive(self) -> None:
         test_cases = [
@@ -69,7 +72,7 @@ class TestLongAnswerPatterns(unittest.TestCase):
     def test_is_long_answer_question_negative(self) -> None:
         negatives = [
             "Ai là người đại diện theo pháp luật?",
-            "Thời hạn nộp hồ sơ là bao nhiêu ngày?",
+            "Thời hạn nộp đơn là bao nhiêu ngày?",
             "Mức phạt tối đa đối với cá nhân là bao nhiêu?",
             "",
             "   ",
@@ -81,6 +84,7 @@ class TestLongAnswerPatterns(unittest.TestCase):
     def test_is_long_answer_non_string(self) -> None:
         self.assertFalse(is_long_answer_question(None))  # type: ignore[arg-type]
         self.assertFalse(is_long_answer_question(123))  # type: ignore[arg-type]
+        self.assertTrue(is_long_form_question("Trình tự gồm các bước nào?"))
 
 
 class TestMergeAdjacentChunks(unittest.TestCase):
@@ -118,8 +122,38 @@ class TestMergeAdjacentChunks(unittest.TestCase):
         ]
         merged = merge_adjacent_chunks(chunks, max_words=7)
         words = merged.split()
-        self.assertEqual(len(words), 7)
-        self.assertEqual(" ".join(words), "w1 w2 w3 w4 w5 w6 w7")
+        self.assertEqual(len(words), 5)
+        self.assertEqual(" ".join(words), "w1 w2 w3 w4 w5")
+
+    def test_deduplicate_configured_word_overlap(self) -> None:
+        merged = deduplicate_overlaps(
+            [
+                "Mục 1. a b c d e",
+                "c d e Mục 2. f g",
+                "Mục 2. f g Mục 3. h",
+            ]
+        )
+        self.assertEqual(merged.count("c d e"), 1)
+        self.assertEqual(merged.count("Mục 2. f g"), 1)
+        self.assertIn("Mục 3. h", merged)
+
+    def test_build_extractive_answer_accepts_chunk_index_alias(self) -> None:
+        answer = build_extractive_answer(
+            [
+                {"chunk_index": 2, "text": "c d e Mục 3."},
+                {"chunk_index": 1, "text": "Mục 2. a b c d e"},
+            ]
+        )
+        self.assertEqual(answer, "Mục 2. a b c d e\n\nMục 3.")
+
+    def test_clean_answer_only_removes_prefix(self) -> None:
+        answer = "Dựa trên ngữ cảnh được cung cấp: Điều 1. Nội dung đầy đủ."
+        self.assertEqual(clean_answer(answer), "Điều 1. Nội dung đầy đủ.")
+
+    def test_possibly_cut_detects_dangling_generation(self) -> None:
+        self.assertTrue(possibly_cut("Hồ sơ bao gồm các giấy tờ sau:"))
+        self.assertTrue(possibly_cut("Người nộp chuẩn bị đơn đề nghị và"))
+        self.assertFalse(possibly_cut("Hồ sơ được nộp trong 03 ngày."))
 
     def test_merge_empty_and_invalid(self) -> None:
         self.assertEqual(merge_adjacent_chunks([]), "")
@@ -257,7 +291,7 @@ class TestPipelineLongAnswerRouting(unittest.TestCase):
             )
             question = "Cơ quan nào có thẩm quyền giải quyết?"
             pred = pipeline.predict_one(question, mode="rag")
-            self.assertEqual(pred.route, "rag")
+            self.assertEqual(pred.route, "generated_512")
             self.assertEqual(generator.called_count, 1)
 
     def test_disabled_long_answer_extractive(self) -> None:
@@ -272,7 +306,7 @@ class TestPipelineLongAnswerRouting(unittest.TestCase):
             )
             question = "Hãy liệt kê hồ sơ gồm những gì theo mẫu số 01?"
             pred = pipeline.predict_one(question, mode="rag")
-            self.assertEqual(pred.route, "rag")
+            self.assertEqual(pred.route, "generated_512")
             self.assertEqual(generator.called_count, 1)
 
 

@@ -14,7 +14,10 @@ from .text import (
     LONG_ANSWER_PATTERNS,
     STOPWORDS,
     best_excerpt,
-    is_long_answer_question,
+    build_extractive_answer,
+    clean_answer,
+    is_long_form_question,
+    possibly_cut,
     query_terms,
     tokenize,
 )
@@ -29,6 +32,40 @@ class Prediction:
     route: str
     confidence: float
     evidence: dict[str, Any]
+
+
+def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str, Any]:
+    """Tạo audit record gọn, ổn định cho từng câu inference."""
+    evidence = prediction.evidence
+    top_contexts = evidence.get("top_contexts")
+    top_context = (
+        top_contexts[0]
+        if isinstance(top_contexts, list) and top_contexts and isinstance(top_contexts[0], dict)
+        else {}
+    )
+    top_document_id = evidence.get("context_id") or top_context.get("context_id")
+    reranker_score = evidence.get("rerank_score")
+    if reranker_score is None:
+        reranker_score = top_context.get("rerank_score")
+    answer_lower = prediction.answer.casefold()
+    says_no_information = evidence.get("says_no_information")
+    if says_no_information is None:
+        says_no_information = (
+            "không đủ thông tin" in answer_lower
+            or "không có thông tin" in answer_lower
+        )
+    return {
+        "id": str(sample_id),
+        "route": prediction.route,
+        "answer_words": len(tokenize(prediction.answer)),
+        "context_words": int(evidence.get("context_words") or 0),
+        "generated_tokens": evidence.get("generated_tokens"),
+        "hit_token_limit": bool(evidence.get("hit_token_limit", False)),
+        "says_no_information": bool(says_no_information),
+        "possibly_cut": bool(evidence.get("possibly_cut", False)),
+        "top_document_id": top_document_id,
+        "reranker_score": reranker_score,
+    }
 
 
 def _normalize_similarity_token(token: str) -> str:
@@ -241,8 +278,6 @@ class LegalQABaseline:
         allow_retrieval_fallback: bool = False,
         enable_long_answer_extractive: bool = True,
         max_long_answer_words: int = 800,
-        long_llm_max_input_tokens: int = 6144,
-        long_llm_max_new_tokens: int = 1024,
         min_llm_answer_tokens: int = 8,
     ):
         positive = {
@@ -256,8 +291,6 @@ class LegalQABaseline:
             "rerank_top_k": rerank_top_k,
             "dense_query_max_length": dense_query_max_length,
             "reranker_max_length": reranker_max_length,
-            "long_llm_max_input_tokens": long_llm_max_input_tokens,
-            "long_llm_max_new_tokens": long_llm_max_new_tokens,
             "min_llm_answer_tokens": min_llm_answer_tokens,
         }
         invalid = {name: value for name, value in positive.items() if value <= 0}
@@ -287,8 +320,6 @@ class LegalQABaseline:
         self.dense_query_max_length = dense_query_max_length
         self.reranker_max_length = reranker_max_length
         self.allow_retrieval_fallback = allow_retrieval_fallback
-        self.long_llm_max_input_tokens = long_llm_max_input_tokens
-        self.long_llm_max_new_tokens = long_llm_max_new_tokens
         self.min_llm_answer_tokens = min_llm_answer_tokens
 
     def _adjacent_chunks(self, best: dict[str, Any]) -> list[dict[str, Any]]:
@@ -324,12 +355,8 @@ class LegalQABaseline:
 
     @staticmethod
     def _merge_raw_chunks(chunks: list[dict[str, Any]]) -> str:
-        """Join complete adjacent chunks without a character or word heuristic."""
-        return "\n\n".join(
-            str(chunk.get("text") or "").strip()
-            for chunk in chunks
-            if str(chunk.get("text") or "").strip()
-        )
+        """Join complete adjacent chunks and remove their configured overlap."""
+        return build_extractive_answer(chunks)
 
     def _invalid_generation_reason(self, answer: Any) -> str | None:
         """Classify unusable LLM output that must fall back to raw evidence."""
@@ -352,6 +379,8 @@ class LegalQABaseline:
             return "refusal"
         if len(tokenize(answer)) < self.min_llm_answer_tokens:
             return "too_short"
+        if possibly_cut(answer):
+            return "possibly_cut"
         return None
 
     @staticmethod
@@ -383,7 +412,7 @@ class LegalQABaseline:
             reverse=True,
         )
         best = ranked[0]
-        if self.enable_long_answer_extractive and is_long_answer_question(question):
+        if self.enable_long_answer_extractive and is_long_form_question(question):
             adjacent_chunks = self._adjacent_chunks(best)
             if adjacent_chunks:
                 answer = self._merge_raw_chunks(adjacent_chunks)
@@ -394,6 +423,11 @@ class LegalQABaseline:
                     "link": best["link"],
                     "bm25_score": best["bm25_score"],
                     "merged_chunk_nos": [c["chunk_no"] for c in adjacent_chunks],
+                    "context_words": len(tokenize(answer)),
+                    "generated_tokens": 0,
+                    "hit_token_limit": False,
+                    "says_no_information": False,
+                    "possibly_cut": False,
                 }
                 score = _context_rerank_score(question, best)
                 confidence = (
@@ -520,7 +554,7 @@ class LegalQABaseline:
         best = top_chunks[0]
         adjacent_chunks = self._adjacent_chunks(best)
 
-        if self.enable_long_answer_extractive and is_long_answer_question(question):
+        if self.enable_long_answer_extractive and is_long_form_question(question):
             if adjacent_chunks:
                 merged_answer = self._merge_raw_chunks(adjacent_chunks)
                 if merged_answer:
@@ -539,6 +573,11 @@ class LegalQABaseline:
                             for c in top_chunks
                         ],
                         "merged_chunk_nos": [c["chunk_no"] for c in adjacent_chunks],
+                        "context_words": len(tokenize(merged_answer)),
+                        "generated_tokens": 0,
+                        "hit_token_limit": False,
+                        "says_no_information": False,
+                        "possibly_cut": False,
                     }
                     confidence = _rag_confidence(question, best)
                     return Prediction(merged_answer, "extractive_long", confidence, evidence)
@@ -558,48 +597,44 @@ class LegalQABaseline:
         joined_context = "\n\n".join(context_blocks)
 
         raw_context_answer = self._merge_raw_chunks(adjacent_chunks)
-        use_long_llm_budget = is_long_answer_question(question)
         generator_kwargs: dict[str, Any] = {
             "context": joined_context,
             "question": question,
         }
-        long_llm_budget_applied = False
-        if use_long_llm_budget:
-            generate = self.generator.generate
-            try:
-                parameters = inspect.signature(generate).parameters
-            except (TypeError, ValueError):
-                parameters = {}
-            accepts_kwargs = any(
-                parameter.kind is inspect.Parameter.VAR_KEYWORD
-                for parameter in parameters.values()
-            )
-            if accepts_kwargs or "max_input_tokens" in parameters:
-                generator_kwargs["max_input_tokens"] = self.long_llm_max_input_tokens
-            if accepts_kwargs or "max_new_tokens" in parameters:
-                generator_kwargs["max_new_tokens"] = self.long_llm_max_new_tokens
-            long_llm_budget_applied = (
-                "max_input_tokens" in generator_kwargs
-                and "max_new_tokens" in generator_kwargs
-            )
         try:
-            answer = self.generator.generate(**generator_kwargs)
-            invalid_reason = self._invalid_generation_reason(answer)
+            raw_generated_answer = self.generator.generate(**generator_kwargs)
+            answer = clean_answer(raw_generated_answer)
+            generation_stats = getattr(self.generator, "last_generation_stats", {})
+            if not isinstance(generation_stats, dict):
+                generation_stats = {}
+            invalid_reason = (
+                "token_limit"
+                if generation_stats.get("hit_token_limit")
+                else self._invalid_generation_reason(answer)
+            )
             if invalid_reason is not None:
                 if not raw_context_answer:
                     raise RuntimeError(
                         "Generator output is unusable but the context fallback is empty"
                     )
                 answer = raw_context_answer
-                route = "rag_output_fallback"
+                route = "extractive_fallback"
                 generation_evidence = {
                     "fallback_reason": invalid_reason,
-                    "long_llm_budget": long_llm_budget_applied,
+                    "generated_tokens": generation_stats.get("generated_tokens"),
+                    "max_new_tokens": generation_stats.get("max_new_tokens", 512),
+                    "hit_token_limit": bool(generation_stats.get("hit_token_limit", False)),
+                    "says_no_information": invalid_reason == "refusal",
+                    "possibly_cut": invalid_reason in ("possibly_cut", "token_limit"),
                 }
             else:
-                route = "rag"
+                route = "generated_512"
                 generation_evidence = {
-                    "long_llm_budget": long_llm_budget_applied,
+                    "generated_tokens": generation_stats.get("generated_tokens"),
+                    "max_new_tokens": generation_stats.get("max_new_tokens", 512),
+                    "hit_token_limit": bool(generation_stats.get("hit_token_limit", False)),
+                    "says_no_information": False,
+                    "possibly_cut": False,
                 }
         except GenerationTokenLimitReached as exc:
             if not raw_context_answer:
@@ -607,12 +642,14 @@ class LegalQABaseline:
                     "Generator reached its token limit but the context fallback is empty"
                 ) from exc
             answer = raw_context_answer
-            route = "rag_token_limit_fallback"
+            route = "extractive_fallback"
             generation_evidence = {
                 "hit_token_limit": True,
                 "generated_tokens": exc.generated_tokens,
                 "max_new_tokens": exc.max_new_tokens,
-                "long_llm_budget": long_llm_budget_applied,
+                "fallback_reason": "token_limit",
+                "says_no_information": False,
+                "possibly_cut": True,
             }
         if not isinstance(answer, str) or not answer.strip():
             raise RuntimeError("Generator và raw context đều trả về answer rỗng")
@@ -640,6 +677,7 @@ class LegalQABaseline:
                 }
                 for c in prompt_chunks
             ],
+            "context_words": len(tokenize(joined_context)),
             **generation_evidence,
         }
         best = top_chunks[0]

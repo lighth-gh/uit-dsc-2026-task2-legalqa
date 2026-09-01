@@ -12,10 +12,11 @@ from legalqa_baseline.generator import (
     SYSTEM_PROMPT,
     ViQwenRAGGenerator,
     build_chat_messages,
+    build_generation_question,
     build_user_prompt,
     format_raw_qwen_prompt,
 )
-from legalqa_baseline.pipeline import LegalQABaseline
+from legalqa_baseline.pipeline import LegalQABaseline, prediction_audit_record
 
 
 class MockGenerator:
@@ -228,6 +229,14 @@ class _RecordingModel:
         return [values + [ord(char) for char in "model answer"]]
 
 
+class _NearTokenLimitModel(_RecordingModel):
+    def generate(self, **kwargs: Any) -> list[list[int]]:
+        self.generate_kwargs = dict(kwargs)
+        values = kwargs["input_ids"].values
+        generated_count = int(kwargs["max_new_tokens"]) - 8
+        return [values + [ord("x")] * generated_count]
+
+
 def _fake_torch_module() -> SimpleNamespace:
     return SimpleNamespace(
         manual_seed=lambda seed: None,
@@ -264,7 +273,15 @@ class GeneratorPromptTests(unittest.TestCase):
         prompt = build_user_prompt(context, question)
         self.assertIn(context, prompt)
         self.assertIn(question, prompt)
+        self.assertIn("YÊU CẦU:", prompt)
+        self.assertIn("Không rút gọn danh sách hoặc thủ tục", prompt)
         self.assertTrue(prompt.endswith("### Trả lời:"))
+
+    def test_generation_question_keeps_real_question_and_strict_requirements(self) -> None:
+        question = build_generation_question("Mức thuế là bao nhiêu?")
+        self.assertTrue(question.startswith("Mức thuế là bao nhiêu?"))
+        self.assertIn("mốc thời gian", question)
+        self.assertIn("Không nói thiếu thông tin", question)
 
     def test_build_chat_messages(self) -> None:
         context = "Ngữ cảnh mẫu"
@@ -393,6 +410,24 @@ class ViQwenRAGGeneratorTests(unittest.TestCase):
         self.assertEqual(effective_eos, expected_eos)
         self.assertEqual(effective_pad, expected_pad)
 
+    def test_generate_treats_last_eight_budget_tokens_as_limit_hit(self) -> None:
+        tokenizer = _RecordingTokenizer()
+        model = _NearTokenLimitModel()
+        generator = self._make_generator(
+            tokenizer,
+            model,
+            max_new_tokens=32,
+        )
+
+        with (
+            patch.dict(sys.modules, {"torch": _fake_torch_module()}),
+            self.assertRaises(GenerationTokenLimitReached),
+        ):
+            generator.generate(context="context", question="question")
+
+        self.assertEqual(generator.last_generation_stats["generated_tokens"], 24)
+        self.assertTrue(generator.last_generation_stats["hit_token_limit"])
+
     def test_generate_falls_back_to_raw_chatml_without_chat_template(self) -> None:
         tokenizer = _MissingChatTemplateTokenizer()
         model = _RecordingModel()
@@ -432,7 +467,7 @@ class RAGPipelineTests(unittest.TestCase):
         )
 
         pred = pipeline.predict_one("Mức xử phạt Điều 12?", mode="rag")
-        self.assertEqual(pred.route, "rag")
+        self.assertEqual(pred.route, "generated_512")
         self.assertIn("Câu trả lời được sinh từ model", pred.answer)
         self.assertIsNotNone(mock_gen.last_context)
         self.assertIn("Luật Xử lý vi phạm hành chính", str(mock_gen.last_context))
@@ -448,7 +483,7 @@ class RAGPipelineTests(unittest.TestCase):
         )
 
         pred = pipeline.predict_one("Câu hỏi ngẫu nhiên không trùng", mode="hybrid_rag")
-        self.assertEqual(pred.route, "rag")
+        self.assertEqual(pred.route, "generated_512")
 
 
     def test_pipeline_falls_back_for_unusable_generator_outputs(self) -> None:
@@ -472,7 +507,7 @@ class RAGPipelineTests(unittest.TestCase):
                 pred = pipeline.predict_one("Mức phạt?", mode="rag")
 
                 self.assertEqual(pred.answer, self._raw_answer())
-                self.assertEqual(pred.route, "rag_output_fallback")
+                self.assertEqual(pred.route, "extractive_fallback")
                 self.assertEqual(pred.evidence["fallback_reason"], expected_reason)
 
     def test_pipeline_falls_back_when_generator_hits_token_limit(self) -> None:
@@ -487,9 +522,68 @@ class RAGPipelineTests(unittest.TestCase):
         pred = pipeline.predict_one("Mức phạt?", mode="rag")
 
         self.assertEqual(pred.answer, self._raw_answer())
-        self.assertEqual(pred.route, "rag_token_limit_fallback")
+        self.assertEqual(pred.route, "extractive_fallback")
         self.assertEqual(pred.evidence["generated_tokens"], 509)
         self.assertEqual(pred.evidence["max_new_tokens"], 512)
+        audit = prediction_audit_record("sample-1", pred)
+        self.assertEqual(audit["route"], "extractive_fallback")
+        self.assertEqual(audit["generated_tokens"], 509)
+        self.assertTrue(audit["hit_token_limit"])
+        self.assertTrue(audit["possibly_cut"])
+        self.assertEqual(audit["top_document_id"], "100")
+
+    def test_pipeline_cleans_boilerplate_without_truncating_answer(self) -> None:
+        class BoilerplateGenerator:
+            def generate(self, context: str, question: str) -> str:
+                return (
+                    "Dựa trên ngữ cảnh được cung cấp: Điều 12 quy định mức phạt "
+                    "từ 2 triệu đến 5 triệu đồng."
+                )
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=BoilerplateGenerator(),
+        )
+        pred = pipeline.predict_one("Mức phạt?", mode="rag")
+
+        self.assertEqual(pred.route, "generated_512")
+        self.assertTrue(pred.answer.startswith("Điều 12"))
+        self.assertIn("5 triệu đồng.", pred.answer)
+
+    def test_pipeline_falls_back_for_possibly_cut_answer(self) -> None:
+        class CutGenerator:
+            def generate(self, context: str, question: str) -> str:
+                return "Hồ sơ phải được kiểm tra theo trình tự sau:"
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=CutGenerator(),
+        )
+        pred = pipeline.predict_one("Quy định xử lý thế nào?", mode="rag")
+
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertEqual(pred.evidence["fallback_reason"], "possibly_cut")
+
+    def test_pipeline_honors_generator_token_limit_metadata(self) -> None:
+        class MetadataLimitedGenerator:
+            last_generation_stats = {
+                "generated_tokens": 504,
+                "max_new_tokens": 512,
+                "hit_token_limit": True,
+            }
+
+            def generate(self, context: str, question: str) -> str:
+                return "Một câu trả lời vẫn có dấu kết thúc nhưng đã dùng hết ngân sách."
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MetadataLimitedGenerator(),
+        )
+        pred = pipeline.predict_one("Mức phạt?", mode="rag")
+
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertEqual(pred.evidence["fallback_reason"], "token_limit")
+        self.assertTrue(pred.evidence["hit_token_limit"])
 
     def test_refusal_phrase_inside_valid_legal_answer_is_not_rejected(self) -> None:
         answer = (
