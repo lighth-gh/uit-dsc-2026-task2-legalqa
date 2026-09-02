@@ -130,6 +130,22 @@ class TestLongAnswerPatterns(unittest.TestCase):
 
 
 class TestMergeAdjacentChunks(unittest.TestCase):
+    def test_prompt_context_order_is_best_previous_next_then_other_docs(self) -> None:
+        best = {"context_id": "doc", "chunk_no": 5, "text": "best"}
+        previous = {"context_id": "doc", "chunk_no": 4, "text": "previous"}
+        following = {"context_id": "doc", "chunk_no": 6, "text": "following"}
+        other = {"context_id": "other", "chunk_no": 2, "text": "other"}
+
+        ordered = LegalQABaseline._prioritize_prompt_chunks(
+            [best, previous, best, following],
+            [best, other],
+        )
+
+        self.assertEqual(
+            [(item["context_id"], item["chunk_no"]) for item in ordered],
+            [("doc", 5), ("doc", 4), ("doc", 6), ("other", 2)],
+        )
+
     def test_raw_chunk_merge_has_no_800_word_limit(self) -> None:
         chunks = [
             {

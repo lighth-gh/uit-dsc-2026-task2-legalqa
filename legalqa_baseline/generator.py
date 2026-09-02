@@ -52,6 +52,11 @@ Hãy thực hiện các yêu cầu sau:
 QUESTION_REQUIREMENTS = """
 YÊU CẦU:
 - Trả lời trực tiếp câu hỏi.
+- Bám đúng hành vi pháp lý, chủ thể và phạm vi trong câu hỏi; không thay bằng một vấn đề pháp lý gần nghĩa.
+- Không tự giả định dữ kiện không được nêu (giới tính, tuổi, tình trạng hôn nhân, năng lực hành vi hoặc vi phạm).
+- Với câu hỏi có/không, chỉ dùng điều kiện hoặc trường hợp cấm áp dụng trực tiếp cho sự kiện được hỏi.
+- Chỉ trả lời đúng chủ thể: hỏi cá nhân thì không chép thêm phần tổ chức, và ngược lại.
+- Phân biệt các khái niệm gần nhau như thời hiệu khiếu nại, thời hạn kháng nghị và thời hạn giải quyết.
 - Giữ đầy đủ các bước, điều kiện, hồ sơ, biểu mẫu, mốc thời gian, ngoại lệ, mức tiền và căn cứ pháp lý liên quan trong CONTEXT.
 - Không rút gọn danh sách hoặc thủ tục thành kết luận chung.
 - Không mở đầu bằng "Dựa trên ngữ cảnh được cung cấp".
@@ -378,7 +383,7 @@ class ViQwenRAGGenerator:
             # Keep lightweight test doubles and compatible generate() wrappers usable.
             output_len = len(outputs[0])
         generated_tokens = output_len - input_len
-        hit_token_limit = generated_tokens >= effective_max_new_tokens - 8
+        hit_token_limit = generated_tokens >= effective_max_new_tokens - 4
         self.last_generation_stats = {
             "input_tokens": input_len,
             "generated_tokens": generated_tokens,

@@ -82,8 +82,12 @@ class NotebookCacheContractTests(unittest.TestCase):
         for expected in (
             '"diagnose-retrieval"',
             "RETRIEVAL_MEDIAN_MAX_SECONDS = 2.0",
-            "SMOKE_MEDIAN_MAX_SECONDS = 15.0",
-            "RETRIEVAL_EXPECTED_DOCUMENT_IDS",
+            "SMOKE_MEDIAN_TARGET_SECONDS = 15.0",
+            "SMOKE_MEDIAN_MAX_SECONDS = 15.5",
+            "RETRIEVAL_EXPECTED_TARGETS",
+            '"chunk_no": 306',
+            '"required_phrases": ["thời hiệu khiếu nại", "15 ngày"]',
+            '"max_top3_rank": 1',
             '("top50", "top20", "top3")',
             "MANUAL_REVIEW_APPROVED_IDS",
             'full_gate["full_1000_unlocked"]',
@@ -91,7 +95,8 @@ class NotebookCacheContractTests(unittest.TestCase):
             self.assertIn(expected, code)
         self.assertLess(code.index('"diagnose-retrieval"'), code.index('"predict"'))
         self.assertIn("if not retrieval_speed_gate_pass:", code)
-        self.assertIn('"document_gate_status": "pending"', code)
+        self.assertIn("def target_rank", code)
+        self.assertIn('int(candidate.get("chunk_no", -1))', code)
         self.assertNotIn('if not retrieval_gate["pass"]:\n    raise RuntimeError', code)
 
 

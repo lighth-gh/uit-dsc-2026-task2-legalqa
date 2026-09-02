@@ -50,6 +50,32 @@ _PRIORITY_LEGAL_PHRASES = ("mức lương cơ sở",)
 _MAX_EXACT_PHRASE_TOKENS = 8
 _MIN_EXACT_PHRASE_TOKENS = 4
 
+# Các cụm này mô tả đúng vấn đề pháp lý đang được hỏi. Chúng được dùng như
+# guardrail sau cross-encoder, không được đưa thẳng vào câu trả lời.
+_LEGAL_FOCUS_PATTERNS = (
+    re.compile(r"\bthời\s+(?:hiệu|hạn)\s+[^,;?.]{1,80}", re.IGNORECASE),
+    re.compile(r"\bnghĩa\s+vụ\s+[^,;?.]{1,64}", re.IGNORECASE),
+    re.compile(r"\b(?:đăng\s+ký|cấp|thu\s+hồi|hủy)\s+[^,;?.]{1,72}", re.IGNORECASE),
+    re.compile(r"\b(?:giá\s+trị\s+)?bồi\s+thường\s+[^,;?.]{1,80}", re.IGNORECASE),
+    re.compile(r"\bhội\s+viên\s+[^,;?.]{1,64}", re.IGNORECASE),
+)
+_FOCUS_TRAILING_TOKENS = {
+    "bao", "lâu", "như", "thế", "nào", "không", "ra", "sao", "gì",
+    "được", "xác", "định",
+}
+_LEGAL_SCOPE_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("vụ án dân sự", ("tố tụng dân sự", "bộ luật tố tụng dân sự")),
+    ("tố tụng dân sự", ("tố tụng dân sự", "bộ luật tố tụng dân sự")),
+    ("bản án hình sự", ("tố tụng hình sự", "bộ luật tố tụng hình sự")),
+    ("vụ án hình sự", ("tố tụng hình sự", "bộ luật tố tụng hình sự")),
+    ("tố tụng hình sự", ("tố tụng hình sự", "bộ luật tố tụng hình sự")),
+    ("tố tụng hành chính", ("tố tụng hành chính", "luật tố tụng hành chính")),
+)
+_HEADING_QUERY_IGNORED = STOPWORDS | {
+    "bao", "lâu", "như", "thế", "nào", "không", "ra", "sao", "gì",
+    "xác", "định", "giá", "trị", "phần",
+}
+
 
 def normalize_text(text: str) -> str:
     """Chuẩn hóa lỗi xuống dòng/Unicode nhưng không đổi từ ngữ pháp lý."""
@@ -227,6 +253,112 @@ def _longest_exact_legal_phrase(
     return None, 0
 
 
+def legal_question_focus_phrases(text: str) -> list[str]:
+    """Extract high-precision legal issue phrases, longest phrase first."""
+    source = unicodedata.normalize("NFC", str(text or "")).casefold()
+    phrases: list[str] = []
+    for pattern in _LEGAL_FOCUS_PATTERNS:
+        for match in pattern.finditer(source):
+            tokens = tokenize(match.group(0))
+            while tokens and tokens[-1] in _FOCUS_TRAILING_TOKENS:
+                tokens.pop()
+            max_size = min(7, len(tokens))
+            # Giữ cả các prefix ngắn: tiêu đề Điều thường chỉ có 3-4 token,
+            # còn câu hỏi tiếp tục bằng điều kiện/đối tượng dài hơn.
+            # Hai token như "thời hiệu" hoặc "thu hồi" còn quá chung và có
+            # thể khớp một thao tác pháp lý khác. Cần ít nhất ba token để bonus
+            # hậu reranker được xem là tín hiệu trọng tâm.
+            for size in range(max_size, 2, -1):
+                phrase = " ".join(tokens[:size])
+                if phrase and phrase not in phrases:
+                    phrases.append(phrase)
+    return phrases
+
+
+def _matching_question_focus_phrases(question: str, candidate_text: str) -> list[str]:
+    candidate = f" {' '.join(tokenize(candidate_text))} "
+    matches = [
+        phrase
+        for phrase in legal_question_focus_phrases(question)
+        if f" {phrase} " in candidate
+    ]
+    # Prefixes của cùng một cụm không được tính lặp nhiều lần.
+    kept: list[str] = []
+    for phrase in matches:
+        if any(f" {phrase} " in f" {existing} " for existing in kept):
+            continue
+        kept.append(phrase)
+    return kept
+
+
+def _fold_for_lexical_match(text: str) -> str:
+    decomposed = unicodedata.normalize("NFD", str(text or "").casefold())
+    without_marks = "".join(
+        character
+        for character in decomposed
+        if unicodedata.category(character) != "Mn"
+    ).replace("đ", "d")
+    return " ".join(TOKEN_RE.findall(without_marks))
+
+
+def _matching_legal_scopes(question: str, candidate_text: str) -> tuple[list[str], bool]:
+    question_normalized = _fold_for_lexical_match(question)
+    candidate_normalized = _fold_for_lexical_match(candidate_text)
+    requested: list[str] = []
+    matched: list[str] = []
+    for question_phrase, candidate_aliases in _LEGAL_SCOPE_ALIASES:
+        folded_question_phrase = _fold_for_lexical_match(question_phrase)
+        if folded_question_phrase not in question_normalized:
+            continue
+        requested.append(question_phrase)
+        if any(
+            _fold_for_lexical_match(alias) in candidate_normalized
+            for alias in candidate_aliases
+        ):
+            matched.append(question_phrase)
+    return matched, bool(requested)
+
+
+def _leading_legal_heading(text: str, max_tokens: int = 18) -> str:
+    """Return only the leading Điều/Mẫu heading, excluding numbered body items."""
+    source = normalize_text(text).replace("\n", " ").strip()
+    marker = re.search(
+        r"\b(?:điều\s+\d+[a-zđ]*|mẫu(?:\s+số)?\s+[\w./-]+)\b",
+        source,
+        flags=re.IGNORECASE,
+    )
+    if marker:
+        source = source[marker.start():]
+    source = re.sub(
+        r"^\s*(?:điều\s+\d+[a-zđ]*|mẫu(?:\s+số)?\s+[\w./-]+)\s*[.:-]?\s*",
+        "",
+        source,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    body_start = re.search(r"\s+(?:1|I)[.)]\s+", source)
+    if body_start:
+        source = source[:body_start.start()]
+    return " ".join(tokenize(source)[:max_tokens])
+
+
+def _heading_query_overlap(question: str, candidate_text: str) -> tuple[int, float]:
+    heading_terms = {
+        token
+        for token in tokenize(_leading_legal_heading(candidate_text))
+        if token not in _HEADING_QUERY_IGNORED and len(token) >= 2
+    }
+    question_terms = {
+        token
+        for token in tokenize(question)
+        if token not in _HEADING_QUERY_IGNORED and len(token) >= 2
+    }
+    if not heading_terms or not question_terms:
+        return 0, 0.0
+    overlap = len(heading_terms & question_terms)
+    return overlap, overlap / len(question_terms)
+
+
 def legal_retrieval_signal_matches(
     question: str,
     candidate_text: str,
@@ -246,6 +378,15 @@ def legal_retrieval_signal_matches(
         question_tokens,
         candidate_tokens,
     )
+    focus_phrases = _matching_question_focus_phrases(question, candidate_text)
+    scope_phrases, scope_requested = _matching_legal_scopes(
+        question,
+        candidate_text,
+    )
+    heading_overlap_tokens, heading_query_coverage = _heading_query_overlap(
+        question,
+        candidate_text,
+    )
 
     return {
         "document_references": document_references,
@@ -255,6 +396,11 @@ def legal_retrieval_signal_matches(
         "form_names": [form_name] if form_name else [],
         "long_phrase": long_phrase,
         "long_phrase_tokens": long_phrase_tokens,
+        "focus_phrases": focus_phrases,
+        "scope_phrases": scope_phrases,
+        "scope_requested": scope_requested,
+        "heading_overlap_tokens": heading_overlap_tokens,
+        "heading_query_coverage": round(heading_query_coverage, 6),
     }
 
 

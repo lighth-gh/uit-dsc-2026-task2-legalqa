@@ -234,7 +234,7 @@ class _NearTokenLimitModel(_RecordingModel):
     def generate(self, **kwargs: Any) -> list[list[int]]:
         self.generate_kwargs = dict(kwargs)
         values = kwargs["input_ids"].values
-        generated_count = int(kwargs["max_new_tokens"]) - 8
+        generated_count = int(kwargs["max_new_tokens"]) - 4
         return [values + [ord("x")] * generated_count]
 
 
@@ -283,6 +283,9 @@ class GeneratorPromptTests(unittest.TestCase):
         self.assertTrue(question.startswith("Mức thuế là bao nhiêu?"))
         self.assertIn("mốc thời gian", question)
         self.assertIn("Không nói thiếu thông tin", question)
+        self.assertIn("Không tự giả định dữ kiện không được nêu", question)
+        self.assertIn("hỏi cá nhân thì không chép thêm phần tổ chức", question)
+        self.assertIn("Phân biệt các khái niệm gần nhau", question)
 
     def test_build_chat_messages(self) -> None:
         context = "Ngữ cảnh mẫu"
@@ -411,7 +414,7 @@ class ViQwenRAGGeneratorTests(unittest.TestCase):
         self.assertEqual(effective_eos, expected_eos)
         self.assertEqual(effective_pad, expected_pad)
 
-    def test_generate_treats_last_eight_budget_tokens_as_limit_hit(self) -> None:
+    def test_generate_treats_last_four_budget_tokens_as_limit_hit(self) -> None:
         tokenizer = _RecordingTokenizer()
         model = _NearTokenLimitModel()
         generator = self._make_generator(
@@ -426,7 +429,7 @@ class ViQwenRAGGeneratorTests(unittest.TestCase):
         ):
             generator.generate(context="context", question="question")
 
-        self.assertEqual(generator.last_generation_stats["generated_tokens"], 24)
+        self.assertEqual(generator.last_generation_stats["generated_tokens"], 28)
         self.assertTrue(generator.last_generation_stats["hit_token_limit"])
 
     def test_generate_falls_back_to_raw_chatml_without_chat_template(self) -> None:

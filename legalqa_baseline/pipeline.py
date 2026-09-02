@@ -48,6 +48,8 @@ _RETRIEVAL_SCORE_FIELDS = (
     "legal_signal_boost",
     "boosted_rrf_score",
     "rerank_score",
+    "rerank_guardrail_bonus",
+    "final_rerank_score",
 )
 
 _LEGAL_SIGNAL_BOOST_WEIGHTS = {
@@ -57,9 +59,11 @@ _LEGAL_SIGNAL_BOOST_WEIGHTS = {
     "plan_names": 0.0008,
     "form_names": 0.0008,
     "long_phrase": 0.00055,
+    "focus_phrases": 0.0012,
+    "scope_phrases": 0.0012,
 }
 _LEGAL_SIGNAL_COMBINATION_BONUS = 0.00035
-_MAX_LEGAL_SIGNAL_BOOST = 0.0025
+_MAX_LEGAL_SIGNAL_BOOST = 0.006
 
 def _audit_float(value: Any) -> float | None:
     """Convert model/NumPy scores to finite JSON numbers."""
@@ -100,7 +104,12 @@ def _retrieval_candidate_record(
     }
     for field in _RETRIEVAL_SCORE_FIELDS:
         record[field] = _audit_float(candidate.get(field))
-    for field in ("rrf_rank_before_boost", "rrf_rank_after_boost"):
+    for field in (
+        "rrf_rank_before_boost",
+        "rrf_rank_after_boost",
+        "rerank_rank_before_guardrail",
+        "rerank_rank_after_guardrail",
+    ):
         value = candidate.get(field)
         record[field] = (
             int(value)
@@ -366,6 +375,12 @@ def _apply_legal_signal_boost(
             part for part in (title, str(item.get("text") or "").strip()) if part
         )
         matches = legal_retrieval_signal_matches(question, passage)
+        # Domain scope must come from the document title. A specialized law
+        # may mention "tố tụng dân sự" in its body without being the governing
+        # Civil Procedure Code for a general civil-procedure question.
+        title_scope = legal_retrieval_signal_matches(question, title)
+        matches["scope_phrases"] = title_scope["scope_phrases"]
+        matches["scope_requested"] = title_scope["scope_requested"]
         matched_categories = [
             field
             for field in _LEGAL_SIGNAL_BOOST_WEIGHTS
@@ -374,6 +389,13 @@ def _apply_legal_signal_boost(
         boost = sum(_LEGAL_SIGNAL_BOOST_WEIGHTS[field] for field in matched_categories)
         if len(matched_categories) >= 2:
             boost += _LEGAL_SIGNAL_COMBINATION_BONUS
+        heading_overlap = int(matches.get("heading_overlap_tokens") or 0)
+        heading_coverage = float(matches.get("heading_query_coverage") or 0.0)
+        if heading_overlap >= 3 and heading_coverage >= 0.45:
+            # A heading that directly names the issue is much safer than a
+            # body paragraph that merely repeats generic legal terms. This is
+            # enough to keep the right Điều inside the 20-item reranker pool.
+            boost += min(0.004, 0.0006 * heading_overlap)
         boost = min(boost, _MAX_LEGAL_SIGNAL_BOOST)
 
         raw_rrf_score = _audit_float(item.get("rrf_score")) or 0.0
@@ -393,6 +415,97 @@ def _apply_legal_signal_boost(
     for rank, item in enumerate(boosted, start=1):
         item["rrf_rank_after_boost"] = rank
     return boosted
+
+
+def _apply_reranker_legal_guardrails(
+    question: str,
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Blend cross-encoder scores with high-precision legal intent signals.
+
+    Cross-encoders can prefer a semantically nearby Điều with the wrong legal
+    operation (for example, ``thời hạn kháng nghị`` instead of ``thời hiệu
+    khiếu nại``). The bonus is deliberately limited to exact focus phrases,
+    an explicit procedure scope, the leading heading, and the existing RRF
+    prior. Raw reranker scores remain available in audit output.
+    """
+    if not candidates:
+        return []
+
+    pool_size = max(1, len(candidates))
+    adjusted: list[dict[str, Any]] = []
+    for rank, candidate in enumerate(candidates, start=1):
+        item = dict(candidate)
+        title = str(item.get("title") or item.get("name") or "").strip()
+        passage = "\n".join(
+            part for part in (title, str(item.get("text") or "").strip()) if part
+        )
+        matches = item.get("legal_signal_matches")
+        if not isinstance(matches, dict):
+            matches = legal_retrieval_signal_matches(question, passage)
+        title_scope = legal_retrieval_signal_matches(question, title)
+        matches = dict(matches)
+        matches["scope_phrases"] = title_scope["scope_phrases"]
+        matches["scope_requested"] = title_scope["scope_requested"]
+        item["legal_signal_matches"] = matches
+
+        focus_phrases = matches.get("focus_phrases")
+        longest_focus_tokens = max(
+            (len(tokenize(phrase)) for phrase in focus_phrases),
+            default=0,
+        ) if isinstance(focus_phrases, list) else 0
+        focus_bonus = min(6.0, 1.5 * longest_focus_tokens)
+
+        scope_phrases = matches.get("scope_phrases")
+        scope_bonus = 5.0 if isinstance(scope_phrases, list) and scope_phrases else 0.0
+
+        heading_overlap = int(matches.get("heading_overlap_tokens") or 0)
+        heading_coverage = float(matches.get("heading_query_coverage") or 0.0)
+        heading_bonus = (
+            min(2.5, 0.5 * heading_overlap)
+            if heading_overlap >= 2 and heading_coverage >= 0.30
+            else 0.0
+        )
+
+        rrf_rank = item.get("rrf_rank_after_boost")
+        try:
+            rrf_rank_value = max(1, int(rrf_rank))
+        except (TypeError, ValueError):
+            rrf_rank_value = pool_size
+        rrf_prior_bonus = max(
+            0.0,
+            1.0 - ((rrf_rank_value - 1) / max(1, pool_size - 1)),
+        )
+        title_tokens = set(tokenize(title))
+        authority_tokens_match = (
+            {"bộ", "luật", "tố", "tụng"}.issubset(title_tokens)
+            or {"bo", "luat", "to", "tung"}.issubset(title_tokens)
+        )
+        authority_bonus = 0.75 if scope_bonus and authority_tokens_match else 0.0
+
+        raw_score = _audit_float(item.get("rerank_score")) or 0.0
+        guardrail_bonus = (
+            focus_bonus
+            + scope_bonus
+            + heading_bonus
+            + rrf_prior_bonus
+            + authority_bonus
+        )
+        item["rerank_rank_before_guardrail"] = rank
+        item["rerank_guardrail_bonus"] = round(guardrail_bonus, 6)
+        item["final_rerank_score"] = raw_score + guardrail_bonus
+        adjusted.append(item)
+
+    adjusted.sort(
+        key=lambda item: (
+            -float(item.get("final_rerank_score") or 0.0),
+            -float(item.get("rerank_score") or 0.0),
+            int(item.get("rerank_rank_before_guardrail") or pool_size),
+        )
+    )
+    for rank, item in enumerate(adjusted, start=1):
+        item["rerank_rank_after_guardrail"] = rank
+    return adjusted
 
 
 class LegalQABaseline:
@@ -749,6 +862,7 @@ class LegalQABaseline:
                 reranker_status = "fallback_rrf"
         else:
             reranked_pool = [dict(candidate) for candidate in rerank_candidates]
+        reranked_pool = _apply_reranker_legal_guardrails(question, reranked_pool)
         stage_seconds["reranker"] = round(time.perf_counter() - stage_started, 4)
 
         reranker_top_chunks = reranked_pool[: self.rerank_top_k]
@@ -782,13 +896,13 @@ class LegalQABaseline:
             "reranker_pool": _retrieval_stage_record(
                 reranked_pool,
                 requested_top_k=self.reranker_candidate_k,
-                score_field="rerank_score",
+                score_field="final_rerank_score",
                 status=reranker_status,
             ),
             "reranker_top": _retrieval_stage_record(
                 reranker_top_chunks,
                 requested_top_k=self.rerank_top_k,
-                score_field="rerank_score",
+                score_field="final_rerank_score",
                 status=reranker_status,
             ),
         }
@@ -804,8 +918,8 @@ class LegalQABaseline:
                     fused_candidates,
                     "boosted_rrf_score" if fusion_status == "rrf" else "bm25_score",
                 ),
-                "top20": (reranked_pool, "rerank_score"),
-                "top3": (reranker_top_chunks, "rerank_score"),
+                "top20": (reranked_pool, "final_rerank_score"),
+                "top3": (reranker_top_chunks, "final_rerank_score"),
             }
             diagnostic_candidates: dict[str, list[dict[str, Any]]] = {}
             for stage_name, (candidates, score_field) in diagnostic_stages.items():
@@ -866,6 +980,8 @@ class LegalQABaseline:
                                 "legal_signal_boost": c.get("legal_signal_boost"),
                                 "boosted_rrf_score": c.get("boosted_rrf_score"),
                                 "rerank_score": c.get("rerank_score"),
+                                "rerank_guardrail_bonus": c.get("rerank_guardrail_bonus"),
+                                "final_rerank_score": c.get("final_rerank_score"),
                             }
                             for c in top_chunks
                         ],
@@ -887,7 +1003,10 @@ class LegalQABaseline:
         # Preserve the legal document's local continuity first. Other reranker
         # results come later and are retained only while the generator's prompt
         # budget still has room (the generator truncates context from the tail).
-        prompt_chunks = self._prioritize_prompt_chunks(adjacent_chunks, top_chunks)
+        prompt_chunks = self._prioritize_prompt_chunks(
+            [best, *adjacent_chunks],
+            top_chunks,
+        )
         context_blocks = []
         for idx, chunk in enumerate(prompt_chunks, start=1):
             name = str(chunk.get("name") or "").strip()
@@ -987,6 +1106,8 @@ class LegalQABaseline:
                     "legal_signal_boost": c.get("legal_signal_boost"),
                     "boosted_rrf_score": c.get("boosted_rrf_score"),
                     "rerank_score": c.get("rerank_score"),
+                    "rerank_guardrail_bonus": c.get("rerank_guardrail_bonus"),
+                    "final_rerank_score": c.get("final_rerank_score"),
                 }
                 for c in top_chunks
             ],

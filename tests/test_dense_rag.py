@@ -23,6 +23,7 @@ from legalqa_baseline.dense import (
 from legalqa_baseline.pipeline import (
     LegalQABaseline,
     _apply_legal_signal_boost,
+    _apply_reranker_legal_guardrails,
     prediction_audit_record,
     reciprocal_rank_fusion,
 )
@@ -272,13 +273,134 @@ class TestDenseRAG(unittest.TestCase):
         self.assertEqual(boosted[0]["context_id"], "exact")
         self.assertEqual(boosted[0]["rrf_score"], 0.0188)
         self.assertGreater(boosted[0]["legal_signal_boost"], 0.0)
-        self.assertLessEqual(boosted[0]["legal_signal_boost"], 0.0025)
+        self.assertLessEqual(boosted[0]["legal_signal_boost"], 0.006)
         self.assertEqual(boosted[0]["rrf_rank_before_boost"], 2)
         self.assertEqual(boosted[0]["rrf_rank_after_boost"], 1)
         self.assertEqual(
             boosted[0]["legal_signal_matches"]["money_amounts_vnd"],
             [1_800_000],
         )
+
+    def test_3c_heading_focus_keeps_land_compensation_article_in_pool(self) -> None:
+        candidates = [
+            {
+                "context_id": "crop",
+                "chunk_no": 127,
+                "name": "Luật Đất đai",
+                "text": "Điều 100. Bồi thường đối với cây trồng, vật nuôi 1. Khi Nhà nước thu hồi đất...",
+                "rrf_score": 0.0164,
+            },
+            {
+                "context_id": "land",
+                "chunk_no": 115,
+                "name": "Luật Đất đai",
+                "text": "Điều 89. Nguyên tắc bồi thường về đất khi Nhà nước thu hồi đất 1. Người sử dụng đất...",
+                "rrf_score": 0.0130,
+            },
+        ]
+
+        boosted = _apply_legal_signal_boost(
+            "Giá trị bồi thường đối với phần đất Nhà nước thu hồi được xác định như thế nào?",
+            candidates,
+        )
+
+        self.assertEqual(boosted[0]["context_id"], "land")
+        self.assertGreaterEqual(
+            boosted[0]["legal_signal_matches"]["heading_query_coverage"],
+            0.8,
+        )
+
+    def test_3d_guardrail_distinguishes_complaint_limitation_from_protest_term(self) -> None:
+        candidates = [
+            {
+                "context_id": "wrong",
+                "chunk_no": 316,
+                "name": "Bộ luật Tố tụng dân sự 2004",
+                "text": "Điều 308. Thời hạn kháng nghị theo thủ tục tái thẩm là một năm.",
+                "rerank_score": 1.31,
+                "rrf_rank_after_boost": 20,
+            },
+            {
+                "context_id": "correct",
+                "chunk_no": 306,
+                "name": "Bộ luật Tố tụng hình sự 2015",
+                "text": "Điều 471. Thời hiệu khiếu nại là 15 ngày kể từ ngày nhận được quyết định, hành vi tố tụng.",
+                "rerank_score": -2.95,
+                "rrf_rank_after_boost": 2,
+            },
+        ]
+
+        ranked = _apply_reranker_legal_guardrails(
+            "Thời hiệu khiếu nại thông báo không kháng nghị theo thủ tục tái thẩm đối với bản án hình sự là bao lâu?",
+            candidates,
+        )
+
+        self.assertEqual(ranked[0]["context_id"], "correct")
+        self.assertEqual(ranked[0]["rerank_rank_after_guardrail"], 1)
+        self.assertGreater(ranked[0]["final_rerank_score"], ranked[1]["final_rerank_score"])
+
+    def test_3e_guardrail_honors_explicit_civil_procedure_scope(self) -> None:
+        question = "Quy định về nghĩa vụ chứng minh trong vụ án dân sự như thế nào?"
+        candidates = [
+            {
+                "context_id": "consumer",
+                "chunk_no": 73,
+                "name": "Luật Bảo vệ quyền lợi người tiêu dùng",
+                "text": (
+                    "Điều 69. Nghĩa vụ chứng minh của người tiêu dùng. "
+                    "Tranh chấp được giải quyết theo pháp luật tố tụng dân sự."
+                ),
+                "rerank_score": 4.10,
+                "rrf_rank_after_boost": 2,
+            },
+            {
+                "context_id": "civil-procedure",
+                "chunk_no": 49,
+                "name": "Bộ luật Tố tụng dân sự 2015",
+                "text": "Điều 91. Nghĩa vụ chứng minh. Đương sự có yêu cầu Tòa án bảo vệ quyền lợi phải đưa ra chứng cứ.",
+                "rerank_score": 2.54,
+                "rrf_rank_after_boost": 1,
+            },
+        ]
+
+        ranked = _apply_reranker_legal_guardrails(question, candidates)
+
+        self.assertEqual(ranked[0]["context_id"], "civil-procedure")
+        self.assertIn(
+            "vụ án dân sự",
+            ranked[0]["legal_signal_matches"]["scope_phrases"],
+        )
+
+    def test_3f_guardrail_prefers_governing_code_over_unscoped_case_narrative(self) -> None:
+        question = (
+            "Nguyên đơn có phải làm lại đơn khởi kiện trong trường hợp vụ án dân sự "
+            "có bản án phúc thẩm tuyên hủy bản án sơ thẩm vì vi phạm tố tụng không?"
+        )
+        candidates = [
+            {
+                "context_id": "case",
+                "chunk_no": 19,
+                "name": "Quyết định công bố án lệ",
+                "text": "Bị đơn yêu cầu Hội đồng xét xử phúc thẩm hủy bản án sơ thẩm.",
+                "rerank_score": 0.73,
+                "rrf_rank_after_boost": 18,
+            },
+            {
+                "context_id": "code",
+                "chunk_no": 136,
+                "name": "Bộ luật Tố tụng dân sự 2015",
+                "text": (
+                    "Điều 310. Hủy bản án sơ thẩm và chuyển hồ sơ vụ án cho Tòa án cấp sơ thẩm "
+                    "giải quyết lại khi có vi phạm nghiêm trọng về thủ tục tố tụng."
+                ),
+                "rerank_score": -4.18,
+                "rrf_rank_after_boost": 3,
+            },
+        ]
+
+        ranked = _apply_reranker_legal_guardrails(question, candidates)
+
+        self.assertEqual(ranked[0]["context_id"], "code")
 
     def test_4_vietnamese_reranker(self) -> None:
         """4. Kiểm tra chấm điểm cross-encoder và lọc Top-3 chunks."""
