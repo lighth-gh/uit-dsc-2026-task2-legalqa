@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Iterable
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 
@@ -27,6 +28,20 @@ APPENDIX_RE = re.compile(
     r"(?im)^[ \t]*(?:PHỤ[ \t]+LỤC|Phụ[ \t]+lục|MẪU[ \t]+SỐ|Mẫu[ \t]+số).*$"
 )
 
+# Controlled retrieval aliases. Do not convert standalone legal article or
+# decree numbers: Arabic/Roman expansion is only safe in the named concept
+# "điện 8 / điện VIII".
+_POWER_PLAN_NUMBER_RE = re.compile(
+    r"(?i)\b(?P<prefix>(?:quy\s+hoạch\s+)?điện\s+)(?P<number>8|viii)\b"
+)
+_MILLION_AMOUNT_RE = re.compile(
+    r"(?i)(?<![\w.,])(?P<amount>\d+(?:[.,]\d+)?)\s*triệu(?:\s+đồng)?\b"
+)
+_GROUPED_VND_RE = re.compile(
+    r"(?i)(?<![\w.,])(?P<amount>\d{1,3}(?:[.]\d{3})+)\s*đồng\b"
+)
+_PRIORITY_LEGAL_PHRASES = ("mức lương cơ sở",)
+
 
 def normalize_text(text: str) -> str:
     """Chuẩn hóa lỗi xuống dòng/Unicode nhưng không đổi từ ngữ pháp lý."""
@@ -50,12 +65,90 @@ def tokenize(text: str) -> list[str]:
     return TOKEN_RE.findall(text)
 
 
+def _format_grouped_vnd(amount: Decimal) -> str | None:
+    dong = amount * Decimal(1_000_000)
+    if dong != dong.to_integral_value() or dong <= 0:
+        return None
+    return f"{int(dong):,}".replace(",", ".") + " đồng"
+
+
+def _format_million_amount(dong: int) -> str | None:
+    if dong <= 0 or dong % 100_000 != 0:
+        return None
+    millions = Decimal(dong) / Decimal(1_000_000)
+    value = format(millions.normalize(), "f").replace(".", ",")
+    return f"{value} triệu"
+
+
+def retrieval_query_aliases(text: str) -> list[str]:
+    """Return only high-confidence aliases for named plans and money values."""
+    source = unicodedata.normalize("NFC", str(text or ""))
+    aliases: list[str] = []
+
+    for match in _POWER_PLAN_NUMBER_RE.finditer(source):
+        replacement = "VIII" if match.group("number").casefold() == "8" else "8"
+        aliases.append(f"{match.group('prefix')}{replacement}".strip())
+
+    for match in _MILLION_AMOUNT_RE.finditer(source):
+        raw_amount = match.group("amount").replace(",", ".")
+        try:
+            amount = Decimal(raw_amount)
+        except InvalidOperation:
+            continue
+        formatted = _format_grouped_vnd(amount)
+        if formatted:
+            aliases.append(formatted)
+
+    for match in _GROUPED_VND_RE.finditer(source):
+        try:
+            dong = int(match.group("amount").replace(".", ""))
+        except ValueError:
+            continue
+        formatted = _format_million_amount(dong)
+        if formatted:
+            aliases.append(formatted)
+
+    source_folded = source.casefold()
+    return [
+        alias
+        for alias in dict.fromkeys(aliases)
+        if alias.casefold() not in source_folded
+    ]
+
+
+def expand_retrieval_query(text: str) -> str:
+    """Append controlled aliases while preserving the complete original query."""
+    source = unicodedata.normalize("NFC", str(text or "")).strip()
+    aliases = retrieval_query_aliases(source)
+    return " ".join([source, *aliases]).strip()
+
+
+def retrieval_priority_phrases(text: str) -> list[str]:
+    """Exact phrases that may safely receive lexical priority in FTS retrieval."""
+    expanded = expand_retrieval_query(text)
+    expanded_folded = expanded.casefold()
+    phrases: list[str] = []
+
+    for match in _POWER_PLAN_NUMBER_RE.finditer(expanded):
+        phrases.append(match.group(0))
+    for phrase in _PRIORITY_LEGAL_PHRASES:
+        if phrase in expanded_folded:
+            phrases.append(phrase)
+    for pattern in (_MILLION_AMOUNT_RE, _GROUPED_VND_RE):
+        phrases.extend(match.group(0) for match in pattern.finditer(expanded))
+
+    # FTS5 tokenizes punctuation inside money amounts. Converting each phrase
+    # to its token sequence creates a valid exact FTS phrase for both formats.
+    normalized_phrases = (" ".join(tokenize(phrase)) for phrase in phrases)
+    return [phrase for phrase in dict.fromkeys(normalized_phrases) if phrase]
+
+
 def query_terms(text: str, max_terms: int = 36) -> list[str]:
     """Rút các token có ích cho FTS5, giữ thứ tự xuất hiện và không lặp."""
     seen: set[str] = set()
     result: list[str] = []
     for token in tokenize(text):
-        if token in STOPWORDS or len(token) < 2 or token in seen:
+        if token in STOPWORDS or (len(token) < 2 and not token.isdigit()) or token in seen:
             continue
         seen.add(token)
         result.append(token)

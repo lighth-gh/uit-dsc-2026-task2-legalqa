@@ -37,9 +37,11 @@ from legalqa_baseline.storage import (
 class MockEmbeddingModel:
     def __init__(self, dim: int = 4) -> None:
         self.dim = dim
+        self.seen_batches: list[list[str]] = []
 
     def encode(self, texts: list[str], batch_size: int = 32, **_: Any) -> Any:
         import numpy as np
+        self.seen_batches.append(list(texts))
         # Sinh mock vector dựa trên hash chuỗi để có tính xác định
         vecs = []
         for text in texts:
@@ -506,6 +508,38 @@ class TestDenseRAG(unittest.TestCase):
             20,
         )
         self.assertIn("reranker", pred.evidence["stage_seconds"])
+
+    def test_9c_dense_query_uses_controlled_retrieval_expansion(self) -> None:
+        mock_model = MockEmbeddingModel(dim=4)
+        dense_meta = [
+            {
+                "context_id": "power-plan-viii",
+                "chunk_no": 0,
+                "name": "Quy hoạch điện VIII",
+                "link": "",
+                "text": "Thủ tướng phê duyệt Quy hoạch điện VIII.",
+            }
+        ]
+        dense_vectors = mock_model.encode([dense_meta[0]["text"]])
+        dense_index = DenseVectorIndex(vectors=dense_vectors, metadata=dense_meta)
+        mock_model.seen_batches.clear()
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            dense_index=dense_index,
+            embedding_model=mock_model,
+            reranker=MockReranker(),
+        )
+
+        pred = pipeline.predict_one(
+            "Thủ tướng chính thức phê duyệt Quy hoạch điện 8?",
+            mode="rag",
+        )
+
+        self.assertIn("Quy hoạch điện VIII", mock_model.seen_batches[-1][0])
+        query_trace = pred.evidence["retrieval_trace"]["query"]
+        self.assertIn("Quy hoạch điện VIII", query_trace["expanded"])
+        self.assertIn("quy hoạch điện viii", query_trace["priority_phrases"])
 
     def test_10_dense_build_resumes_from_atomic_parts(self) -> None:
         import numpy as np

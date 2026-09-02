@@ -233,6 +233,44 @@ class StorageRemainingRegressionTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             index.search_contexts(question, top_k=top_k)
 
+    def test_search_contexts_prioritizes_controlled_exact_phrase_alias(self) -> None:
+        contexts = self.root / "controlled_aliases"
+        _write_json(
+            contexts / "context_exact.json",
+            {
+                "id": "power-plan-viii",
+                "name": "Quy hoạch điện VIII",
+                "link": "",
+                "passage": (
+                    "Thủ tướng Chính phủ chính thức phê duyệt Quy hoạch điện VIII. "
+                    "Nội dung quy hoạch nguồn điện và lưới điện quốc gia."
+                ),
+            },
+        )
+        _write_json(
+            contexts / "context_noise.json",
+            {
+                "id": "generic-approval",
+                "name": "Thông tin phê duyệt",
+                "link": "",
+                "passage": (
+                    "Thủ tướng chính thức phê duyệt nhiều dự án điện. "
+                    "Thông tin chung về quy hoạch và quyết định đầu tư."
+                ),
+            },
+        )
+        database = self.root / "controlled_aliases.sqlite"
+        self._build(contexts, database)
+
+        with SearchIndex(database) as index:
+            matches = index.search_contexts(
+                "Thủ tướng chính thức phê duyệt Quy hoạch điện 8?",
+                top_k=2,
+            )
+
+        self.assertEqual(matches[0]["context_id"], "power-plan-viii")
+        self.assertGreater(int(matches[0]["exact_phrase_matches"]), 0)
+
     def test_hash_and_bm25_ties_are_independent_of_filename_order(self) -> None:
         databases: list[Path] = []
         for variant, assignments in enumerate(

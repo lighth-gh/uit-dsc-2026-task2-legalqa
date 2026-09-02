@@ -26,7 +26,10 @@ from legalqa_baseline.text import (
     _split_on_headings,
     best_excerpt,
     chunk_passage,
+    expand_retrieval_query,
     query_terms,
+    retrieval_priority_phrases,
+    retrieval_query_aliases,
 )
 
 
@@ -68,6 +71,26 @@ class TextTests(unittest.TestCase):
         terms = query_terms("Mức phạt theo khoản 3 Điều 17 là bao nhiêu?")
         self.assertIn("phạt", terms)
         self.assertIn("17", terms)
+
+    def test_controlled_retrieval_query_expansion(self) -> None:
+        power_question = "Thủ tướng phê duyệt Quy hoạch điện 8?"
+        power_expanded = expand_retrieval_query(power_question)
+        self.assertIn("Quy hoạch điện VIII", power_expanded)
+        self.assertIn("8", query_terms(power_expanded))
+        self.assertIn("quy hoạch điện viii", retrieval_priority_phrases(power_question))
+        self.assertIn("quy hoạch điện 8", retrieval_priority_phrases(power_question))
+
+        salary_question = "Mức lương cơ sở tăng lên 1,8 triệu đồng?"
+        self.assertIn("1.800.000 đồng", retrieval_query_aliases(salary_question))
+        self.assertIn("mức lương cơ sở", retrieval_priority_phrases(salary_question))
+        self.assertIn(
+            "1,8 triệu",
+            retrieval_query_aliases("Mức lương cơ sở là 1.800.000 đồng"),
+        )
+
+        legal_number = "Điều 8 Nghị định 12/2024/NĐ-CP quy định thế nào?"
+        self.assertEqual(expand_retrieval_query(legal_number), legal_number)
+        self.assertNotIn("VIII", expand_retrieval_query(legal_number))
 
     def test_excerpt_limit(self) -> None:
         text = ("khác " * 300) + ("kiểm dịch động vật " * 100)

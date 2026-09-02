@@ -7,7 +7,7 @@ from collections import Counter
 from typing import Any, Iterable
 
 from .pipeline import reciprocal_rank_fusion
-from .text import tokenize
+from .text import expand_retrieval_query, tokenize
 
 
 ChunkKey = tuple[str, int]
@@ -217,7 +217,7 @@ def evaluate_retrieval(
         if dense_index is not None and embedding_model is not None:
             normalize = getattr(dense_index, "similarity", "cosine") == "cosine"
             query_vector = embedding_model.encode(
-                [question],
+                [expand_retrieval_query(question)],
                 max_length=dense_query_max_length,
                 normalize_embeddings=normalize,
             )[0]

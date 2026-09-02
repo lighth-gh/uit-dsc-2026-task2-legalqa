@@ -17,9 +17,12 @@ from .text import (
     best_excerpt,
     build_extractive_answer,
     clean_answer,
+    expand_retrieval_query,
     is_long_form_question,
     possibly_cut,
     query_terms,
+    retrieval_priority_phrases,
+    retrieval_query_aliases,
     tokenize,
 )
 
@@ -78,6 +81,7 @@ def _retrieval_candidate_record(
         "title": title,
         "link": link,
         "score": _audit_float(candidate.get(score_field)),
+        "exact_phrase_matches": int(candidate.get("exact_phrase_matches") or 0),
     }
     for field in _RETRIEVAL_SCORE_FIELDS:
         record[field] = _audit_float(candidate.get(field))
@@ -546,6 +550,9 @@ class LegalQABaseline:
 
         rag_started = time.perf_counter()
         stage_seconds: dict[str, float] = {}
+        expanded_retrieval_query = expand_retrieval_query(question)
+        query_aliases = retrieval_query_aliases(question)
+        priority_phrases = retrieval_priority_phrases(question)
 
         # 1. Truy xuất BM25 Top-50
         stage_started = time.perf_counter()
@@ -576,7 +583,7 @@ class LegalQABaseline:
                     encode_kwargs["max_length"] = self.dense_query_max_length
                 if accepts_kwargs or "normalize_embeddings" in parameters:
                     encode_kwargs["normalize_embeddings"] = normalize
-                encoded_query = encode([question], **encode_kwargs)
+                encoded_query = encode([expanded_retrieval_query], **encode_kwargs)
                 q_vec = encoded_query[0]
                 dense_candidates = self.dense_index.search(q_vec, top_k=self.dense_top_k)
                 dense_status = "ok" if dense_candidates else "empty"
@@ -661,6 +668,12 @@ class LegalQABaseline:
 
         reranker_top_chunks = reranked_pool[: self.rerank_top_k]
         retrieval_trace = {
+            "query": {
+                "original": question,
+                "expanded": expanded_retrieval_query,
+                "aliases": query_aliases,
+                "priority_phrases": priority_phrases,
+            },
             "bm25": _retrieval_stage_record(
                 bm25_candidates,
                 requested_top_k=self.bm25_top_k,

@@ -13,7 +13,14 @@ from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .text import chunk_passage, query_terms, validate_chunk_parameters
+from .text import (
+    chunk_passage,
+    expand_retrieval_query,
+    query_terms,
+    retrieval_priority_phrases,
+    tokenize,
+    validate_chunk_parameters,
+)
 
 
 SCHEMA_VERSION = "5"
@@ -489,10 +496,13 @@ class SearchIndex:
 
     def search_contexts(self, question: str, top_k: int = 12) -> list[dict[str, Any]]:
         _validate_top_k(top_k)
-        query = _fts_query(self._rarest_terms(question, "contexts_vocab", max_terms=8))
+        expanded_question = expand_retrieval_query(question)
+        query = _fts_query(
+            self._rarest_terms(expanded_question, "contexts_vocab", max_terms=8)
+        )
         if not query:
             return []
-        rows = self.connection.execute(
+        broad_rows = self.connection.execute(
             """
             SELECT context_id, chunk_no, name, link, text,
                    bm25(contexts_fts, 0.0, 0.0, 2.0, 0.0, 1.0) AS bm25_score
@@ -503,7 +513,51 @@ class SearchIndex:
             """,
             (query, int(top_k)),
         ).fetchall()
-        return [dict(row) for row in rows]
+
+        priority_phrases = retrieval_priority_phrases(question)
+        if not priority_phrases:
+            return [dict(row) for row in broad_rows]
+
+        phrase_query = _fts_query(priority_phrases)
+        phrase_rows = self.connection.execute(
+            """
+            SELECT context_id, chunk_no, name, link, text,
+                   bm25(contexts_fts, 0.0, 0.0, 2.0, 0.0, 1.0) AS bm25_score
+            FROM contexts_fts
+            WHERE contexts_fts MATCH ?
+            ORDER BY bm25_score, context_id, CAST(chunk_no AS INTEGER), rowid
+            LIMIT ?
+            """,
+            (phrase_query, int(top_k)),
+        ).fetchall()
+
+        by_key: dict[tuple[str, int], dict[str, Any]] = {}
+        for row in [*phrase_rows, *broad_rows]:
+            item = dict(row)
+            key = (str(item["context_id"]), int(item["chunk_no"]))
+            haystack = " ".join(
+                tokenize(f"{item.get('name') or ''} {item.get('text') or ''}")
+            )
+            exact_matches = sum(phrase in haystack for phrase in priority_phrases)
+            if key in by_key:
+                # Keep the broad-query BM25 score when available so scores in
+                # the lexical list remain comparable after exact-phrase merge.
+                previous_matches = int(by_key[key].get("exact_phrase_matches") or 0)
+                item["exact_phrase_matches"] = max(previous_matches, exact_matches)
+            else:
+                item["exact_phrase_matches"] = exact_matches
+            by_key[key] = item
+
+        ranked = sorted(
+            by_key.values(),
+            key=lambda item: (
+                -int(item.get("exact_phrase_matches") or 0),
+                float(item.get("bm25_score") or 0.0),
+                str(item.get("context_id") or ""),
+                int(item.get("chunk_no") or 0),
+            ),
+        )
+        return ranked[:top_k]
 
     def search_train(
         self,

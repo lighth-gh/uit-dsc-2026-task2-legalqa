@@ -178,6 +178,12 @@ Mỗi lần predict còn ghi `<output>.audit.jsonl` ngay sau từng ID. Log ch�
 tiêu đề của BM25 Top-50, Dense Top-50, RRF Top-50, reranker pool Top-20 và
 reranker Top-3 để xác định chính xác tài liệu bị loại ở tầng nào.
 
+Retrieval còn mở rộng có kiểm soát các alias có độ tin cậy cao: `điện 8` ↔
+`điện VIII` và mức tiền `1,8 triệu` ↔ `1.800.000 đồng`. BM25 ưu tiên exact phrase
+như `Quy hoạch điện VIII`/`mức lương cơ sở`, Dense dùng query đã mở rộng, còn
+reranker và generator vẫn nhận nguyên câu hỏi gốc. Số Điều, khoản, nghị định và
+quyết định không bị chuyển sang số La Mã ngoài ngữ cảnh tên Quy hoạch điện.
+
 ### Xây dựng Dense FAISS Vector Index:
 ```bash
 python -m legalqa_baseline build-dense-index \
