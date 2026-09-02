@@ -173,6 +173,10 @@ cắt hoặc chạm token limit thì tự động quay về raw context liền k
 có giới hạn ký tự cứng. Với câu hỏi về Mẫu/Phụ lục/Điều, raw answer bắt đầu từ
 tiêu đề khớp tốt nhất trong cụm ba chunk và giữ nguyên toàn bộ nội dung phía sau;
 nếu không tìm thấy tiêu đề phù hợp thì dùng thứ tự best → previous → next.
+Router cũng đưa thẳng các câu có tín hiệu danh sách/quy trình rõ ràng (các yêu
+cầu, hình thức, công việc, tiêu chuẩn, thời gian hưởng chế độ...) sang
+`extractive_long`. Câu tổng hợp ngắn vẫn dùng LLM 512 và fallback raw nếu cần;
+pipeline không tự chạy lại bằng 1024 token.
 
 Mỗi lần predict còn ghi `<output>.audit.jsonl` ngay sau từng ID. Log chứa route,
 độ dài answer/context, token sinh, trạng thái token-limit/từ chối/cắt câu và

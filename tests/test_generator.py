@@ -518,12 +518,17 @@ class RAGPipelineTests(unittest.TestCase):
 
     def test_pipeline_falls_back_when_generator_hits_token_limit(self) -> None:
         class TokenLimitedGenerator:
+            def __init__(self) -> None:
+                self.calls = 0
+
             def generate(self, context: str, question: str) -> str:
+                self.calls += 1
                 raise GenerationTokenLimitReached(509, 512)
 
+        generator = TokenLimitedGenerator()
         pipeline = LegalQABaseline(
             index=MockSearchIndex(),  # type: ignore[arg-type]
-            generator=TokenLimitedGenerator(),
+            generator=generator,
         )
         pred = pipeline.predict_one("Mức phạt?", mode="rag")
 
@@ -531,6 +536,7 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(pred.route, "extractive_fallback")
         self.assertEqual(pred.evidence["generated_tokens"], 509)
         self.assertEqual(pred.evidence["max_new_tokens"], 512)
+        self.assertEqual(generator.calls, 1, "Không được tự retry LLM bằng 1024 token")
         audit = prediction_audit_record("sample-1", pred)
         self.assertEqual(audit["route"], "extractive_fallback")
         self.assertEqual(audit["generated_tokens"], 509)

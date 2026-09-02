@@ -461,6 +461,12 @@ LONG_ANSWER_PATTERNS: tuple[str, ...] = (
     r"\bnguyên văn\b",
     r"\btoàn văn\b",
     r"\bquy định đầy đủ\b",
+    # Các dạng hỏi có cấu trúc đã chạm 512 token trong smoke30. Đây là tín
+    # hiệu danh sách/quy trình rõ ràng, không phải mọi câu có từ "quy định".
+    r"\bđược thực hiện (?:như thế nào|ra sao)\b",
+    r"\b(?:các|những)\s+(?:yêu cầu|hình thức|công việc|nội dung|nhiệm vụ|quyền hạn)\b",
+    r"\btiêu chuẩn(?:\s+(?:của|đối với|chung|cụ thể))?\b",
+    r"\bthời gian hưởng chế độ\b",
 )
 LONG_PATTERNS = LONG_ANSWER_PATTERNS
 

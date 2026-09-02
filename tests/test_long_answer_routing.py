@@ -82,6 +82,47 @@ class TestLongAnswerPatterns(unittest.TestCase):
             with self.subTest(question=q):
                 self.assertFalse(is_long_answer_question(q))
 
+    def test_smoke30_structured_fallbacks_route_directly_to_extractive(self) -> None:
+        structured_questions = {
+            "97935": (
+                "Việc cho vay vốn ưu đãi để mua nhà ở xã hội thông qua Ngân hàng "
+                "Chính sách xã hội được thực hiện như thế nào?"
+            ),
+            "83665": (
+                "Hàng dự trữ quốc gia trong quá trình nhập kho, xuất kho và lưu kho "
+                "phải tuân thủ các yêu cầu thế nào?"
+            ),
+            "63093": (
+                "Khi vi phạm pháp luật về đất đai sẽ bị xử phạt hành chính bằng "
+                "các hình thức nào?"
+            ),
+            "76135": (
+                "Người học ngành bảo vệ thực vật trình độ cao đẳng sau khi tốt "
+                "nghiệp có thể làm những công việc nào?"
+            ),
+            "94131": "Tiêu chuẩn của công dân để được tham gia nghĩa vụ quân sự",
+            "120127": "Thời gian hưởng chế độ ốm đau theo quy định pháp luật",
+        }
+        for sample_id, question in structured_questions.items():
+            with self.subTest(sample_id=sample_id):
+                self.assertTrue(is_long_form_question(question))
+
+    def test_smoke30_short_synthesis_questions_stay_on_llm_512(self) -> None:
+        short_questions = {
+            "62147": (
+                "Bộ Nội vụ đang lấy ý kiến Nghị định quy định tăng mức lương cơ sở "
+                "đối với CB, CC, VC và lực lượng vũ trang lên 1,8 triệu đồng?"
+            ),
+            "103999": (
+                "Chi cục Thuế gửi cho từng hộ khoán thông báo về việc dự kiến doanh "
+                "thu, mức thuế khoán khi nào?"
+            ),
+            "59823": "Nhà nước khuyến khích kinh tế tuần hoàn ra sao?",
+        }
+        for sample_id, question in short_questions.items():
+            with self.subTest(sample_id=sample_id):
+                self.assertFalse(is_long_form_question(question))
+
     def test_is_long_answer_non_string(self) -> None:
         self.assertFalse(is_long_answer_question(None))  # type: ignore[arg-type]
         self.assertFalse(is_long_answer_question(123))  # type: ignore[arg-type]
