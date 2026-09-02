@@ -40,7 +40,15 @@ _MILLION_AMOUNT_RE = re.compile(
 _GROUPED_VND_RE = re.compile(
     r"(?i)(?<![\w.,])(?P<amount>\d{1,3}(?:[.]\d{3})+)\s*đồng\b"
 )
+_DOCUMENT_REFERENCE_RE = re.compile(
+    r"(?i)\b(?P<kind>nghị\s+định|quyết\s+định|thông\s+tư|nghị\s+quyết|"
+    r"công\s+văn|luật)\s*(?:số\s*)?"
+    r"(?P<number>\d+(?:[/.-][\wđĐ-]+)+)"
+)
+_YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 _PRIORITY_LEGAL_PHRASES = ("mức lương cơ sở",)
+_MAX_EXACT_PHRASE_TOKENS = 8
+_MIN_EXACT_PHRASE_TOKENS = 4
 
 
 def normalize_text(text: str) -> str:
@@ -141,6 +149,113 @@ def retrieval_priority_phrases(text: str) -> list[str]:
     # to its token sequence creates a valid exact FTS phrase for both formats.
     normalized_phrases = (" ".join(tokenize(phrase)) for phrase in phrases)
     return [phrase for phrase in dict.fromkeys(normalized_phrases) if phrase]
+
+
+def _document_references(text: str) -> set[str]:
+    references: set[str] = set()
+    for match in _DOCUMENT_REFERENCE_RE.finditer(text):
+        kind = " ".join(tokenize(match.group("kind")))
+        number = re.sub(r"\s+", "", match.group("number")).casefold()
+        references.add(f"{kind} {number}")
+    return references
+
+
+def _money_amounts(text: str) -> set[int]:
+    amounts: set[int] = set()
+    for match in _MILLION_AMOUNT_RE.finditer(text):
+        try:
+            amount = Decimal(match.group("amount").replace(",", "."))
+        except InvalidOperation:
+            continue
+        dong = amount * Decimal(1_000_000)
+        if dong > 0 and dong == dong.to_integral_value():
+            amounts.add(int(dong))
+    for match in _GROUPED_VND_RE.finditer(text):
+        try:
+            amounts.add(int(match.group("amount").replace(".", "")))
+        except ValueError:
+            continue
+    return amounts
+
+
+def _power_plan_names(text: str) -> set[str]:
+    # Both "điện 8" and "Quy hoạch điện VIII" describe the same named plan.
+    return {
+        "quy hoạch điện viii"
+        for _match in _POWER_PLAN_NUMBER_RE.finditer(text)
+    }
+
+
+def _longest_matching_form_name(
+    question_tokens: list[str],
+    candidate_tokens: list[str],
+) -> str | None:
+    candidate_text = f" {' '.join(candidate_tokens)} "
+    for start, token in enumerate(question_tokens):
+        if token == "biểu" and start + 1 < len(question_tokens):
+            if question_tokens[start + 1] != "mẫu":
+                continue
+        elif token != "mẫu":
+            continue
+        max_size = min(12, len(question_tokens) - start)
+        for size in range(max_size, 2, -1):
+            phrase = " ".join(question_tokens[start : start + size])
+            if f" {phrase} " in candidate_text:
+                return phrase
+    return None
+
+
+def _longest_exact_legal_phrase(
+    question_tokens: list[str],
+    candidate_tokens: list[str],
+) -> tuple[str | None, int]:
+    candidate_text = f" {' '.join(candidate_tokens)} "
+    max_size = min(_MAX_EXACT_PHRASE_TOKENS, len(question_tokens))
+    for size in range(max_size, _MIN_EXACT_PHRASE_TOKENS - 1, -1):
+        for start in range(0, len(question_tokens) - size + 1):
+            window = question_tokens[start : start + size]
+            informative = [
+                token
+                for token in window
+                if token not in STOPWORDS and (len(token) >= 2 or token.isdigit())
+            ]
+            if len(informative) < 3:
+                continue
+            phrase = " ".join(window)
+            if f" {phrase} " in candidate_text:
+                return phrase, size
+    return None, 0
+
+
+def legal_retrieval_signal_matches(
+    question: str,
+    candidate_text: str,
+) -> dict[str, Any]:
+    """Find exact, high-precision legal signals shared by a query and chunk."""
+    question_tokens = tokenize(question)
+    candidate_tokens = tokenize(candidate_text)
+
+    document_references = sorted(
+        _document_references(question) & _document_references(candidate_text)
+    )
+    money_amounts = sorted(_money_amounts(question) & _money_amounts(candidate_text))
+    years = sorted(set(_YEAR_RE.findall(question)) & set(_YEAR_RE.findall(candidate_text)))
+    plan_names = sorted(_power_plan_names(question) & _power_plan_names(candidate_text))
+    form_name = _longest_matching_form_name(question_tokens, candidate_tokens)
+    long_phrase, long_phrase_tokens = _longest_exact_legal_phrase(
+        question_tokens,
+        candidate_tokens,
+    )
+
+    return {
+        "document_references": document_references,
+        "money_amounts_vnd": money_amounts,
+        "years": years,
+        "plan_names": plan_names,
+        "form_names": [form_name] if form_name else [],
+        "long_phrase": long_phrase,
+        "long_phrase_tokens": long_phrase_tokens,
+    }
 
 
 def query_terms(text: str, max_terms: int = 36) -> list[str]:

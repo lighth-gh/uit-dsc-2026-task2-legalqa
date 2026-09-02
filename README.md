@@ -183,6 +183,11 @@ Retrieval còn mở rộng có kiểm soát các alias có độ tin cậy cao: 
 như `Quy hoạch điện VIII`/`mức lương cơ sở`, Dense dùng query đã mở rộng, còn
 reranker và generator vẫn nhận nguyên câu hỏi gốc. Số Điều, khoản, nghị định và
 quyết định không bị chuyển sang số La Mã ngoài ngữ cảnh tên Quy hoạch điện.
+Sau RRF, pipeline cộng một boost nhỏ có trần cho các chunk khớp chính xác số
+hiệu văn bản, mức tiền, năm, tên quy hoạch, tên biểu mẫu hoặc cụm pháp lý dài.
+Audit giữ cả `rrf_score`, `legal_signal_boost`, `boosted_rrf_score` và hạng
+trước/sau boost. Pool đưa vào reranker vẫn mặc định là Top-20; chỉ nên tăng lên
+30 khi trace thực tế cho thấy tài liệu đúng thường nằm ở hạng RRF 21–30.
 
 ### Xây dựng Dense FAISS Vector Index:
 ```bash

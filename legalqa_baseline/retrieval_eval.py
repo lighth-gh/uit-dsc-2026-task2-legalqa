@@ -6,7 +6,7 @@ import sys
 from collections import Counter
 from typing import Any, Iterable
 
-from .pipeline import reciprocal_rank_fusion
+from .pipeline import _apply_legal_signal_boost, reciprocal_rank_fusion
 from .text import expand_retrieval_query, tokenize
 
 
@@ -228,6 +228,7 @@ def evaluate_retrieval(
                 rrf_k=rrf_k,
                 top_k=max(rrf_top_k, max_k),
             )
+            fused = _apply_legal_signal_boost(question, fused)
             stage_results["dense"] = dense
             stage_results["rrf"] = fused
 

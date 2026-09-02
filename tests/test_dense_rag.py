@@ -22,6 +22,7 @@ from legalqa_baseline.dense import (
 )
 from legalqa_baseline.pipeline import (
     LegalQABaseline,
+    _apply_legal_signal_boost,
     prediction_audit_record,
     reciprocal_rank_fusion,
 )
@@ -245,6 +246,40 @@ class TestDenseRAG(unittest.TestCase):
         self.assertEqual(fused[0]["dense_score"], 0.9)
         self.assertGreater(fused[0]["rrf_score"], fused[1]["rrf_score"])
 
+    def test_3b_exact_legal_signals_boost_after_rrf(self) -> None:
+        candidates = [
+            {
+                "context_id": "generic",
+                "chunk_no": 0,
+                "name": "Văn bản chung",
+                "text": "Quy định chung về lương và chế độ lao động.",
+                "rrf_score": 0.0200,
+            },
+            {
+                "context_id": "exact",
+                "chunk_no": 0,
+                "name": "Văn bản đúng",
+                "text": "Mức lương cơ sở là 1.800.000 đồng mỗi tháng.",
+                "rrf_score": 0.0188,
+            },
+        ]
+
+        boosted = _apply_legal_signal_boost(
+            "Mức lương cơ sở có phải là 1,8 triệu đồng không?",
+            candidates,
+        )
+
+        self.assertEqual(boosted[0]["context_id"], "exact")
+        self.assertEqual(boosted[0]["rrf_score"], 0.0188)
+        self.assertGreater(boosted[0]["legal_signal_boost"], 0.0)
+        self.assertLessEqual(boosted[0]["legal_signal_boost"], 0.0025)
+        self.assertEqual(boosted[0]["rrf_rank_before_boost"], 2)
+        self.assertEqual(boosted[0]["rrf_rank_after_boost"], 1)
+        self.assertEqual(
+            boosted[0]["legal_signal_matches"]["money_amounts_vnd"],
+            [1_800_000],
+        )
+
     def test_4_vietnamese_reranker(self) -> None:
         """4. Kiểm tra chấm điểm cross-encoder và lọc Top-3 chunks."""
         mock_reranker = MockReranker()
@@ -337,6 +372,9 @@ class TestDenseRAG(unittest.TestCase):
         self.assertIn("bm25_score", first_reranked)
         self.assertIn("dense_score", first_reranked)
         self.assertIn("rrf_score", first_reranked)
+        self.assertIn("legal_signal_boost", first_reranked)
+        self.assertIn("boosted_rrf_score", first_reranked)
+        self.assertIn("legal_signal_matches", first_reranked)
         self.assertIn("rerank_score", first_reranked)
 
         audit = prediction_audit_record("trace-sample", pred)

@@ -19,6 +19,7 @@ from .text import (
     clean_answer,
     expand_retrieval_query,
     is_long_form_question,
+    legal_retrieval_signal_matches,
     possibly_cut,
     query_terms,
     retrieval_priority_phrases,
@@ -42,8 +43,21 @@ _RETRIEVAL_SCORE_FIELDS = (
     "bm25_score",
     "dense_score",
     "rrf_score",
+    "legal_signal_boost",
+    "boosted_rrf_score",
     "rerank_score",
 )
+
+_LEGAL_SIGNAL_BOOST_WEIGHTS = {
+    "document_references": 0.0008,
+    "money_amounts_vnd": 0.0008,
+    "years": 0.00035,
+    "plan_names": 0.0008,
+    "form_names": 0.0008,
+    "long_phrase": 0.00055,
+}
+_LEGAL_SIGNAL_COMBINATION_BONUS = 0.00035
+_MAX_LEGAL_SIGNAL_BOOST = 0.0025
 
 
 def _audit_float(value: Any) -> float | None:
@@ -85,6 +99,15 @@ def _retrieval_candidate_record(
     }
     for field in _RETRIEVAL_SCORE_FIELDS:
         record[field] = _audit_float(candidate.get(field))
+    for field in ("rrf_rank_before_boost", "rrf_rank_after_boost"):
+        value = candidate.get(field)
+        record[field] = (
+            int(value)
+            if isinstance(value, int) and not isinstance(value, bool)
+            else None
+        )
+    matches = candidate.get("legal_signal_matches")
+    record["legal_signal_matches"] = matches if isinstance(matches, dict) else {}
     return record
 
 
@@ -331,6 +354,48 @@ def reciprocal_rank_fusion(
         item["rrf_score"] = float(scores[key])
         fused_results.append(item)
     return fused_results
+
+
+def _apply_legal_signal_boost(
+    question: str,
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Apply a capped exact-match boost without overwriting the raw RRF score."""
+    boosted: list[dict[str, Any]] = []
+    for rank, candidate in enumerate(candidates, start=1):
+        item = dict(candidate)
+        title = str(item.get("title") or item.get("name") or "").strip()
+        passage = "\n".join(
+            part for part in (title, str(item.get("text") or "").strip()) if part
+        )
+        matches = legal_retrieval_signal_matches(question, passage)
+        matched_categories = [
+            field
+            for field in _LEGAL_SIGNAL_BOOST_WEIGHTS
+            if matches.get(field)
+        ]
+        boost = sum(_LEGAL_SIGNAL_BOOST_WEIGHTS[field] for field in matched_categories)
+        if len(matched_categories) >= 2:
+            boost += _LEGAL_SIGNAL_COMBINATION_BONUS
+        boost = min(boost, _MAX_LEGAL_SIGNAL_BOOST)
+
+        raw_rrf_score = _audit_float(item.get("rrf_score")) or 0.0
+        item["rrf_rank_before_boost"] = rank
+        item["legal_signal_matches"] = matches
+        item["legal_signal_boost"] = round(boost, 8)
+        item["boosted_rrf_score"] = raw_rrf_score + boost
+        boosted.append(item)
+
+    boosted.sort(
+        key=lambda item: (
+            -float(item["boosted_rrf_score"]),
+            -float(item.get("rrf_score") or 0.0),
+            int(item["rrf_rank_before_boost"]),
+        )
+    )
+    for rank, item in enumerate(boosted, start=1):
+        item["rrf_rank_after_boost"] = rank
+    return boosted
 
 
 class LegalQABaseline:
@@ -620,6 +685,8 @@ class LegalQABaseline:
                 key=lambda item: _context_rerank_score(question, item),
                 reverse=True,
             )[: self.rrf_top_k]
+        if fusion_status == "rrf":
+            fused_candidates = _apply_legal_signal_boost(question, fused_candidates)
         stage_seconds["fusion"] = round(time.perf_counter() - stage_started, 4)
 
         if not fused_candidates:
@@ -689,7 +756,9 @@ class LegalQABaseline:
             "rrf": _retrieval_stage_record(
                 fused_candidates,
                 requested_top_k=self.rrf_top_k,
-                score_field="rrf_score",
+                score_field=(
+                    "boosted_rrf_score" if fusion_status == "rrf" else "rrf_score"
+                ),
                 status=fusion_status,
             ),
             "reranker_pool": _retrieval_stage_record(
@@ -733,6 +802,8 @@ class LegalQABaseline:
                                 "bm25_score": c.get("bm25_score"),
                                 "dense_score": c.get("dense_score"),
                                 "rrf_score": c.get("rrf_score"),
+                                "legal_signal_boost": c.get("legal_signal_boost"),
+                                "boosted_rrf_score": c.get("boosted_rrf_score"),
                                 "rerank_score": c.get("rerank_score"),
                             }
                             for c in top_chunks
@@ -845,6 +916,8 @@ class LegalQABaseline:
                     "bm25_score": c.get("bm25_score"),
                     "dense_score": c.get("dense_score"),
                     "rrf_score": c.get("rrf_score"),
+                    "legal_signal_boost": c.get("legal_signal_boost"),
+                    "boosted_rrf_score": c.get("boosted_rrf_score"),
                     "rerank_score": c.get("rerank_score"),
                 }
                 for c in top_chunks

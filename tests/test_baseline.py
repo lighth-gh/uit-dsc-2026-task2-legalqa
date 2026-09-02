@@ -27,6 +27,7 @@ from legalqa_baseline.text import (
     best_excerpt,
     chunk_passage,
     expand_retrieval_query,
+    legal_retrieval_signal_matches,
     query_terms,
     retrieval_priority_phrases,
     retrieval_query_aliases,
@@ -91,6 +92,33 @@ class TextTests(unittest.TestCase):
         legal_number = "Điều 8 Nghị định 12/2024/NĐ-CP quy định thế nào?"
         self.assertEqual(expand_retrieval_query(legal_number), legal_number)
         self.assertNotIn("VIII", expand_retrieval_query(legal_number))
+
+    def test_exact_legal_retrieval_signals(self) -> None:
+        question = (
+            "Theo Nghị định 12/2024/NĐ-CP, mức lương cơ sở năm 2024 "
+            "có phải là 1,8 triệu đồng không?"
+        )
+        candidate = (
+            "Nghị định 12/2024/NĐ-CP quy định mức lương cơ sở năm 2024 "
+            "là 1.800.000 đồng/tháng."
+        )
+        matches = legal_retrieval_signal_matches(question, candidate)
+        self.assertEqual(matches["document_references"], ["nghị định 12/2024/nđ-cp"])
+        self.assertEqual(matches["money_amounts_vnd"], [1_800_000])
+        self.assertEqual(matches["years"], ["2024"])
+        self.assertGreaterEqual(matches["long_phrase_tokens"], 4)
+
+        plan_matches = legal_retrieval_signal_matches(
+            "Nội dung Quy hoạch điện 8 là gì?",
+            "Quy hoạch điện VIII xác định các nhiệm vụ trọng tâm.",
+        )
+        self.assertEqual(plan_matches["plan_names"], ["quy hoạch điện viii"])
+
+        form_matches = legal_retrieval_signal_matches(
+            "Mẫu thông báo thay đổi người đại diện theo pháp luật ở đâu?",
+            "Mẫu thông báo thay đổi người đại diện theo pháp luật của doanh nghiệp.",
+        )
+        self.assertTrue(form_matches["form_names"])
 
     def test_excerpt_limit(self) -> None:
         text = ("khác " * 300) + ("kiểm dịch động vật " * 100)
