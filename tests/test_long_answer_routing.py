@@ -9,6 +9,7 @@ from legalqa_baseline.storage import SearchIndex, build_index
 from legalqa_baseline.text import (
     LONG_ANSWER_PATTERNS,
     build_extractive_answer,
+    build_focused_extractive_answer,
     clean_answer,
     deduplicate_overlaps,
     is_long_answer_question,
@@ -145,6 +146,76 @@ class TestMergeAdjacentChunks(unittest.TestCase):
             ]
         )
         self.assertEqual(answer, "Mục 2. a b c d e\n\nMục 3.")
+
+    def test_id_80189_raw_answer_starts_at_matching_form_title(self) -> None:
+        chunks = [
+            {
+                "chunk_no": 20,
+                "text": (
+                    "PHỤ LỤC I THÔNG BÁO THAY ĐỔI NHÂN SỰ. "
+                    "Danh mục có Mẫu thông báo thay đổi người đại diện theo pháp luật. "
+                    "Nội dung của biểu mẫu nhân sự không liên quan."
+                ),
+            },
+            {
+                "chunk_no": 21,
+                "text": (
+                    "MẪU THÔNG BÁO THAY ĐỔI NGƯỜI ĐẠI DIỆN THEO PHÁP LUẬT "
+                    "Tên doanh nghiệp: ... Kính gửi: Phòng Đăng ký kinh doanh."
+                ),
+            },
+            {
+                "chunk_no": 22,
+                "text": "Họ và tên người đại diện mới: ... Chữ ký: ...",
+            },
+        ]
+
+        answer = build_focused_extractive_answer(
+            "Mẫu thông báo thay đổi người đại diện theo pháp luật",
+            chunks,
+            best_chunk_no=20,
+        )
+
+        self.assertTrue(
+            answer.startswith(
+                "MẪU THÔNG BÁO THAY ĐỔI NGƯỜI ĐẠI DIỆN THEO PHÁP LUẬT"
+            )
+        )
+        self.assertNotIn("THÔNG BÁO THAY ĐỔI NHÂN SỰ", answer)
+        self.assertIn("Họ và tên người đại diện mới", answer)
+
+    def test_focused_raw_fallback_uses_best_previous_next_order(self) -> None:
+        chunks = [
+            {"chunk_no": 4, "text": "Nội dung chunk trước."},
+            {"chunk_no": 5, "text": "Nội dung chunk tốt nhất."},
+            {"chunk_no": 6, "text": "Nội dung chunk sau."},
+        ]
+        answer = build_focused_extractive_answer(
+            "Các trường hợp được áp dụng gồm những gì?",
+            chunks,
+            best_chunk_no=5,
+        )
+
+        self.assertLess(answer.index("chunk tốt nhất"), answer.index("chunk trước"))
+        self.assertLess(answer.index("chunk trước"), answer.index("chunk sau"))
+
+    def test_focused_raw_answer_can_start_at_numbered_article(self) -> None:
+        chunks = [
+            {"chunk_no": 8, "text": "Điều 11. Quy định không liên quan."},
+            {
+                "chunk_no": 9,
+                "text": "Điều 12. Hồ sơ gồm đơn đề nghị và bản sao giấy tờ.",
+            },
+            {"chunk_no": 10, "text": "1. Đơn đề nghị. 2. Bản sao giấy tờ."},
+        ]
+        answer = build_focused_extractive_answer(
+            "Nội dung Điều 12 quy định gì?",
+            chunks,
+            best_chunk_no=8,
+        )
+
+        self.assertTrue(answer.startswith("Điều 12"))
+        self.assertNotIn("Điều 11", answer)
 
     def test_clean_answer_only_removes_prefix(self) -> None:
         answer = "Dựa trên ngữ cảnh được cung cấp: Điều 1. Nội dung đầy đủ."

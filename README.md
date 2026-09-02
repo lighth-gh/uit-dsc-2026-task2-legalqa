@@ -170,7 +170,9 @@ trước/sau trong cùng văn bản (`extractive_long`). Các câu còn lại d�
 512 token (`generated_512`); nếu model từ chối, trả quá ngắn, có dấu hiệu bị
 cắt hoặc chạm token limit thì tự động quay về raw context liền kề
 (`extractive_fallback`). Phần overlap giữa các chunk được loại bỏ nhưng không
-có giới hạn ký tự cứng.
+có giới hạn ký tự cứng. Với câu hỏi về Mẫu/Phụ lục/Điều, raw answer bắt đầu từ
+tiêu đề khớp tốt nhất trong cụm ba chunk và giữ nguyên toàn bộ nội dung phía sau;
+nếu không tìm thấy tiêu đề phù hợp thì dùng thứ tự best → previous → next.
 
 Mỗi lần predict còn ghi `<output>.audit.jsonl` ngay sau từng ID. Log chứa route,
 độ dài answer/context, token sinh, trạng thái token-limit/từ chối/cắt câu và

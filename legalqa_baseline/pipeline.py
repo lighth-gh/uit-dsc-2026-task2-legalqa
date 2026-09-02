@@ -16,6 +16,7 @@ from .text import (
     STOPWORDS,
     best_excerpt,
     build_extractive_answer,
+    build_focused_extractive_answer,
     clean_answer,
     expand_retrieval_query,
     is_refusal_answer,
@@ -503,8 +504,19 @@ class LegalQABaseline:
         return sorted(by_key.values(), key=lambda chunk: int(chunk["chunk_no"]))
 
     @staticmethod
-    def _merge_raw_chunks(chunks: list[dict[str, Any]]) -> str:
-        """Join complete adjacent chunks and remove their configured overlap."""
+    def _merge_raw_chunks(
+        chunks: list[dict[str, Any]],
+        *,
+        question: str | None = None,
+        best: dict[str, Any] | None = None,
+    ) -> str:
+        """Join adjacent chunks and focus raw output on the requested heading."""
+        if question and best is not None:
+            return build_focused_extractive_answer(
+                question,
+                chunks,
+                best_chunk_no=int(best.get("chunk_no", 0)),
+            )
         return build_extractive_answer(chunks)
 
     def _invalid_generation_reason(self, answer: Any) -> str | None:
@@ -552,7 +564,11 @@ class LegalQABaseline:
         if self.enable_long_answer_extractive and is_long_form_question(question):
             adjacent_chunks = self._adjacent_chunks(best)
             if adjacent_chunks:
-                answer = self._merge_raw_chunks(adjacent_chunks)
+                answer = self._merge_raw_chunks(
+                    adjacent_chunks,
+                    question=question,
+                    best=best,
+                )
                 evidence = {
                     "context_id": best["context_id"],
                     "chunk_no": best["chunk_no"],
@@ -769,7 +785,11 @@ class LegalQABaseline:
 
         if self.enable_long_answer_extractive and is_long_form_question(question):
             if adjacent_chunks:
-                merged_answer = self._merge_raw_chunks(adjacent_chunks)
+                merged_answer = self._merge_raw_chunks(
+                    adjacent_chunks,
+                    question=question,
+                    best=best,
+                )
                 if merged_answer:
                     evidence = {
                         "num_contexts": len(top_chunks),
@@ -821,7 +841,11 @@ class LegalQABaseline:
                 context_blocks.append(f"[{idx}] {text}")
         joined_context = "\n\n".join(context_blocks)
 
-        raw_context_answer = self._merge_raw_chunks(adjacent_chunks)
+        raw_context_answer = self._merge_raw_chunks(
+            adjacent_chunks,
+            question=question,
+            best=best,
+        )
         generator_kwargs: dict[str, Any] = {
             "context": joined_context,
             "question": question,

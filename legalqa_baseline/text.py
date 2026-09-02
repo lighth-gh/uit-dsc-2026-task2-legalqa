@@ -617,6 +617,146 @@ def build_extractive_answer(chunks: list[dict[str, Any]]) -> str:
     )
 
 
+def _heading_token_start(tokens: list[str], match_start: int) -> int | None:
+    """Return a nearby Mẫu/Phụ lục/Điều marker preceding a title match."""
+    lower_bound = max(0, match_start - 12)
+    for index in range(match_start, lower_bound - 1, -1):
+        token = tokens[index]
+        if token in {"mẫu", "điều"}:
+            return index
+        if token == "phụ" and index + 1 < len(tokens) and tokens[index + 1] == "lục":
+            return index
+    return None
+
+
+def _matching_legal_heading_start(question: str, text: str) -> int | None:
+    """Locate the strongest exact title phrase in a form/article answer."""
+    question_tokens = tokenize(question)
+    requests_named_heading = (
+        "mẫu" in question_tokens
+        or "biểu" in question_tokens
+        or "phụ" in question_tokens and "lục" in question_tokens
+        or "điều" in question_tokens
+    )
+    if not requests_named_heading:
+        return None
+
+    token_matches = list(TOKEN_RE.finditer(text))
+    text_tokens = [match.group(0).casefold() for match in token_matches]
+    if not text_tokens:
+        return None
+
+    minimum_size = 2 if "điều" in question_tokens else 3
+    best: tuple[tuple[int, int, int, int], int] | None = None
+    maximum_size = min(18, len(question_tokens))
+    for size in range(maximum_size, minimum_size - 1, -1):
+        for question_start in range(0, len(question_tokens) - size + 1):
+            phrase_tokens = question_tokens[question_start : question_start + size]
+            informative = [
+                token
+                for token in phrase_tokens
+                if token not in STOPWORDS and (len(token) >= 2 or token.isdigit())
+            ]
+            is_numbered_article = (
+                "điều" in phrase_tokens
+                and any(token.isdigit() for token in phrase_tokens)
+            )
+            if len(informative) < minimum_size and not is_numbered_article:
+                continue
+            for text_start in range(0, len(text_tokens) - size + 1):
+                if text_tokens[text_start : text_start + size] != phrase_tokens:
+                    continue
+                heading_token_start = _heading_token_start(text_tokens, text_start)
+                raw_start = token_matches[text_start].start()
+                raw_end = token_matches[text_start + size - 1].end()
+                raw_phrase = text[raw_start:raw_end]
+                cased_letters = [char for char in raw_phrase if char.isalpha()]
+                uppercase_title = bool(cased_letters) and raw_phrase.upper() == raw_phrase
+                has_heading_marker = heading_token_start is not None
+                if not uppercase_title and not has_heading_marker:
+                    continue
+                output_token_start = (
+                    heading_token_start
+                    if heading_token_start is not None
+                    else text_start
+                )
+                # Prefer the longest exact phrase, then a real uppercase title.
+                # For equal table-of-contents/title matches, prefer the later
+                # occurrence, which is normally the complete form body.
+                score = (
+                    size,
+                    int(uppercase_title),
+                    int(has_heading_marker),
+                    text_start,
+                )
+                output_start = token_matches[output_token_start].start()
+                if best is None or score > best[0]:
+                    best = (score, output_start)
+        if best is not None and best[0][0] == size:
+            break
+    return best[1] if best is not None else None
+
+
+def _overlap_size(left_words: list[str], right_words: list[str]) -> int:
+    maximum = min(len(left_words), len(right_words))
+    left = [word.casefold() for word in left_words]
+    right = [word.casefold() for word in right_words]
+    for size in range(maximum, 2, -1):
+        if left[-size:] == right[:size]:
+            return size
+    return 0
+
+
+def _build_best_first_answer(
+    chunks: list[dict[str, Any]],
+    best_chunk_no: int,
+) -> str:
+    """Fallback order: best chunk, previous chunk, then next chunk."""
+    by_number = {
+        int(chunk.get("chunk_no", chunk.get("chunk_index", 0))): chunk
+        for chunk in chunks
+        if str(chunk.get("text") or "").strip()
+    }
+    best = by_number.get(best_chunk_no)
+    if best is None:
+        return build_extractive_answer(chunks)
+
+    best_text = str(best.get("text") or "").strip()
+    best_words = best_text.split()
+    parts = [best_text]
+
+    previous = by_number.get(best_chunk_no - 1)
+    if previous is not None:
+        previous_words = str(previous.get("text") or "").strip().split()
+        overlap = _overlap_size(previous_words, best_words)
+        previous_only = previous_words[:-overlap] if overlap else previous_words
+        if previous_only:
+            parts.append(" ".join(previous_only))
+
+    following = by_number.get(best_chunk_no + 1)
+    if following is not None:
+        following_words = str(following.get("text") or "").strip().split()
+        overlap = _overlap_size(best_words, following_words)
+        following_only = following_words[overlap:]
+        if following_only:
+            parts.append(" ".join(following_only))
+    return "\n\n".join(parts).strip()
+
+
+def build_focused_extractive_answer(
+    question: str,
+    chunks: list[dict[str, Any]],
+    *,
+    best_chunk_no: int,
+) -> str:
+    """Start raw evidence at a matching legal heading, without a char limit."""
+    chronological = build_extractive_answer(chunks)
+    heading_start = _matching_legal_heading_start(question, chronological)
+    if heading_start is not None:
+        return chronological[heading_start:].lstrip()
+    return _build_best_first_answer(chunks, best_chunk_no)
+
+
 def merge_adjacent_chunks(
     chunks: list[dict[str, Any]],
     max_words: int = 800,
