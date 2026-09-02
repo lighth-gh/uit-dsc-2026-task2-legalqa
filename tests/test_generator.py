@@ -492,6 +492,11 @@ class RAGPipelineTests(unittest.TestCase):
             ("too_short", "Có."),
             ("refusal", "Không đủ thông tin trong ngữ cảnh."),
             ("refusal", "Xin lỗi, nhưng tôi không thể trả lời câu hỏi này."),
+            (
+                "refusal",
+                "Dựa trên các ngữ cảnh được cung cấp, không có thông tin cụ thể "
+                "để trả lời câu hỏi này.",
+            ),
         ]
 
         for expected_reason, output in unusable_outputs:
@@ -536,7 +541,7 @@ class RAGPipelineTests(unittest.TestCase):
         class BoilerplateGenerator:
             def generate(self, context: str, question: str) -> str:
                 return (
-                    "Dựa trên ngữ cảnh được cung cấp: Điều 12 quy định mức phạt "
+                    "Dựa trên các ngữ cảnh được cung cấp: Điều 12 quy định mức phạt "
                     "từ 2 triệu đến 5 triệu đồng."
                 )
 
@@ -549,6 +554,28 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(pred.route, "generated_512")
         self.assertTrue(pred.answer.startswith("Điều 12"))
         self.assertIn("5 triệu đồng.", pred.answer)
+
+    def test_refusal_detector_checks_only_first_two_sentences(self) -> None:
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+        )
+        refusals = (
+            "Dựa trên các ngữ cảnh được cung cấp, không có thông tin cụ thể để kết luận.",
+            "Đã kiểm tra dữ liệu. Các ngữ cảnh không đề cập nội dung được hỏi.",
+            "Theo dữ liệu hiện có, không thể trả lời chính xác câu hỏi này.",
+            "Kết quả tra cứu như sau. Không tìm thấy thông tin phù hợp.",
+        )
+        for answer in refusals:
+            with self.subTest(answer=answer):
+                self.assertEqual(pipeline._invalid_generation_reason(answer), "refusal")
+
+        third_sentence_only = (
+            "Điều 12 quy định rõ chủ thể áp dụng. "
+            "Mức phạt được xác định theo từng hành vi cụ thể. "
+            "Không tìm thấy thông tin là một trạng thái của hệ thống lưu trữ."
+        )
+        self.assertIsNone(pipeline._invalid_generation_reason(third_sentence_only))
 
     def test_pipeline_falls_back_for_possibly_cut_answer(self) -> None:
         class CutGenerator:

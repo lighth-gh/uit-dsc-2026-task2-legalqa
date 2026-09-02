@@ -487,9 +487,9 @@ def is_long_answer_question(
 
 
 BOILERPLATE_PATTERNS: tuple[str, ...] = (
-    r"^\s*dựa trên ngữ cảnh được cung cấp[,:\s]*",
-    r"^\s*theo ngữ cảnh được cung cấp[,:\s]*",
-    r"^\s*dựa trên thông tin được cung cấp[,:\s]*",
+    r"^\s*dựa\s+(?:trên|vào)\s+(?:các\s+)?ngữ\s+cảnh(?:\s+được\s+cung\s+cấp)?[,;:\s-]*",
+    r"^\s*theo\s+(?:các\s+)?ngữ\s+cảnh(?:\s+được\s+cung\s+cấp)?[,;:\s-]*",
+    r"^\s*dựa\s+(?:trên|vào)\s+(?:các\s+)?thông\s+tin(?:\s+được\s+cung\s+cấp)?[,;:\s-]*",
 )
 
 

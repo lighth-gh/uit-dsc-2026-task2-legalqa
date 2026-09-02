@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import inspect
 import math
+import re
 import sys
 import time
 import unicodedata
@@ -58,6 +59,27 @@ _LEGAL_SIGNAL_BOOST_WEIGHTS = {
 }
 _LEGAL_SIGNAL_COMBINATION_BONUS = 0.00035
 _MAX_LEGAL_SIGNAL_BOOST = 0.0025
+
+_REFUSAL_START_MARKERS = (
+    "không đủ thông tin trong ngữ cảnh",
+    "không có đủ thông tin trong ngữ cảnh",
+    "không thể trả lời",
+    "tôi không thể trả lời",
+    "xin lỗi, tôi không thể",
+    "xin lỗi",
+    "tôi không có thông tin",
+    "không có thông tin",
+    "không tìm thấy thông tin",
+)
+_REFUSAL_EARLY_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"\bkhông\s+có\s+thông\s+tin\s+cụ\s+thể\b",
+        r"\b(?:các\s+)?ngữ\s+cảnh(?:\s+được\s+cung\s+cấp)?\s+không\s+đề\s+cập\b",
+        r"\bkhông\s+thể\s+trả\s+lời\s+chính\s+xác\b",
+        r"\bkhông\s+tìm\s+thấy\s+thông\s+tin\b",
+    )
+)
 
 
 def _audit_float(value: Any) -> float | None:
@@ -516,19 +538,19 @@ class LegalQABaseline:
         if not isinstance(answer, str) or not answer.strip():
             return "empty"
 
-        normalized = " ".join(answer.casefold().split()).strip(" .!?:;,-")
-        refusal_markers = (
-            "không đủ thông tin trong ngữ cảnh",
-            "không có đủ thông tin trong ngữ cảnh",
-            "không thể trả lời",
-            "tôi không thể trả lời",
-            "xin lỗi, tôi không thể",
-            "xin lỗi",
-            "tôi không có thông tin",
-            "không có thông tin",
-            "không tìm thấy thông tin",
-        )
-        if any(normalized.startswith(marker) for marker in refusal_markers):
+        # Run this cleanup here as well as in the generation path so direct
+        # callers cannot hide a refusal behind "Dựa trên (các) ngữ cảnh...".
+        cleaned = clean_answer(answer)
+        early_sentences = [
+            " ".join(sentence.casefold().split()).strip(" .!?:;,-")
+            for sentence in re.split(r"(?<=[.!?…])\s+|[\r\n]+", cleaned)
+            if sentence.strip()
+        ][:2]
+        if any(
+            sentence.startswith(_REFUSAL_START_MARKERS)
+            or any(pattern.search(sentence) for pattern in _REFUSAL_EARLY_PATTERNS)
+            for sentence in early_sentences
+        ):
             return "refusal"
         if len(tokenize(answer)) < self.min_llm_answer_tokens:
             return "too_short"
