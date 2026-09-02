@@ -76,6 +76,21 @@ class NotebookCacheContractTests(unittest.TestCase):
                     code,
                 )
 
+    def test_smoke30_enforces_two_round_release_gate(self) -> None:
+        code = self._notebook_code("legalqa-pipeline-smoke30-ready.ipynb")
+
+        for expected in (
+            '"diagnose-retrieval"',
+            "RETRIEVAL_MEDIAN_MAX_SECONDS = 2.0",
+            "SMOKE_MEDIAN_MAX_SECONDS = 15.0",
+            "RETRIEVAL_EXPECTED_DOCUMENT_IDS",
+            '("top50", "top20", "top3")',
+            "MANUAL_REVIEW_APPROVED_IDS",
+            'full_gate["full_1000_unlocked"]',
+        ):
+            self.assertIn(expected, code)
+        self.assertLess(code.index('"diagnose-retrieval"'), code.index('"predict"'))
+
 
 if __name__ == "__main__":
     unittest.main()

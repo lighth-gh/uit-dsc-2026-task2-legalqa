@@ -608,11 +608,29 @@ class LegalQABaseline:
         )
         return Prediction(answer, "extractive", confidence, evidence)
 
-    def _rag(self, question: str) -> Prediction | None:
-        if self.generator is None:
-            from .generator import ViQwenRAGGenerator
-            self.generator = ViQwenRAGGenerator()
+    def retrieve_only(self, question: str) -> dict[str, Any]:
+        """Run the exact RAG retrieval path without initializing or calling the LLM."""
+        result = self._rag(question, retrieval_only=True)
+        if result is None:
+            return {
+                "question": question,
+                "status": "empty",
+                "retrieval_trace": {},
+                "stage_seconds": {},
+                "top_contexts": [],
+            }
+        return {
+            "question": question,
+            "status": "ok",
+            **result.evidence,
+        }
 
+    def _rag(
+        self,
+        question: str,
+        *,
+        retrieval_only: bool = False,
+    ) -> Prediction | None:
         rag_started = time.perf_counter()
         stage_seconds: dict[str, float] = {}
         expanded_retrieval_query = expand_retrieval_query(question)
@@ -780,6 +798,45 @@ class LegalQABaseline:
         if not top_chunks:
             return None
 
+        if retrieval_only:
+            diagnostic_stages = {
+                "top50": (
+                    fused_candidates,
+                    "boosted_rrf_score" if fusion_status == "rrf" else "bm25_score",
+                ),
+                "top20": (reranked_pool, "rerank_score"),
+                "top3": (reranker_top_chunks, "rerank_score"),
+            }
+            diagnostic_candidates: dict[str, list[dict[str, Any]]] = {}
+            for stage_name, (candidates, score_field) in diagnostic_stages.items():
+                records: list[dict[str, Any]] = []
+                for rank, candidate in enumerate(candidates, start=1):
+                    record = _retrieval_candidate_record(
+                        candidate,
+                        rank=rank,
+                        score_field=score_field,
+                    )
+                    text = " ".join(str(candidate.get("text") or "").split())
+                    record["text_preview"] = text[:600]
+                    records.append(record)
+                diagnostic_candidates[stage_name] = records
+            total_seconds = round(time.perf_counter() - rag_started, 4)
+            return Prediction(
+                answer="",
+                route="retrieval_only",
+                confidence=0.0,
+                evidence={
+                    "retrieval_trace": retrieval_trace,
+                    "diagnostic_candidates": diagnostic_candidates,
+                    "top_contexts": diagnostic_candidates["top3"],
+                    "stage_seconds": {
+                        **stage_seconds,
+                        "generation": 0.0,
+                        "total": total_seconds,
+                    },
+                },
+            )
+
         best = top_chunks[0]
         adjacent_chunks = self._adjacent_chunks(best)
 
@@ -846,6 +903,9 @@ class LegalQABaseline:
             question=question,
             best=best,
         )
+        if self.generator is None:
+            from .generator import ViQwenRAGGenerator
+            self.generator = ViQwenRAGGenerator()
         generator_kwargs: dict[str, Any] = {
             "context": joined_context,
             "question": question,

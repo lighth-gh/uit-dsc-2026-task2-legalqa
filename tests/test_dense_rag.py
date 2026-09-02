@@ -382,6 +382,35 @@ class TestDenseRAG(unittest.TestCase):
         json.dumps(audit, ensure_ascii=False, allow_nan=False)
         print("[Smoke Test OK] Generated answer:", pred.answer)
 
+    def test_6b_retrieval_only_uses_shared_path_without_generator(self) -> None:
+        class ForbiddenGenerator:
+            calls = 0
+
+            def generate(self, **_: Any) -> str:
+                type(self).calls += 1
+                raise AssertionError("retrieval-only must not call generator")
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=ForbiddenGenerator(),
+            reranker=MockReranker(),
+            bm25_top_k=50,
+            rrf_top_k=50,
+            reranker_candidate_k=20,
+            rerank_top_k=3,
+            context_top_k=3,
+        )
+
+        diagnostic = pipeline.retrieve_only("Mức phạt được quy định thế nào?")
+
+        self.assertEqual(ForbiddenGenerator.calls, 0)
+        self.assertEqual(diagnostic["status"], "ok")
+        self.assertEqual(len(diagnostic["diagnostic_candidates"]["top50"]), 50)
+        self.assertEqual(len(diagnostic["diagnostic_candidates"]["top20"]), 20)
+        self.assertEqual(len(diagnostic["diagnostic_candidates"]["top3"]), 3)
+        self.assertEqual(diagnostic["stage_seconds"]["generation"], 0.0)
+        self.assertIn("text_preview", diagnostic["diagnostic_candidates"]["top3"][0])
+
     def test_7_dense_error_fallback_is_explicit(self) -> None:
         class BadEmbedding:
             def encode(self, texts: list[str], **_: Any) -> Any:

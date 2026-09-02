@@ -4,6 +4,7 @@ import argparse
 import json
 import random
 import sqlite3
+import statistics
 import sys
 import time
 from pathlib import Path
@@ -175,6 +176,15 @@ def make_parser() -> argparse.ArgumentParser:
         help="Số mẫu giữa hai lần ghi checkpoint + partial submission",
     )
     _add_pipeline_args(predict)
+
+    diagnose_retrieval = subparsers.add_parser(
+        "diagnose-retrieval",
+        help="Chạy BM25 + Dense + RRF + Reranker, không chạy generator",
+    )
+    diagnose_retrieval.add_argument("--input", required=True)
+    diagnose_retrieval.add_argument("--db", required=True)
+    diagnose_retrieval.add_argument("--output", required=True)
+    _add_pipeline_args(diagnose_retrieval)
 
     validate = subparsers.add_parser("validate", help="Leave-one-out validation")
     validate.add_argument("--train", required=True)
@@ -641,6 +651,56 @@ def command_predict(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_diagnose_retrieval(args: argparse.Namespace) -> int:
+    """Persist retrieval ranks/timing while guaranteeing no LLM generation call."""
+    data = load_qa(args.input)
+    target = Path(args.output)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    started = time.perf_counter()
+    records: list[dict[str, object]] = []
+
+    # need_generator=True also loads the Dense/Reranker stack in the shared
+    # pipeline factory. ViQwenRAGGenerator is lazy; clearing it here additionally
+    # guarantees retrieve_only() cannot retain or invoke a generator instance.
+    with SearchIndex(args.db) as index:
+        pipeline = _pipeline(args, index, need_generator=True)
+        pipeline.generator = None
+        for number, (sample_id, item) in enumerate(data.items(), start=1):
+            diagnostic = pipeline.retrieve_only(item["question"])
+            records.append({"id": str(sample_id), **diagnostic})
+            if number <= 5 or number % 5 == 0 or number == len(data):
+                total_seconds = diagnostic.get("stage_seconds", {}).get("total", 0.0)
+                print(
+                    f"[diagnose-retrieval] {number:,}/{len(data):,} | "
+                    f"last={float(total_seconds):.2f}s",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+    stage_names = ("bm25", "dense", "fusion", "reranker", "total")
+    stage_medians: dict[str, float] = {}
+    for stage_name in stage_names:
+        values = [
+            float(record.get("stage_seconds", {}).get(stage_name, 0.0))
+            for record in records
+        ]
+        stage_medians[stage_name] = round(statistics.median(values), 4) if values else 0.0
+    payload = {
+        "summary": {
+            "samples": len(records),
+            "generator_called": False,
+            "median_stage_seconds": stage_medians,
+            "elapsed_seconds": round(time.perf_counter() - started, 4),
+            "output": str(target.resolve()),
+        },
+        "items": records,
+    }
+    with target.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_validate(args: argparse.Namespace) -> int:
     if args.limit <= 0:
         raise ValueError("limit phải lớn hơn 0")
@@ -859,6 +919,7 @@ def main(argv: list[str] | None = None) -> int:
         "build-index": command_build,
         "build-dense-index": command_build_dense_index,
         "predict": command_predict,
+        "diagnose-retrieval": command_diagnose_retrieval,
         "validate": command_validate,
         "evaluate-retrieval": command_evaluate_retrieval,
         "inspect": command_inspect,
