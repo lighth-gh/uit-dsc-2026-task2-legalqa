@@ -90,6 +90,9 @@ class NotebookCacheContractTests(unittest.TestCase):
         ):
             self.assertIn(expected, code)
         self.assertLess(code.index('"diagnose-retrieval"'), code.index('"predict"'))
+        self.assertIn("if not retrieval_speed_gate_pass:", code)
+        self.assertIn('"document_gate_status": "pending"', code)
+        self.assertNotIn('if not retrieval_gate["pass"]:\n    raise RuntimeError', code)
 
 
 if __name__ == "__main__":
