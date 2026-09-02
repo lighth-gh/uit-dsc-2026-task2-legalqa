@@ -35,6 +35,74 @@ class Prediction:
     evidence: dict[str, Any]
 
 
+_RETRIEVAL_SCORE_FIELDS = (
+    "bm25_score",
+    "dense_score",
+    "rrf_score",
+    "rerank_score",
+)
+
+
+def _audit_float(value: Any) -> float | None:
+    """Convert model/NumPy scores to finite JSON numbers."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _retrieval_candidate_record(
+    candidate: dict[str, Any],
+    *,
+    rank: int,
+    score_field: str,
+) -> dict[str, Any]:
+    """Keep retrieval metadata useful for diagnosis without copying chunk text."""
+    context_id = str(candidate.get("context_id") or "").strip() or None
+    document_id = str(candidate.get("document_id") or context_id or "").strip() or None
+    raw_chunk_no = candidate.get("chunk_no")
+    try:
+        chunk_no: int | str | None = int(raw_chunk_no)
+    except (TypeError, ValueError, OverflowError):
+        chunk_no = str(raw_chunk_no).strip() if raw_chunk_no is not None else None
+    title = str(candidate.get("title") or candidate.get("name") or "").strip() or None
+    link = str(candidate.get("link") or "").strip() or None
+    record: dict[str, Any] = {
+        "rank": int(rank),
+        "document_id": document_id,
+        "context_id": context_id,
+        "chunk_no": chunk_no,
+        "title": title,
+        "link": link,
+        "score": _audit_float(candidate.get(score_field)),
+    }
+    for field in _RETRIEVAL_SCORE_FIELDS:
+        record[field] = _audit_float(candidate.get(field))
+    return record
+
+
+def _retrieval_stage_record(
+    candidates: list[dict[str, Any]],
+    *,
+    requested_top_k: int,
+    score_field: str,
+    status: str = "ok",
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "requested_top_k": int(requested_top_k),
+        "returned": len(candidates),
+        "score_field": score_field,
+        "candidates": [
+            _retrieval_candidate_record(candidate, rank=rank, score_field=score_field)
+            for rank, candidate in enumerate(candidates, start=1)
+        ],
+    }
+
+
 def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str, Any]:
     """Tạo audit record gọn, ổn định cho từng câu inference."""
     evidence = prediction.evidence
@@ -68,6 +136,7 @@ def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str,
         "reranker_score": reranker_score,
         "reranker_candidates": evidence.get("reranker_candidates"),
         "reranker_max_length": evidence.get("reranker_max_length"),
+        "retrieval_trace": evidence.get("retrieval_trace", {}),
         "stage_seconds": evidence.get("stage_seconds", {}),
     }
 
@@ -486,6 +555,7 @@ class LegalQABaseline:
         # 2. Truy xuất Dense FAISS Top-50 (nếu có index và embedding model)
         stage_started = time.perf_counter()
         dense_candidates: list[dict[str, Any]] = []
+        dense_status = "disabled"
         if self.dense_index is not None and self.embedding_model is not None:
             try:
                 normalize = (
@@ -509,14 +579,17 @@ class LegalQABaseline:
                 encoded_query = encode([question], **encode_kwargs)
                 q_vec = encoded_query[0]
                 dense_candidates = self.dense_index.search(q_vec, top_k=self.dense_top_k)
+                dense_status = "ok" if dense_candidates else "empty"
             except Exception as exc:
                 if not self.allow_retrieval_fallback:
                     raise RuntimeError(f"Dense search thất bại: {exc}") from exc
                 print(f"[pipeline] Lỗi dense search ({exc}), fallback BM25.", file=sys.stderr)
+                dense_status = "fallback_bm25"
         stage_seconds["dense"] = round(time.perf_counter() - stage_started, 4)
 
         # 3. Hợp nhất RRF (Reciprocal Rank Fusion k=60 -> Top-50) hoặc fallback Heuristic BM25
         stage_started = time.perf_counter()
+        fusion_status = "rrf"
         if dense_candidates:
             try:
                 fused_candidates = reciprocal_rank_fusion(
@@ -526,6 +599,7 @@ class LegalQABaseline:
                 if not self.allow_retrieval_fallback:
                     raise RuntimeError(f"RRF thất bại: {exc}") from exc
                 print(f"[pipeline] Lỗi RRF ({exc}), fallback BM25.", file=sys.stderr)
+                fusion_status = "fallback_bm25"
                 fused_candidates = sorted(
                     bm25_candidates,
                     key=lambda item: _context_rerank_score(question, item),
@@ -533,6 +607,7 @@ class LegalQABaseline:
                 )[: self.rrf_top_k]
         else:
             # Fallback thuần BM25
+            fusion_status = "bm25_only"
             fused_candidates = sorted(
                 bm25_candidates,
                 key=lambda item: _context_rerank_score(question, item),
@@ -545,36 +620,81 @@ class LegalQABaseline:
 
         # 4. Tái xếp hạng bằng Vietnamese_Reranker (Top-3 chunks)
         stage_started = time.perf_counter()
+        rerank_candidates = fused_candidates[: self.reranker_candidate_k]
+        reranked_pool: list[dict[str, Any]] = []
+        reranker_status = "disabled"
         if self.reranker is not None:
             try:
-                rerank_candidates = fused_candidates[: self.reranker_candidate_k]
-                reranked_chunks = self.reranker.rerank(
+                # The cross-encoder already scores the complete candidate pool.
+                # Return all scores so audit can show where a relevant document
+                # was lost, then take Top-K for the answer below.
+                reranked_pool = self.reranker.rerank(
                     question,
                     rerank_candidates,
-                    top_k=self.rerank_top_k,
+                    top_k=len(rerank_candidates),
                     max_length=self.reranker_max_length,
                 )
-                if not isinstance(reranked_chunks, list) or not reranked_chunks:
+                if not isinstance(reranked_pool, list) or not reranked_pool:
                     raise ValueError("Reranker trả về danh sách rỗng/không hợp lệ")
+                if len(reranked_pool) != len(rerank_candidates):
+                    raise ValueError(
+                        "Reranker không trả đủ điểm cho candidate pool: "
+                        f"expected={len(rerank_candidates)}, got={len(reranked_pool)}"
+                    )
                 if any(
                     not isinstance(chunk, dict)
                     or not str(chunk.get("context_id") or "").strip()
                     or "chunk_no" not in chunk
-                    for chunk in reranked_chunks
+                    for chunk in reranked_pool
                 ):
                     raise ValueError("Reranker trả về candidate không hợp lệ")
-                top_chunks = reranked_chunks[: self.rerank_top_k]
+                reranker_status = "ok"
             except Exception as exc:
                 if not self.allow_retrieval_fallback:
                     raise RuntimeError(f"Reranker thất bại: {exc}") from exc
                 print(f"[pipeline] Lỗi reranker ({exc}), fallback RRF order.", file=sys.stderr)
-                top_chunks = fused_candidates[: self.rerank_top_k]
+                reranked_pool = [dict(candidate) for candidate in rerank_candidates]
+                reranker_status = "fallback_rrf"
         else:
-            top_chunks = fused_candidates[: self.rerank_top_k]
+            reranked_pool = [dict(candidate) for candidate in rerank_candidates]
         stage_seconds["reranker"] = round(time.perf_counter() - stage_started, 4)
 
+        reranker_top_chunks = reranked_pool[: self.rerank_top_k]
+        retrieval_trace = {
+            "bm25": _retrieval_stage_record(
+                bm25_candidates,
+                requested_top_k=self.bm25_top_k,
+                score_field="bm25_score",
+                status="ok" if bm25_candidates else "empty",
+            ),
+            "dense": _retrieval_stage_record(
+                dense_candidates,
+                requested_top_k=self.dense_top_k,
+                score_field="dense_score",
+                status=dense_status,
+            ),
+            "rrf": _retrieval_stage_record(
+                fused_candidates,
+                requested_top_k=self.rrf_top_k,
+                score_field="rrf_score",
+                status=fusion_status,
+            ),
+            "reranker_pool": _retrieval_stage_record(
+                reranked_pool,
+                requested_top_k=self.reranker_candidate_k,
+                score_field="rerank_score",
+                status=reranker_status,
+            ),
+            "reranker_top": _retrieval_stage_record(
+                reranker_top_chunks,
+                requested_top_k=self.rerank_top_k,
+                score_field="rerank_score",
+                status=reranker_status,
+            ),
+        }
+
         # Reranker có thể trả nhiều candidate để audit; prompt chỉ nhận context_top_k.
-        top_chunks = top_chunks[: self.context_top_k]
+        top_chunks = reranker_top_chunks[: self.context_top_k]
         if not top_chunks:
             return None
 
@@ -591,6 +711,7 @@ class LegalQABaseline:
                             len(fused_candidates), self.reranker_candidate_k
                         ),
                         "reranker_max_length": self.reranker_max_length,
+                        "retrieval_trace": retrieval_trace,
                         "top_contexts": [
                             {
                                 "context_id": c["context_id"],
@@ -702,6 +823,7 @@ class LegalQABaseline:
                 len(fused_candidates), self.reranker_candidate_k
             ),
             "reranker_max_length": self.reranker_max_length,
+            "retrieval_trace": retrieval_trace,
             "top_contexts": [
                 {
                     "context_id": c["context_id"],

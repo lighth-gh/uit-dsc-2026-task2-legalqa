@@ -20,7 +20,11 @@ from legalqa_baseline.dense import (
     _validate_embedding_matrix,
     build_dense_index,
 )
-from legalqa_baseline.pipeline import LegalQABaseline, reciprocal_rank_fusion
+from legalqa_baseline.pipeline import (
+    LegalQABaseline,
+    prediction_audit_record,
+    reciprocal_rank_fusion,
+)
 from legalqa_baseline.reranker import VietnameseReranker
 from legalqa_baseline.storage import (
     CORPUS_HASH_VERSION,
@@ -316,6 +320,26 @@ class TestDenseRAG(unittest.TestCase):
         self.assertEqual(len(top_contexts), 3)
         self.assertIn("rerank_score", top_contexts[0])
         self.assertIn("rrf_score", top_contexts[0])
+        trace = pred.evidence["retrieval_trace"]
+        self.assertEqual(len(trace["bm25"]["candidates"]), 50)
+        self.assertEqual(len(trace["dense"]["candidates"]), 50)
+        self.assertEqual(len(trace["rrf"]["candidates"]), 50)
+        self.assertEqual(len(trace["reranker_pool"]["candidates"]), 20)
+        self.assertEqual(len(trace["reranker_top"]["candidates"]), 3)
+        first_reranked = trace["reranker_pool"]["candidates"][0]
+        self.assertEqual(first_reranked["rank"], 1)
+        self.assertEqual(first_reranked["document_id"], first_reranked["context_id"])
+        self.assertIsInstance(first_reranked["chunk_no"], int)
+        self.assertIsInstance(first_reranked["title"], str)
+        self.assertIsInstance(first_reranked["score"], float)
+        self.assertIn("bm25_score", first_reranked)
+        self.assertIn("dense_score", first_reranked)
+        self.assertIn("rrf_score", first_reranked)
+        self.assertIn("rerank_score", first_reranked)
+
+        audit = prediction_audit_record("trace-sample", pred)
+        self.assertEqual(audit["retrieval_trace"], trace)
+        json.dumps(audit, ensure_ascii=False, allow_nan=False)
         print("[Smoke Test OK] Generated answer:", pred.answer)
 
     def test_7_dense_error_fallback_is_explicit(self) -> None:
@@ -477,6 +501,10 @@ class TestDenseRAG(unittest.TestCase):
         self.assertEqual(RecordingReranker.candidate_count, 20)
         self.assertEqual(RecordingReranker.seen_max_length, 1024)
         self.assertEqual(pred.evidence["reranker_candidates"], 20)
+        self.assertEqual(
+            len(pred.evidence["retrieval_trace"]["reranker_pool"]["candidates"]),
+            20,
+        )
         self.assertIn("reranker", pred.evidence["stage_seconds"])
 
     def test_10_dense_build_resumes_from_atomic_parts(self) -> None:

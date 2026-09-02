@@ -173,8 +173,10 @@ cắt hoặc chạm token limit thì tự động quay về raw context liền k
 có giới hạn ký tự cứng.
 
 Mỗi lần predict còn ghi `<output>.audit.jsonl` ngay sau từng ID. Log chứa route,
-độ dài answer/context, token sinh, trạng thái token-limit/từ chối/cắt câu,
-document đứng đầu và reranker score để có thể kiểm tra sớm trước khi chạy full.
+độ dài answer/context, token sinh, trạng thái token-limit/từ chối/cắt câu và
+`retrieval_trace`. Trace lưu thứ hạng, điểm số, `document_id/context_id`, `chunk_no`,
+tiêu đề của BM25 Top-50, Dense Top-50, RRF Top-50, reranker pool Top-20 và
+reranker Top-3 để xác định chính xác tài liệu bị loại ở tầng nào.
 
 ### Xây dựng Dense FAISS Vector Index:
 ```bash
