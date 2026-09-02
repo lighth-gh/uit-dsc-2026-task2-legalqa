@@ -492,6 +492,27 @@ BOILERPLATE_PATTERNS: tuple[str, ...] = (
     r"^\s*dựa\s+(?:trên|vào)\s+(?:các\s+)?thông\s+tin(?:\s+được\s+cung\s+cấp)?[,;:\s-]*",
 )
 
+_REFUSAL_START_MARKERS = (
+    "không đủ thông tin trong ngữ cảnh",
+    "không có đủ thông tin trong ngữ cảnh",
+    "không thể trả lời",
+    "tôi không thể trả lời",
+    "xin lỗi, tôi không thể",
+    "xin lỗi",
+    "tôi không có thông tin",
+    "không có thông tin",
+    "không tìm thấy thông tin",
+)
+_REFUSAL_EARLY_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"\bkhông\s+có\s+thông\s+tin\s+cụ\s+thể\b",
+        r"\b(?:các\s+)?ngữ\s+cảnh(?:\s+được\s+cung\s+cấp)?\s+không\s+đề\s+cập\b",
+        r"\bkhông\s+thể\s+trả\s+lời\s+chính\s+xác\b",
+        r"\bkhông\s+tìm\s+thấy\s+thông\s+tin\b",
+    )
+)
+
 
 def clean_answer(answer: str) -> str:
     """Chỉ bỏ boilerplate ở đầu đáp án, không tóm tắt hoặc cắt nội dung."""
@@ -499,6 +520,26 @@ def clean_answer(answer: str) -> str:
     for pattern in BOILERPLATE_PATTERNS:
         cleaned = re.sub(pattern, "", cleaned, count=1, flags=re.IGNORECASE)
     return cleaned.strip()
+
+
+def is_refusal_answer(answer: Any, max_sentences: int = 2) -> bool:
+    """Detect an LLM refusal in the leading sentences after stripping boilerplate."""
+    if not isinstance(answer, str) or not answer.strip():
+        return False
+    if max_sentences <= 0:
+        raise ValueError("max_sentences phải lớn hơn 0")
+
+    cleaned = clean_answer(answer)
+    early_sentences = [
+        " ".join(sentence.casefold().split()).strip(" .!?:;,-")
+        for sentence in re.split(r"(?<=[.!?…])\s+|[\r\n]+", cleaned)
+        if sentence.strip()
+    ][:max_sentences]
+    return any(
+        sentence.startswith(_REFUSAL_START_MARKERS)
+        or any(pattern.search(sentence) for pattern in _REFUSAL_EARLY_PATTERNS)
+        for sentence in early_sentences
+    )
 
 
 def possibly_cut(text: str) -> bool:

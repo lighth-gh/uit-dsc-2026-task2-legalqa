@@ -62,6 +62,20 @@ class NotebookCacheContractTests(unittest.TestCase):
         self.assertIn("DENSE_QUERY_MAX_LENGTH, RERANKER_MAX_LENGTH = 256, 1024", smoke_code)
         self.assertIn("MAX_NEW_TOKENS, MAX_INPUT_TOKENS = 512, 7168", smoke_code)
 
+    def test_smoke_notebooks_use_shared_refusal_detector(self) -> None:
+        for notebook_name in (
+            "legalqa-generation-smoke-test.ipynb",
+            "legalqa-pipeline-smoke30-ready.ipynb",
+        ):
+            with self.subTest(notebook=notebook_name):
+                code = self._notebook_code(notebook_name)
+                self.assertIn("is_refusal_answer", code)
+                self.assertNotIn("no_info_re =", code)
+                self.assertNotIn(
+                    '"says_no_information": bool("không đủ thông tin"',
+                    code,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

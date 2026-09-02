@@ -3,7 +3,6 @@ from __future__ import annotations
 import difflib
 import inspect
 import math
-import re
 import sys
 import time
 import unicodedata
@@ -19,6 +18,7 @@ from .text import (
     build_extractive_answer,
     clean_answer,
     expand_retrieval_query,
+    is_refusal_answer,
     is_long_form_question,
     legal_retrieval_signal_matches,
     possibly_cut,
@@ -59,28 +59,6 @@ _LEGAL_SIGNAL_BOOST_WEIGHTS = {
 }
 _LEGAL_SIGNAL_COMBINATION_BONUS = 0.00035
 _MAX_LEGAL_SIGNAL_BOOST = 0.0025
-
-_REFUSAL_START_MARKERS = (
-    "không đủ thông tin trong ngữ cảnh",
-    "không có đủ thông tin trong ngữ cảnh",
-    "không thể trả lời",
-    "tôi không thể trả lời",
-    "xin lỗi, tôi không thể",
-    "xin lỗi",
-    "tôi không có thông tin",
-    "không có thông tin",
-    "không tìm thấy thông tin",
-)
-_REFUSAL_EARLY_PATTERNS = tuple(
-    re.compile(pattern)
-    for pattern in (
-        r"\bkhông\s+có\s+thông\s+tin\s+cụ\s+thể\b",
-        r"\b(?:các\s+)?ngữ\s+cảnh(?:\s+được\s+cung\s+cấp)?\s+không\s+đề\s+cập\b",
-        r"\bkhông\s+thể\s+trả\s+lời\s+chính\s+xác\b",
-        r"\bkhông\s+tìm\s+thấy\s+thông\s+tin\b",
-    )
-)
-
 
 def _audit_float(value: Any) -> float | None:
     """Convert model/NumPy scores to finite JSON numbers."""
@@ -165,13 +143,9 @@ def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str,
     reranker_score = evidence.get("rerank_score")
     if reranker_score is None:
         reranker_score = top_context.get("rerank_score")
-    answer_lower = prediction.answer.casefold()
     says_no_information = evidence.get("says_no_information")
     if says_no_information is None:
-        says_no_information = (
-            "không đủ thông tin" in answer_lower
-            or "không có thông tin" in answer_lower
-        )
+        says_no_information = is_refusal_answer(prediction.answer)
     return {
         "id": str(sample_id),
         "route": prediction.route,
@@ -538,19 +512,7 @@ class LegalQABaseline:
         if not isinstance(answer, str) or not answer.strip():
             return "empty"
 
-        # Run this cleanup here as well as in the generation path so direct
-        # callers cannot hide a refusal behind "Dựa trên (các) ngữ cảnh...".
-        cleaned = clean_answer(answer)
-        early_sentences = [
-            " ".join(sentence.casefold().split()).strip(" .!?:;,-")
-            for sentence in re.split(r"(?<=[.!?…])\s+|[\r\n]+", cleaned)
-            if sentence.strip()
-        ][:2]
-        if any(
-            sentence.startswith(_REFUSAL_START_MARKERS)
-            or any(pattern.search(sentence) for pattern in _REFUSAL_EARLY_PATTERNS)
-            for sentence in early_sentences
-        ):
+        if is_refusal_answer(answer):
             return "refusal"
         if len(tokenize(answer)) < self.min_llm_answer_tokens:
             return "too_short"

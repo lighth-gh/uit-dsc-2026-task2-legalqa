@@ -16,7 +16,8 @@ from legalqa_baseline.generator import (
     build_user_prompt,
     format_raw_qwen_prompt,
 )
-from legalqa_baseline.pipeline import LegalQABaseline, prediction_audit_record
+from legalqa_baseline.pipeline import LegalQABaseline, Prediction, prediction_audit_record
+from legalqa_baseline.text import is_refusal_answer
 
 
 class MockGenerator:
@@ -576,6 +577,23 @@ class RAGPipelineTests(unittest.TestCase):
             "Không tìm thấy thông tin là một trạng thái của hệ thống lưu trữ."
         )
         self.assertIsNone(pipeline._invalid_generation_reason(third_sentence_only))
+
+    def test_id_86293_verbatim_answer_uses_shared_refusal_detector(self) -> None:
+        # Nguyên văn answer của ID 86293 trong submission đã ghi nhận lỗi.
+        answer = "Không đủ thông tin trong ngữ cảnh."
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+        )
+
+        self.assertTrue(is_refusal_answer(answer))
+        self.assertEqual(pipeline._invalid_generation_reason(answer), "refusal")
+
+        audit = prediction_audit_record(
+            "86293",
+            Prediction(answer=answer, route="generated_512", confidence=0.0, evidence={}),
+        )
+        self.assertTrue(audit["says_no_information"])
 
     def test_pipeline_falls_back_for_possibly_cut_answer(self) -> None:
         class CutGenerator:
