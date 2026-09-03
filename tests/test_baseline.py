@@ -120,6 +120,22 @@ class TextTests(unittest.TestCase):
         )
         self.assertTrue(form_matches["form_names"])
 
+        citation_matches = legal_retrieval_signal_matches(
+            "Điều 91 Bộ luật Tố tụng dân sự quy định thế nào?",
+            "Bộ luật Tố tụng dân sự. Điều 91. Nghĩa vụ chứng minh.",
+        )
+        self.assertEqual(citation_matches["article_references"], ["điều 91"])
+        self.assertEqual(
+            citation_matches["document_names"],
+            ["bộ luật tố tụng dân sự"],
+        )
+
+        ordinary_notice = legal_retrieval_signal_matches(
+            "Mẫu thông báo thay đổi người đại diện theo pháp luật",
+            "Thông báo thay đổi người đại diện theo pháp luật của doanh nghiệp.",
+        )
+        self.assertEqual(ordinary_notice["document_names"], [])
+
     def test_excerpt_limit(self) -> None:
         text = ("khác " * 300) + ("kiểm dịch động vật " * 100)
         excerpt = best_excerpt(text, "kiểm dịch động vật", max_words=100)

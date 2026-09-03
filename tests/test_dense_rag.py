@@ -338,6 +338,10 @@ class TestDenseRAG(unittest.TestCase):
         self.assertEqual(ranked[0]["context_id"], "correct")
         self.assertEqual(ranked[0]["rerank_rank_after_guardrail"], 1)
         self.assertGreater(ranked[0]["final_rerank_score"], ranked[1]["final_rerank_score"])
+        self.assertGreater(
+            ranked[0]["rerank_guardrail_components"]["exact_focus"],
+            0.0,
+        )
 
     def test_3e_guardrail_honors_explicit_civil_procedure_scope(self) -> None:
         question = "Quy định về nghĩa vụ chứng minh trong vụ án dân sự như thế nào?"
@@ -401,6 +405,87 @@ class TestDenseRAG(unittest.TestCase):
         ranked = _apply_reranker_legal_guardrails(question, candidates)
 
         self.assertEqual(ranked[0]["context_id"], "code")
+
+    def test_3g_id_80189_exact_raw_leader_is_not_flipped_by_generic_heading(self) -> None:
+        question = "Mẫu thông báo thay đổi người đại diện theo pháp luật"
+        shared_exact = {
+            "document_references": [],
+            "article_references": [],
+            "document_names": [],
+            "money_amounts_vnd": [],
+            "years": [],
+            "plan_names": [],
+            "form_names": [],
+            "long_phrase": "người đại diện theo pháp luật",
+            "long_phrase_tokens": 6,
+            "focus_phrases": [],
+            "scope_phrases": [],
+            "scope_requested": False,
+        }
+        candidates = [
+            {
+                "context_id": "230689",
+                "chunk_no": 19,
+                "name": "Thông tư 12/2012/TT-BTP",
+                "text": "Thông báo thay đổi người đại diện theo pháp luật.",
+                "rerank_score": -1.0,
+                "rrf_rank_after_boost": 20,
+                "exact_phrase_matches": 1,
+                "legal_signal_matches": {
+                    **shared_exact,
+                    "heading_overlap_tokens": 0,
+                    "heading_query_coverage": 0.0,
+                },
+            },
+            {
+                "context_id": "wrong-heading",
+                "chunk_no": 5,
+                "name": "Biểu mẫu không đúng đối tượng",
+                "text": "Thay đổi người đại diện theo pháp luật của cơ sở lưu trú.",
+                "rerank_score": -1.1,
+                "rrf_rank_after_boost": 1,
+                "legal_signal_matches": {
+                    **shared_exact,
+                    "heading_overlap_tokens": 5,
+                    "heading_query_coverage": 0.71,
+                },
+            },
+        ]
+
+        ranked = _apply_reranker_legal_guardrails(question, candidates)
+
+        self.assertEqual(ranked[0]["context_id"], "230689")
+        wrong = next(item for item in ranked if item["context_id"] == "wrong-heading")
+        self.assertLessEqual(wrong["rerank_guardrail_components"]["heading"], 0.6)
+        self.assertEqual(
+            wrong["rerank_guardrail_protected_by"]["context_id"],
+            "230689",
+        )
+
+    def test_3h_exact_form_article_document_and_long_phrase_are_strong_signals(self) -> None:
+        question = (
+            "Mẫu số 16/TP-TTTM tại Điều 91 Bộ luật Tố tụng dân sự "
+            "về nghĩa vụ chứng minh"
+        )
+        candidate = {
+            "context_id": "exact",
+            "chunk_no": 91,
+            "name": "Bộ luật Tố tụng dân sự",
+            "text": (
+                "Mẫu số 16/TP-TTTM. Điều 91 Bộ luật Tố tụng dân sự "
+                "quy định về nghĩa vụ chứng minh."
+            ),
+            "rerank_score": -2.0,
+            "rrf_rank_after_boost": 2,
+        }
+
+        ranked = _apply_reranker_legal_guardrails(question, [candidate])
+        components = ranked[0]["rerank_guardrail_components"]
+
+        self.assertGreater(components["exact_form"], 0.0)
+        self.assertGreater(components["exact_article"], 0.0)
+        self.assertGreater(components["exact_document_name"], 0.0)
+        self.assertGreater(components["exact_long_phrase"], 0.0)
 
     def test_4_vietnamese_reranker(self) -> None:
         """4. Kiểm tra chấm điểm cross-encoder và lọc Top-3 chunks."""

@@ -112,6 +112,23 @@ class NotebookCacheContractTests(unittest.TestCase):
         self.assertIn('int(candidate.get("chunk_no", -1))', code)
         self.assertNotIn('if not retrieval_gate["pass"]:\n    raise RuntimeError', code)
 
+    def test_smoke30_requires_all_five_expected_chunks_at_final_top_one(self) -> None:
+        code = self._notebook_code("legalqa-pipeline-smoke30-ready.ipynb")
+        expected = {
+            "34235": ("102434", 306),
+            "62147": ("41395", 3),
+            "86293": ("260328", 1),
+            "80189": ("230689", 19),
+            "135669": ("289349", 18),
+        }
+        for sample_id, (document_id, chunk_no) in expected.items():
+            contract = (
+                f'"{sample_id}": {{"document_id": "{document_id}", '
+                f'"chunk_no": {chunk_no},'
+            )
+            self.assertIn(contract, code)
+        self.assertEqual(code.count('"max_top3_rank": 1'), 5)
+
 
 if __name__ == "__main__":
     unittest.main()

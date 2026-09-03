@@ -49,6 +49,7 @@ _RETRIEVAL_SCORE_FIELDS = (
     "boosted_rrf_score",
     "rerank_score",
     "rerank_guardrail_bonus",
+    "rerank_guardrail_bonus_before_protection",
     "final_rerank_score",
 )
 
@@ -118,6 +119,14 @@ def _retrieval_candidate_record(
         )
     matches = candidate.get("legal_signal_matches")
     record["legal_signal_matches"] = matches if isinstance(matches, dict) else {}
+    components = candidate.get("rerank_guardrail_components")
+    record["rerank_guardrail_components"] = (
+        components if isinstance(components, dict) else {}
+    )
+    protection = candidate.get("rerank_guardrail_protected_by")
+    record["rerank_guardrail_protected_by"] = (
+        protection if isinstance(protection, dict) else None
+    )
     return record
 
 
@@ -425,9 +434,10 @@ def _apply_reranker_legal_guardrails(
 
     Cross-encoders can prefer a semantically nearby Điều with the wrong legal
     operation (for example, ``thời hạn kháng nghị`` instead of ``thời hiệu
-    khiếu nại``). The bonus is deliberately limited to exact focus phrases,
-    an explicit procedure scope, the leading heading, and the existing RRF
-    prior. Raw reranker scores remain available in audit output.
+    khiếu nại``). Exact form/article/document/long-phrase matches are strong;
+    generic heading overlap is only a small tie-breaker. Raw reranker leaders
+    backed by exact retrieval evidence are protected from weak heuristic flips
+    when raw scores are close or both negative.
     """
     if not candidates:
         return []
@@ -447,6 +457,9 @@ def _apply_reranker_legal_guardrails(
         matches = dict(matches)
         matches["scope_phrases"] = title_scope["scope_phrases"]
         matches["scope_requested"] = title_scope["scope_requested"]
+        # A document name is authoritative only when it matches the metadata
+        # title, not when a body paragraph merely mentions another instrument.
+        matches["document_names"] = title_scope["document_names"]
         item["legal_signal_matches"] = matches
 
         focus_phrases = matches.get("focus_phrases")
@@ -462,8 +475,51 @@ def _apply_reranker_legal_guardrails(
         heading_overlap = int(matches.get("heading_overlap_tokens") or 0)
         heading_coverage = float(matches.get("heading_query_coverage") or 0.0)
         heading_bonus = (
-            min(2.5, 0.5 * heading_overlap)
-            if heading_overlap >= 2 and heading_coverage >= 0.30
+            min(0.6, 0.12 * heading_overlap)
+            if heading_overlap >= 3 and heading_coverage >= 0.45
+            else 0.0
+        )
+
+        form_names = matches.get("form_names")
+        longest_form_tokens = max(
+            (len(tokenize(name)) for name in form_names),
+            default=0,
+        ) if isinstance(form_names, list) else 0
+        form_bonus = (
+            min(5.0, 1.25 + 0.45 * longest_form_tokens)
+            if longest_form_tokens >= 3
+            else 0.0
+        )
+
+        article_references = matches.get("article_references")
+        article_bonus = (
+            min(4.0, 3.0 + 0.25 * (len(article_references) - 1))
+            if isinstance(article_references, list) and article_references
+            else 0.0
+        )
+
+        document_references = matches.get("document_references")
+        document_reference_bonus = (
+            min(4.5, 3.5 + 0.25 * (len(document_references) - 1))
+            if isinstance(document_references, list) and document_references
+            else 0.0
+        )
+
+        document_names = matches.get("document_names")
+        longest_document_name_tokens = max(
+            (len(tokenize(name)) for name in document_names),
+            default=0,
+        ) if isinstance(document_names, list) else 0
+        document_name_bonus = (
+            min(4.0, 0.55 * longest_document_name_tokens)
+            if longest_document_name_tokens >= 3
+            else 0.0
+        )
+
+        long_phrase_tokens = int(matches.get("long_phrase_tokens") or 0)
+        long_phrase_bonus = (
+            min(4.0, 0.75 + 0.6 * (long_phrase_tokens - 4))
+            if long_phrase_tokens >= 4
             else 0.0
         )
 
@@ -474,7 +530,7 @@ def _apply_reranker_legal_guardrails(
             rrf_rank_value = pool_size
         rrf_prior_bonus = max(
             0.0,
-            1.0 - ((rrf_rank_value - 1) / max(1, pool_size - 1)),
+            0.75 * (1.0 - ((rrf_rank_value - 1) / max(1, pool_size - 1))),
         )
         title_tokens = set(tokenize(title))
         authority_tokens_match = (
@@ -488,13 +544,104 @@ def _apply_reranker_legal_guardrails(
             focus_bonus
             + scope_bonus
             + heading_bonus
+            + form_bonus
+            + article_bonus
+            + document_reference_bonus
+            + document_name_bonus
+            + long_phrase_bonus
             + rrf_prior_bonus
             + authority_bonus
+        )
+        exact_strength = (
+            focus_bonus
+            + scope_bonus
+            + form_bonus
+            + article_bonus
+            + document_reference_bonus
+            + document_name_bonus
+            + long_phrase_bonus
+            + authority_bonus
+        )
+        try:
+            exact_phrase_matches = int(item.get("exact_phrase_matches") or 0)
+        except (TypeError, ValueError, OverflowError):
+            exact_phrase_matches = 0
+        retrieval_exact = bool(
+            exact_phrase_matches
+            or form_bonus
+            or article_bonus
+            or document_reference_bonus
+            or document_name_bonus
+            or long_phrase_tokens >= 6
         )
         item["rerank_rank_before_guardrail"] = rank
         item["rerank_guardrail_bonus"] = round(guardrail_bonus, 6)
         item["final_rerank_score"] = raw_score + guardrail_bonus
+        item["rerank_guardrail_components"] = {
+            "exact_focus": round(focus_bonus, 6),
+            "scope": round(scope_bonus, 6),
+            "heading": round(heading_bonus, 6),
+            "exact_form": round(form_bonus, 6),
+            "exact_article": round(article_bonus, 6),
+            "exact_document_reference": round(document_reference_bonus, 6),
+            "exact_document_name": round(document_name_bonus, 6),
+            "exact_long_phrase": round(long_phrase_bonus, 6),
+            "rrf_prior": round(rrf_prior_bonus, 6),
+            "authority": round(authority_bonus, 6),
+        }
+        item["rerank_guardrail_protected_by"] = None
+        item["_guardrail_exact_strength"] = exact_strength
+        item["_guardrail_retrieval_exact"] = retrieval_exact
+        item["_guardrail_raw_score"] = raw_score
         adjusted.append(item)
+
+    # A raw leader with exact lexical/RRF evidence should not lose to a weaker
+    # heuristic when the cross-encoder itself is indecisive. Large positive
+    # raw-score corrections (such as the exact-focus rescue for ID 34235) are
+    # intentionally still allowed.
+    for anchor in adjusted:
+        if not anchor["_guardrail_retrieval_exact"]:
+            continue
+        anchor_raw = float(anchor["_guardrail_raw_score"])
+        anchor_strength = float(anchor["_guardrail_exact_strength"])
+        anchor_rank = int(anchor["rerank_rank_before_guardrail"])
+        for challenger in adjusted:
+            challenger_rank = int(challenger["rerank_rank_before_guardrail"])
+            if challenger_rank <= anchor_rank:
+                continue
+            challenger_raw = float(challenger["_guardrail_raw_score"])
+            raw_gap = anchor_raw - challenger_raw
+            raw_is_uncertain = raw_gap <= 1.25 or (
+                anchor_raw < 0.0 and challenger_raw < 0.0
+            )
+            if not raw_is_uncertain:
+                continue
+            challenger_strength = float(challenger["_guardrail_exact_strength"])
+            if challenger_strength > anchor_strength:
+                continue
+            anchor_final = float(anchor["final_rerank_score"])
+            challenger_final = float(challenger["final_rerank_score"])
+            if challenger_final < anchor_final:
+                continue
+            protected_final = anchor_final - 0.000001
+            original_bonus = float(challenger["rerank_guardrail_bonus"])
+            capped_bonus = max(0.0, protected_final - challenger_raw)
+            challenger["rerank_guardrail_bonus_before_protection"] = round(
+                original_bonus, 6
+            )
+            challenger["rerank_guardrail_bonus"] = round(capped_bonus, 6)
+            challenger["final_rerank_score"] = challenger_raw + capped_bonus
+            challenger["rerank_guardrail_protected_by"] = {
+                "context_id": anchor.get("context_id"),
+                "chunk_no": anchor.get("chunk_no"),
+                "reason": "exact_raw_leader_close_or_both_negative",
+                "raw_score_gap": round(raw_gap, 6),
+            }
+
+    for item in adjusted:
+        item.pop("_guardrail_exact_strength", None)
+        item.pop("_guardrail_retrieval_exact", None)
+        item.pop("_guardrail_raw_score", None)
 
     adjusted.sort(
         key=lambda item: (

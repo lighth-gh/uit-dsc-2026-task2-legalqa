@@ -45,6 +45,9 @@ _DOCUMENT_REFERENCE_RE = re.compile(
     r"công\s+văn|luật)\s*(?:số\s*)?"
     r"(?P<number>\d+(?:[/.-][\wđĐ-]+)+)"
 )
+_ARTICLE_REFERENCE_RE = re.compile(
+    r"(?i)\bđiều\s+(?P<number>\d+[a-zđ]?)\b"
+)
 _YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 _PRIORITY_LEGAL_PHRASES = ("mức lương cơ sở",)
 _MAX_EXACT_PHRASE_TOKENS = 8
@@ -186,6 +189,13 @@ def _document_references(text: str) -> set[str]:
     return references
 
 
+def _article_references(text: str) -> set[str]:
+    return {
+        f"điều {match.group('number').casefold()}"
+        for match in _ARTICLE_REFERENCE_RE.finditer(text)
+    }
+
+
 def _money_amounts(text: str) -> set[int]:
     amounts: set[int] = set()
     for match in _MILLION_AMOUNT_RE.finditer(text):
@@ -226,6 +236,42 @@ def _longest_matching_form_name(
         max_size = min(12, len(question_tokens) - start)
         for size in range(max_size, 2, -1):
             phrase = " ".join(question_tokens[start : start + size])
+            if f" {phrase} " in candidate_text:
+                return phrase
+    return None
+
+
+def _longest_matching_document_name(
+    question_tokens: list[str],
+    candidate_tokens: list[str],
+) -> str | None:
+    """Return a conservative exact legal-document name shared by both texts."""
+    candidate_text = f" {' '.join(candidate_tokens)} "
+    starts: list[int] = []
+    for index, token in enumerate(question_tokens):
+        next_token = question_tokens[index + 1] if index + 1 < len(question_tokens) else ""
+        previous_token = question_tokens[index - 1] if index else ""
+        if token == "luật" and previous_token not in {"bộ", "pháp"}:
+            starts.append(index)
+        elif token == "bộ" and next_token == "luật":
+            starts.append(index)
+        elif token == "nghị" and next_token in {"định", "quyết"}:
+            starts.append(index)
+        elif token == "thông" and next_token == "tư":
+            starts.append(index)
+        elif token == "quyết" and next_token == "định":
+            starts.append(index)
+        elif token == "công" and next_token == "văn":
+            starts.append(index)
+    for start in starts:
+        max_size = min(10, len(question_tokens) - start)
+        for size in range(max_size, 2, -1):
+            window = question_tokens[start : start + size]
+            while window and window[-1] in STOPWORDS:
+                window = window[:-1]
+            if len(window) < 3:
+                continue
+            phrase = " ".join(window)
             if f" {phrase} " in candidate_text:
                 return phrase
     return None
@@ -370,10 +416,17 @@ def legal_retrieval_signal_matches(
     document_references = sorted(
         _document_references(question) & _document_references(candidate_text)
     )
+    article_references = sorted(
+        _article_references(question) & _article_references(candidate_text)
+    )
     money_amounts = sorted(_money_amounts(question) & _money_amounts(candidate_text))
     years = sorted(set(_YEAR_RE.findall(question)) & set(_YEAR_RE.findall(candidate_text)))
     plan_names = sorted(_power_plan_names(question) & _power_plan_names(candidate_text))
     form_name = _longest_matching_form_name(question_tokens, candidate_tokens)
+    document_name = _longest_matching_document_name(
+        question_tokens,
+        candidate_tokens,
+    )
     long_phrase, long_phrase_tokens = _longest_exact_legal_phrase(
         question_tokens,
         candidate_tokens,
@@ -390,6 +443,8 @@ def legal_retrieval_signal_matches(
 
     return {
         "document_references": document_references,
+        "article_references": article_references,
+        "document_names": [document_name] if document_name else [],
         "money_amounts_vnd": money_amounts,
         "years": years,
         "plan_names": plan_names,
