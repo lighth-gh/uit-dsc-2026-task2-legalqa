@@ -22,6 +22,7 @@ from .baseline_lock import (
 from .metrics import aggregate_official_scores, aggregate_scores, official_scores
 from .pipeline import LegalQABaseline, prediction_audit_record
 from .storage import SearchIndex, build_index, load_qa, write_predictions
+from .text import clean_answer
 
 
 VALID_MODES = ["extractive", "knn", "hybrid", "rag", "hybrid_rag"]
@@ -508,7 +509,11 @@ def _load_checkpoint(
             continue
         answer = item.get("answer")
         if isinstance(answer, str) and answer.strip():
-            predictions[key] = answer
+            try:
+                predictions[key] = clean_answer(answer)
+            except ValueError:
+                # A cleaned-empty checkpoint entry is regenerated normally.
+                continue
     if routes and sum(routes.values()) != len(predictions):
         routes = {}
     if predictions and not routes:

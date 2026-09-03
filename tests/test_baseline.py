@@ -13,6 +13,7 @@ from legalqa_baseline.metrics import answer_token_f1, meteor_exact, rouge_l_f1
 from legalqa_baseline.pipeline import (
     LegalQABaseline,
     Prediction,
+    prediction_audit_record,
     question_similarity,
     reciprocal_rank_fusion,
 )
@@ -242,6 +243,45 @@ class PipelineRoutingTests(unittest.TestCase):
         prediction = LegalQABaseline(index=BlankAnswerIndex()).predict_one("same", mode="hybrid")  # type: ignore[arg-type]
         self.assertEqual(prediction.route, "fallback")
 
+    def test_final_pipeline_cleaner_covers_knn_and_empty_answers(self) -> None:
+        class DirtyKnnIndex(self.EmptyIndex):
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, object]]:
+                return [{
+                    "sample_id": "dirty",
+                    "question": question,
+                    "answer": (
+                        "**Kết quả** theo Luật số 123257 và "
+                        "Nghi-dinh-74-2015-ND-CP-noi-dung-289989."
+                    ),
+                    "bm25_score": -1.0,
+                }]
+
+        prediction = LegalQABaseline(index=DirtyKnnIndex()).predict_one(  # type: ignore[arg-type]
+            "Trách nhiệm của cơ quan là gì?",
+            mode="hybrid_rag",
+        )
+        self.assertEqual(prediction.route, "knn_exact")
+        self.assertNotIn("**", prediction.answer)
+        self.assertNotIn("123257", prediction.answer)
+        self.assertNotIn("Nghi-dinh-", prediction.answer)
+        self.assertTrue(prediction.evidence["answer_cleaning"]["schema_valid"])
+        audit = prediction_audit_record("dirty", prediction)
+        self.assertFalse(audit["has_markdown"])
+        self.assertFalse(audit["has_document_slug"])
+        self.assertFalse(audit["has_fake_document_number"])
+
+        pipeline = LegalQABaseline(index=self.EmptyIndex())  # type: ignore[arg-type]
+        pipeline._extractive = lambda question: Prediction(" ** ** ", "extractive", 1.0, {})  # type: ignore[method-assign]
+        empty_prediction = pipeline.predict_one("Câu hỏi", mode="extractive")
+        self.assertEqual(empty_prediction.route, "fallback")
+        self.assertTrue(empty_prediction.answer)
+        self.assertFalse(empty_prediction.evidence["answer_cleaning"]["schema_valid"])
+
     def test_id_129859_exact_normalized_question_uses_train_answer(self) -> None:
         question = (
             "Cơ quan chủ trì soạn thảo văn bản quy phạm pháp luật có những trách nhiệm "
@@ -413,6 +453,22 @@ class IoTests(unittest.TestCase):
             output = root / "prediction.json"
             write_predictions(output, {"1": "Câu trả lời"})
             self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["1"]["answer"], "Câu trả lời")
+
+    def test_submission_writer_rejects_empty_or_dirty_answer_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "prediction.json"
+            invalid_answers = (
+                "",
+                "**Nội dung Markdown**",
+                "Luật số 123257 quy định nội dung này.",
+                "Nghi-dinh-74-2015-ND-CP-noi-dung-289989",
+            )
+            for answer in invalid_answers:
+                with self.subTest(answer=answer):
+                    with self.assertRaises(ValueError):
+                        write_predictions(output, {"1": answer})
+            with self.assertRaises(ValueError):
+                write_predictions(output, {"1": {"answer": "sai schema"}})  # type: ignore[dict-item]
 
 
     def test_build_index_rejects_missing_train_answers_before_creating_db(self) -> None:

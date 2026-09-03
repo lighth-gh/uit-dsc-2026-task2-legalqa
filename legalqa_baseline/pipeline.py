@@ -25,6 +25,7 @@ from .text import (
     is_structured_extractive_question,
     legal_retrieval_signal_matches,
     needs_extended_generation_retry,
+    output_artifact_flags,
     possibly_cut,
     query_terms,
     retrieval_priority_phrases,
@@ -169,6 +170,7 @@ def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str,
     says_no_information = evidence.get("says_no_information")
     if says_no_information is None:
         says_no_information = is_refusal_answer(prediction.answer)
+    artifact_flags = output_artifact_flags(prediction.answer)
     return {
         "id": str(sample_id),
         "route": prediction.route,
@@ -186,6 +188,12 @@ def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str,
         "raw_fallback_allowed": bool(evidence.get("raw_fallback_allowed", False)),
         "says_no_information": bool(says_no_information),
         "possibly_cut": bool(evidence.get("possibly_cut", False)),
+        "output_artifacts": sorted(artifact_flags),
+        "has_markdown": "markdown" in artifact_flags,
+        "has_document_slug": "document_slug" in artifact_flags,
+        "has_fake_document_number": (
+            "fake_document_number_or_page_id" in artifact_flags
+        ),
         "top_document_id": top_document_id,
         "reranker_score": reranker_score,
         "raw_reranker_score": evidence.get("raw_reranker_score", reranker_score),
@@ -195,6 +203,27 @@ def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str,
         "retrieval_trace": evidence.get("retrieval_trace", {}),
         "stage_seconds": evidence.get("stage_seconds", {}),
     }
+
+
+def _trusted_answer_metadata(evidence: dict[str, Any]) -> list[str]:
+    """Collect only retrieval-owned title/link fields used to whitelist citations."""
+    values: list[str] = []
+
+    def append_metadata(item: Any) -> None:
+        if not isinstance(item, dict):
+            return
+        for key in ("name", "title", "link"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                values.append(value.strip())
+
+    append_metadata(evidence)
+    for key in ("top_contexts", "prompt_contexts"):
+        items = evidence.get(key)
+        if isinstance(items, list):
+            for item in items:
+                append_metadata(item)
+    return list(dict.fromkeys(values))
 
 
 def _normalize_similarity_token(token: str) -> str:
@@ -969,6 +998,64 @@ class LegalQABaseline:
                 kwargs["max_new_tokens"] = max_new_tokens
         return generate(**kwargs)
 
+    @staticmethod
+    def _finalize_prediction(result: Any) -> Prediction:
+        """Enforce the submission answer schema and clean every output route once."""
+        fallback_answer = "Không tìm thấy căn cứ đủ tin cậy để trả lời câu hỏi."
+        if not isinstance(result, Prediction):
+            return Prediction(
+                fallback_answer,
+                "fallback",
+                0.0,
+                {
+                    "answer_cleaning": {
+                        "schema_valid": False,
+                        "error": "pipeline_result_is_not_prediction",
+                    }
+                },
+            )
+
+        evidence = result.evidence if isinstance(result.evidence, dict) else {}
+        trusted_metadata = _trusted_answer_metadata(evidence)
+        try:
+            cleaned = clean_answer(
+                result.answer,
+                trusted_metadata=trusted_metadata,
+            )
+        except (TypeError, ValueError) as exc:
+            return Prediction(
+                fallback_answer,
+                "fallback",
+                0.0,
+                {
+                    **evidence,
+                    "answer_cleaning": {
+                        "schema_valid": False,
+                        "error": str(exc),
+                    },
+                },
+            )
+
+        route = (
+            result.route
+            if isinstance(result.route, str) and result.route
+            else "fallback"
+        )
+        confidence = _audit_float(result.confidence)
+        return Prediction(
+            cleaned,
+            route,
+            confidence if confidence is not None else 0.0,
+            {
+                **evidence,
+                "answer_cleaning": {
+                    "schema_valid": True,
+                    "changed": cleaned != result.answer.strip(),
+                    "trusted_metadata_fields": len(trusted_metadata),
+                },
+            },
+        )
+
     def _guarded_knn(
         self,
         question: str,
@@ -1561,6 +1648,12 @@ class LegalQABaseline:
         adjacent_chunks, prompt_chunks, joined_context, raw_context_answer = (
             self._build_generation_context(question, best, top_chunks)
         )
+        generation_trusted_metadata = [
+            chunk.get(key)
+            for chunk in prompt_chunks
+            for key in ("name", "title", "link")
+            if isinstance(chunk.get(key), str) and str(chunk.get(key)).strip()
+        ]
         generation_started = time.perf_counter()
         generation_attempts = 0
         initial_hit_token_limit = False
@@ -1591,10 +1684,20 @@ class LegalQABaseline:
                     "max_new_tokens": stats.get("max_new_tokens", exc.max_new_tokens),
                     "hit_token_limit": True,
                 }
-            cleaned = clean_answer(raw_answer)
             generation_stats = getattr(self.generator, "last_generation_stats", {})
             if not isinstance(generation_stats, dict):
                 generation_stats = {}
+            if raw_answer is None:
+                return "", "empty", generation_stats
+            if not isinstance(raw_answer, str):
+                return "", "invalid_schema", generation_stats
+            try:
+                cleaned = clean_answer(
+                    raw_answer,
+                    trusted_metadata=generation_trusted_metadata,
+                )
+            except ValueError:
+                return "", "empty", generation_stats
             reason = (
                 "token_limit"
                 if generation_stats.get("hit_token_limit")
@@ -1829,11 +1932,13 @@ class LegalQABaseline:
         if not isinstance(question, str):
             raise TypeError("question phải là chuỗi")
         if not question.strip():
-            return Prediction(
-                "Không tìm thấy căn cứ phù hợp trong kho văn bản được cung cấp.",
-                "fallback",
-                0.0,
-                {},
+            return self._finalize_prediction(
+                Prediction(
+                    "Không tìm thấy căn cứ phù hợp trong kho văn bản được cung cấp.",
+                    "fallback",
+                    0.0,
+                    {},
+                )
             )
         if mode == "extractive":
             result = self._extractive(question)
@@ -1857,10 +1962,10 @@ class LegalQABaseline:
             raise ValueError(f"Mode không hỗ trợ: {mode}")
 
         if result is None:
-            return Prediction(
+            result = Prediction(
                 "Không tìm thấy căn cứ phù hợp trong kho văn bản được cung cấp.",
                 "fallback",
                 0.0,
                 {},
             )
-        return result
+        return self._finalize_prediction(result)

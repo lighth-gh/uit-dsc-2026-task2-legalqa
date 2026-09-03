@@ -18,6 +18,7 @@ from legalqa_baseline.text import (
     is_structured_extractive_question,
     merge_adjacent_chunks,
     needs_extended_generation_retry,
+    output_artifact_flags,
     possibly_cut,
 )
 
@@ -413,6 +414,49 @@ class TestMergeAdjacentChunks(unittest.TestCase):
     def test_clean_answer_only_removes_prefix(self) -> None:
         answer = "Dựa trên ngữ cảnh được cung cấp: Điều 1. Nội dung đầy đủ."
         self.assertEqual(clean_answer(answer), "Điều 1. Nội dung đầy đủ.")
+
+    def test_clean_answer_removes_markdown_opening_slug_and_fake_law_number(self) -> None:
+        answer = (
+            'Câu trả lời cho câu hỏi "Ai có thẩm quyền?" là:\n\n'
+            "**Điều 10. Thủ tướng Chính phủ có thẩm quyền.**\n"
+            "Nguồn: Nghi-dinh-74-2015-ND-CP-ve-phong-khong-nhan-dan-289989.\n"
+            "Nội dung này thuộc Luật An toàn, vệ sinh lao động số 281961."
+        )
+
+        cleaned = clean_answer(answer)
+
+        self.assertTrue(cleaned.startswith("Điều 10."))
+        self.assertNotIn("**", cleaned)
+        self.assertNotIn("Nghi-dinh-", cleaned)
+        self.assertNotIn("281961", cleaned)
+        self.assertEqual(output_artifact_flags(cleaned), set())
+
+    def test_clean_answer_only_keeps_document_number_from_trusted_metadata(self) -> None:
+        answer = (
+            "Theo **Nghị định 74/2015/NĐ-CP** và Nghị định 90/2017/NĐ-CP, "
+            "Quyết định 1500/QĐ-BTC-2020 cũng được nhắc đến."
+        )
+        metadata = (
+            "Nghi-dinh-74-2015-ND-CP-ve-phong-khong-nhan-dan-289989",
+        )
+
+        cleaned = clean_answer(answer, trusted_metadata=metadata)
+
+        self.assertIn("Nghị định 74/2015/NĐ-CP", cleaned)
+        self.assertNotIn("90/2017/NĐ-CP", cleaned)
+        self.assertNotIn("1500/QĐ-BTC-2020", cleaned)
+        self.assertEqual(output_artifact_flags(cleaned), set())
+
+    def test_clean_answer_validates_schema_and_non_empty_result(self) -> None:
+        with self.assertRaisesRegex(TypeError, "answer"):
+            clean_answer({"answer": "không hợp lệ"})  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "rỗng"):
+            clean_answer(" ** ** ")
+
+    def test_clean_answer_removes_prompt_id_but_keeps_real_page_reference(self) -> None:
+        cleaned = clean_answer("Xem nội dung tại trang 15. (Văn bản 1)")
+        self.assertEqual(cleaned, "Xem nội dung tại trang 15.")
+        self.assertEqual(output_artifact_flags(cleaned), set())
 
     def test_possibly_cut_detects_dangling_generation(self) -> None:
         self.assertTrue(possibly_cut("Hồ sơ bao gồm các giấy tờ sau:"))

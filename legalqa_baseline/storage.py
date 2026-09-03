@@ -16,6 +16,7 @@ from typing import Any
 from .text import (
     chunk_passage,
     expand_retrieval_query,
+    output_artifact_flags,
     query_terms,
     retrieval_priority_phrases,
     tokenize,
@@ -83,7 +84,18 @@ def load_qa(path: str | Path) -> dict[str, dict[str, Any]]:
 
 
 def write_predictions(path: str | Path, predictions: dict[str, str]) -> None:
-    output = {str(key): {"answer": str(answer)} for key, answer in predictions.items()}
+    if not isinstance(predictions, dict):
+        raise TypeError("predictions phải là JSON object")
+    output: dict[str, dict[str, str]] = {}
+    for key, answer in predictions.items():
+        if not isinstance(answer, str) or not answer.strip():
+            raise ValueError(f"Mẫu {key!r} không có answer chuỗi hợp lệ")
+        artifacts = output_artifact_flags(answer)
+        if artifacts:
+            raise ValueError(
+                f"Mẫu {key!r} còn output artifact: {', '.join(sorted(artifacts))}"
+            )
+        output[str(key)] = {"answer": answer.strip()}
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp_target = target.with_suffix(target.suffix + ".tmp")

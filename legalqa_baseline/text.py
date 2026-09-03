@@ -755,6 +755,65 @@ BOILERPLATE_PATTERNS: tuple[str, ...] = (
     r"^\s*dựa\s+(?:trên|vào)\s+(?:các\s+)?thông\s+tin(?:\s+được\s+cung\s+cấp)?[,;:\s-]*",
 )
 
+_ANSWER_OPENING_RE = re.compile(
+    r"^\s*(?:(?:sau\s+đây\s+là\s+)?câu\s+trả\s+lời\s+cho\s+câu\s+hỏi)"
+    r"(?:\s+(?:[\"“][^\"”]{0,1200}[\"”]|'[^']{0,1200}'|này))?"
+    r"\s*(?:là|như\s+sau)?\s*[:;,\-]*\s*",
+    re.IGNORECASE | re.DOTALL,
+)
+_ANSWER_OPENING_WITH_QUESTION_RE = re.compile(
+    r"^\s*câu\s+trả\s+lời\s+cho\s+câu\s+hỏi.{0,1200}?"
+    r"(?:là|như\s+sau)\s*:\s*",
+    re.IGNORECASE | re.DOTALL,
+)
+_MARKDOWN_LINK_RE = re.compile(r"!?\[([^\]\n]+)\]\([^\)\n]+\)")
+_MARKDOWN_LINE_PREFIX_RE = re.compile(
+    r"(?m)^[ \t]*(?:#{1,6}[ \t]+|>[ \t]*|[-*+][ \t]+)"
+)
+_DOCUMENT_SLUG_RE = re.compile(
+    r"(?<![\w/])(?:[A-Za-zÀ-ỹĐđ0-9]+-){3,}"
+    r"[A-Za-zÀ-ỹĐđ0-9]+-\d{3,}(?:\.aspx)?(?![\w/])"
+)
+_OUTPUT_URL_RE = re.compile(r"(?i)\bhttps?://[^\s<>]+")
+_PROMPT_PAGE_ID_RE = re.compile(
+    r"(?i)\s*(?:"
+    r"\((?:văn\s+bản|ngữ\s+cảnh|context)\s*#?\s*\d+\)"
+    r"|(?:ngữ\s+cảnh|context|page\s+id|trang\s+id)\s*#?\s*\d+"
+    r")"
+)
+_DOCUMENT_NUMBER_PATTERN = (
+    r"(?:"
+    r"\d{1,5}\s*[/.-]\s*\d{4}\s*[/.-]\s*"
+    r"[A-Za-zĐđ]{1,12}\d{0,2}(?:\s*-\s*[A-Za-zĐđ]{1,12}\d{0,2})?"
+    r"|"
+    r"\d{1,5}\s*[/.-]\s*[A-Za-zĐđ]{2,12}\d*"
+    r"(?:\s*-\s*[A-Za-zĐđ0-9]{1,12}){1,3}"
+    r")"
+)
+_RAW_DOCUMENT_NUMBER_RE = re.compile(
+    rf"(?<!\w){_DOCUMENT_NUMBER_PATTERN}(?!\w)"
+)
+_DOCUMENT_KIND = (
+    r"bộ\s+luật|luật|pháp\s+lệnh|nghị\s+định|quyết\s+định|"
+    r"thông\s+tư|nghị\s+quyết|công\s+văn"
+)
+_OUTPUT_DOCUMENT_CITATION_RE = re.compile(
+    rf"(?i)\b(?P<kind>{_DOCUMENT_KIND})"
+    r"(?P<title>(?:\s+(?!số\b)[^\s,.;:()]+){0,8}?)"
+    rf"\s+(?:số\s+)?(?P<number>{_DOCUMENT_NUMBER_PATTERN})"
+)
+_STANDALONE_DOCUMENT_NUMBER_RE = re.compile(
+    rf"(?i)\bsố\s*:\s*(?P<number>{_DOCUMENT_NUMBER_PATTERN})"
+)
+_FAKE_DOCUMENT_NUMBER_RE = re.compile(
+    rf"(?i)\b(?P<kind>{_DOCUMENT_KIND})"
+    r"(?P<title>(?:\s+(?!số\b)[^\s.;:()]+){0,8}?)"
+    r"\s+số\s+(?P<number>(?:\d{4}-)?\d{4,9})\b"
+)
+_OUTPUT_MARKDOWN_RE = re.compile(
+    r"(?m)(?:```|`|\*\*|__|~~|^[ \t]*(?:#{1,6}|>|[-*+])[ \t]+)"
+)
+
 _REFUSAL_START_MARKERS = (
     "không đủ thông tin trong ngữ cảnh",
     "không có đủ thông tin trong ngữ cảnh",
@@ -777,12 +836,102 @@ _REFUSAL_EARLY_PATTERNS = tuple(
 )
 
 
-def clean_answer(answer: str) -> str:
-    """Chỉ bỏ boilerplate ở đầu đáp án, không tóm tắt hoặc cắt nội dung."""
-    cleaned = str(answer or "")
+def _document_number_fingerprint(value: str) -> tuple[str, ...]:
+    return tuple(
+        "".join(
+            char
+            for char in unicodedata.normalize("NFD", token.casefold())
+            if unicodedata.category(char) != "Mn"
+        ).replace("đ", "d")
+        for token in TOKEN_RE.findall(value)
+    )
+
+
+def _trusted_document_numbers(metadata: Iterable[Any]) -> set[tuple[str, ...]]:
+    trusted: set[tuple[str, ...]] = set()
+    for raw_value in metadata:
+        if not isinstance(raw_value, str):
+            continue
+        for match in _RAW_DOCUMENT_NUMBER_RE.finditer(raw_value):
+            trusted.add(_document_number_fingerprint(match.group(0)))
+    return trusted
+
+
+def output_artifact_flags(answer: Any) -> set[str]:
+    """Return release-gate violations still visible in an answer."""
+    if not isinstance(answer, str) or not answer.strip():
+        return {"invalid_or_empty_answer"}
+    flags: set[str] = set()
+    if _OUTPUT_MARKDOWN_RE.search(answer) or _MARKDOWN_LINK_RE.search(answer):
+        flags.add("markdown")
+    if _DOCUMENT_SLUG_RE.search(answer) or _OUTPUT_URL_RE.search(answer):
+        flags.add("document_slug")
+    if (
+        _FAKE_DOCUMENT_NUMBER_RE.search(answer)
+        or _PROMPT_PAGE_ID_RE.search(answer)
+    ):
+        flags.add("fake_document_number_or_page_id")
+    if (
+        _ANSWER_OPENING_RE.search(answer)
+        or _ANSWER_OPENING_WITH_QUESTION_RE.search(answer)
+    ):
+        flags.add("answer_boilerplate")
+    return flags
+
+
+def clean_answer(
+    answer: str,
+    *,
+    trusted_metadata: Iterable[Any] = (),
+) -> str:
+    """Clean final output and whitelist document numbers from retrieval metadata."""
+    if not isinstance(answer, str):
+        raise TypeError("answer phải là chuỗi")
+    if not answer.strip():
+        raise ValueError("answer không được rỗng")
+
+    cleaned = answer
     for pattern in BOILERPLATE_PATTERNS:
         cleaned = re.sub(pattern, "", cleaned, count=1, flags=re.IGNORECASE)
-    return cleaned.strip()
+    cleaned = _MARKDOWN_LINK_RE.sub(r"\1", cleaned)
+    cleaned = re.sub(r"```(?:[A-Za-z0-9_+-]+)?", "", cleaned)
+    cleaned = cleaned.replace("**", "").replace("__", "")
+    cleaned = cleaned.replace("~~", "").replace("`", "")
+    cleaned = _MARKDOWN_LINE_PREFIX_RE.sub("• ", cleaned)
+    cleaned = _ANSWER_OPENING_WITH_QUESTION_RE.sub("", cleaned, count=1)
+    cleaned = _ANSWER_OPENING_RE.sub("", cleaned, count=1)
+    cleaned = _OUTPUT_URL_RE.sub("", cleaned)
+    cleaned = _DOCUMENT_SLUG_RE.sub("", cleaned)
+    cleaned = _PROMPT_PAGE_ID_RE.sub("", cleaned)
+
+    trusted_numbers = _trusted_document_numbers(trusted_metadata)
+
+    def remove_untrusted_reference(match: re.Match[str]) -> str:
+        fingerprint = _document_number_fingerprint(match.group("number"))
+        if fingerprint in trusted_numbers:
+            return match.group(0)
+        return f'{match.group("kind")}{match.group("title")}'
+
+    cleaned = _OUTPUT_DOCUMENT_CITATION_RE.sub(remove_untrusted_reference, cleaned)
+    cleaned = _STANDALONE_DOCUMENT_NUMBER_RE.sub(
+        lambda match: (
+            match.group(0)
+            if _document_number_fingerprint(match.group("number")) in trusted_numbers
+            else ""
+        ),
+        cleaned,
+    )
+    cleaned = _FAKE_DOCUMENT_NUMBER_RE.sub(
+        lambda match: f'{match.group("kind")}{match.group("title")}',
+        cleaned,
+    )
+    cleaned = re.sub(r"[ \t]+([,.;:!?])", r"\1", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"(?m)^[ \t]+|[ \t]+$", "", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    if not cleaned:
+        raise ValueError("answer rỗng sau khi làm sạch")
+    return cleaned
 
 
 def is_refusal_answer(answer: Any, max_sentences: int = 2) -> bool:
@@ -792,7 +941,10 @@ def is_refusal_answer(answer: Any, max_sentences: int = 2) -> bool:
     if max_sentences <= 0:
         raise ValueError("max_sentences phải lớn hơn 0")
 
-    cleaned = clean_answer(answer)
+    try:
+        cleaned = clean_answer(answer)
+    except ValueError:
+        return False
     early_sentences = [
         " ".join(sentence.casefold().split()).strip(" .!?:;,-")
         for sentence in re.split(r"(?<=[.!?…])\s+|[\r\n]+", cleaned)
