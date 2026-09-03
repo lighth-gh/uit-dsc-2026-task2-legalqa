@@ -207,14 +207,9 @@ def aggregate_scores(predictions: list[str], references: list[str]) -> dict[str,
     }
 
 
-def aggregate_official_scores(
-    predictions: list[str], references: list[str]
-) -> dict[str, float]:
-    """Chạy đúng 2 metric từ scoring program BTC trên Codabench (NLTK METEOR + ROUGE-L)."""
-    if len(predictions) != len(references) or not predictions:
-        raise ValueError("Prediction/reference must have equal non-zero lengths")
+def official_scores(prediction: str, reference: str) -> dict[str, float]:
+    """Score one answer with the exact packages used by the competition scorer."""
     try:
-        import numpy as np
         from nltk.translate.meteor_score import meteor_score
         from rouge_score import rouge_scorer
     except ImportError as exc:
@@ -222,23 +217,30 @@ def aggregate_official_scores(
 
     rouge = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=False)
     try:
-        meteor_result = np.array(
-            [
-                meteor_score([reference.split()], prediction.split())
-                for prediction, reference in zip(predictions, references)
-            ]
-        ).mean()
+        meteor_result = meteor_score([reference.split()], prediction.split())
     except LookupError as exc:
         raise RuntimeError(
             "NLTK WordNet is missing; run: python -m nltk.downloader wordnet omw-1.4"
         ) from exc
-    rouge_result = np.array(
-        [
-            rouge.score(reference, prediction)["rougeL"].fmeasure
-            for prediction, reference in zip(predictions, references)
-        ]
-    ).mean()
+    rouge_result = rouge.score(reference, prediction)["rougeL"].fmeasure
     return {
         "competition_meteor": float(meteor_result),
         "competition_rougeL": float(rouge_result),
+    }
+
+
+def aggregate_official_scores(
+    predictions: list[str], references: list[str]
+) -> dict[str, float]:
+    """Chạy đúng 2 metric từ scoring program BTC trên Codabench (NLTK METEOR + ROUGE-L)."""
+    if len(predictions) != len(references) or not predictions:
+        raise ValueError("Prediction/reference must have equal non-zero lengths")
+    per_sample = [
+        official_scores(prediction, reference)
+        for prediction, reference in zip(predictions, references)
+    ]
+    total = len(per_sample)
+    return {
+        "competition_meteor": sum(item["competition_meteor"] for item in per_sample) / total,
+        "competition_rougeL": sum(item["competition_rougeL"] for item in per_sample) / total,
     }

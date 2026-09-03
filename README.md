@@ -63,6 +63,57 @@ python -m legalqa_baseline build-index \
 
 ## 4. Validation cục bộ
 
+### Giai đoạn 0: khóa và chạy baseline
+
+Manifest version-control tại `artifacts/baseline_splits_v1.json` khóa bằng SHA-256 của
+`train.json`/`public-official.json`. `validation_100` là đúng 100 ID đầu của
+`validation_300`; regression set gồm 11 ID Public đã biết lỗi. Lệnh khóa có tính
+idempotent và sẽ từ chối ghi đè nếu nội dung split thay đổi:
+
+```bash
+python -m legalqa_baseline freeze-baseline \
+  --train data/train.json \
+  --public data/public-official.json \
+  --output artifacts/baseline_splits_v1.json \
+  --seed 2026
+```
+
+Chạy bản hiện tại trước trên 100 câu, sau đó trên toàn bộ 300 câu. Hai lệnh chỉ
+**đọc** Dense index hiện có; không gọi `build-dense-index` và không ghi vào index:
+
+```bash
+python -m legalqa_baseline validate \
+  --train data/train.json \
+  --regression-input data/public-official.json \
+  --db artifacts/legalqa.sqlite \
+  --dense-index artifacts/legalqa_dense \
+  --split-manifest artifacts/baseline_splits_v1.json \
+  --split-name validation_100 \
+  --output artifacts/baseline_rag_validation_100.json \
+  --modes rag \
+  --official-metrics \
+  --device cuda
+
+python -m legalqa_baseline validate \
+  --train data/train.json \
+  --regression-input data/public-official.json \
+  --db artifacts/legalqa.sqlite \
+  --dense-index artifacts/legalqa_dense \
+  --split-manifest artifacts/baseline_splits_v1.json \
+  --split-name validation_300 \
+  --output artifacts/baseline_rag_validation_300.json \
+  --modes rag \
+  --official-metrics \
+  --device cuda
+```
+
+Mỗi phần tử `results.rag.items` chứa prediction/reference, route, độ dài,
+METEOR/ROUGE-L và retrieval metrics theo từng tầng cùng trace ứng viên thực tế.
+Phần `results.rag.retrieval` là số tổng hợp. `regression.rag.items` lưu cùng audit
+cho 11 ID lỗi; METEOR/ROUGE-L của nhóm này là `null` có lý do rõ ràng vì Public
+không cung cấp reference answer. Metadata của BM25 và manifest của Dense index
+được chép vào report để chứng minh đúng index đã dùng.
+
 Chạy leave-one-out trên 300 mẫu Train cố định:
 
 ```bash

@@ -62,6 +62,19 @@ class NotebookCacheContractTests(unittest.TestCase):
         self.assertIn("DENSE_QUERY_MAX_LENGTH, RERANKER_MAX_LENGTH = 256, 1024", smoke_code)
         self.assertIn("MAX_NEW_TOKENS, MAX_INPUT_TOKENS = 512, 7168", smoke_code)
 
+    def test_phase_zero_baseline_cannot_skip_locked_validation(self) -> None:
+        code = self._notebook_code("uit-dsc-2026-task2-legalqa.ipynb")
+        for expected in (
+            "RUN_RETRIEVAL_EVAL = True",
+            "RUN_VALIDATION = True",
+            "BUILD_DENSE_INDEX = False",
+            'VALIDATION_SPLIT_NAMES = ("validation_100", "validation_300")',
+            'BASELINE_SPLIT_PATH = REPO_DIR / "artifacts" / "baseline_splits_v1.json"',
+            '"--split-manifest", str(BASELINE_SPLIT_PATH)',
+            '"--regression-input", str(PUBLIC_PATH)',
+        ):
+            self.assertIn(expected, code)
+
     def test_smoke_notebooks_use_shared_refusal_detector(self) -> None:
         for notebook_name in (
             "legalqa-generation-smoke-test.ipynb",

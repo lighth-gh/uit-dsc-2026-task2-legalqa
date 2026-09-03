@@ -9,7 +9,17 @@ import sys
 import time
 from pathlib import Path
 
-from .metrics import aggregate_official_scores, aggregate_scores
+from .baseline_lock import (
+    aggregate_retrieval_items,
+    file_sha256,
+    load_locked_split,
+    load_regression_samples,
+    make_baseline_manifest,
+    score_answer,
+    score_retrieval_trace,
+    write_locked_manifest,
+)
+from .metrics import aggregate_official_scores, aggregate_scores, official_scores
 from .pipeline import LegalQABaseline, prediction_audit_record
 from .storage import SearchIndex, build_index, load_qa, write_predictions
 
@@ -186,6 +196,15 @@ def make_parser() -> argparse.ArgumentParser:
     diagnose_retrieval.add_argument("--output", required=True)
     _add_pipeline_args(diagnose_retrieval)
 
+    freeze = subparsers.add_parser(
+        "freeze-baseline",
+        help="Khóa validation_100, validation_300 và regression IDs vào manifest",
+    )
+    freeze.add_argument("--train", required=True)
+    freeze.add_argument("--public", default=None)
+    freeze.add_argument("--output", required=True)
+    freeze.add_argument("--seed", type=int, default=2026)
+
     validate = subparsers.add_parser("validate", help="Leave-one-out validation")
     validate.add_argument("--train", required=True)
     validate.add_argument("--db", required=True)
@@ -193,6 +212,21 @@ def make_parser() -> argparse.ArgumentParser:
     validate.add_argument("--modes", default="extractive,knn,hybrid")
     validate.add_argument("--limit", type=int, default=300)
     validate.add_argument("--seed", type=int, default=2026)
+    validate.add_argument(
+        "--split-manifest",
+        default=None,
+        help="Manifest tạo bởi freeze-baseline; khi có, --limit/--seed không chọn lại ID",
+    )
+    validate.add_argument(
+        "--split-name",
+        default="validation_100",
+        choices=["validation_100", "validation_300"],
+    )
+    validate.add_argument(
+        "--regression-input",
+        default=None,
+        help="public-official.json dùng chạy các regression ID đã khóa (không có answer gold)",
+    )
     validate.add_argument(
         "--official-metrics",
         action="store_true",
@@ -209,6 +243,12 @@ def make_parser() -> argparse.ArgumentParser:
     retrieval_eval.add_argument("--output", required=True)
     retrieval_eval.add_argument("--limit", type=int, default=100)
     retrieval_eval.add_argument("--seed", type=int, default=2026)
+    retrieval_eval.add_argument("--split-manifest", default=None)
+    retrieval_eval.add_argument(
+        "--split-name",
+        default="validation_100",
+        choices=["validation_100", "validation_300"],
+    )
     retrieval_eval.add_argument("--ks", default="1,3,5")
     retrieval_eval.add_argument("--dense-index", default=None)
     retrieval_eval.add_argument(
@@ -701,6 +741,28 @@ def command_diagnose_retrieval(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_freeze_baseline(args: argparse.Namespace) -> int:
+    train = load_qa(args.train)
+    public = load_qa(args.public) if args.public else None
+    manifest = make_baseline_manifest(
+        train,
+        args.train,
+        public=public,
+        public_path=args.public,
+        seed=args.seed,
+    )
+    write_locked_manifest(args.output, manifest)
+    summary = {
+        "output": str(Path(args.output).resolve()),
+        "manifest_sha256": file_sha256(args.output),
+        "validation_100": len(manifest["splits"]["validation_100"]),
+        "validation_300": len(manifest["splits"]["validation_300"]),
+        "regression": len(manifest["regression_ids"]),
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_validate(args: argparse.Namespace) -> int:
     if args.limit <= 0:
         raise ValueError("limit phải lớn hơn 0")
@@ -712,15 +774,42 @@ def command_validate(args: argparse.Namespace) -> int:
         raise ValueError(f"Mode không hợp lệ: {sorted(invalid)}")
 
     data = load_qa(args.train)
-    sample_ids = list(data)
-    rng = random.Random(args.seed)
-    rng.shuffle(sample_ids)
-    sample_ids = sample_ids[: args.limit]
+    manifest: dict[str, object] | None = None
+    if args.split_manifest:
+        sample_ids, manifest = load_locked_split(
+            args.split_manifest,
+            args.split_name,
+            data,
+            args.train,
+        )
+        split_source = "locked_manifest"
+    else:
+        sample_ids = list(data)
+        rng = random.Random(args.seed)
+        rng.shuffle(sample_ids)
+        sample_ids = sample_ids[: args.limit]
+        split_source = "legacy_seeded_shuffle"
+
+    regression_data: dict[str, dict[str, object]] = {}
+    if args.regression_input:
+        if manifest is None:
+            raise ValueError("--regression-input yêu cầu --split-manifest")
+        public = load_qa(args.regression_input)
+        regression_data = load_regression_samples(
+            manifest,
+            public,
+            args.regression_input,
+        )
 
     report: dict[str, object] = {
         "config": {
             "samples": len(sample_ids),
-            "seed": args.seed,
+            "seed": manifest.get("seed") if manifest else args.seed,
+            "split_source": split_source,
+            "split_name": args.split_name if manifest else None,
+            "split_manifest": str(Path(args.split_manifest).resolve()) if args.split_manifest else None,
+            "split_manifest_sha256": file_sha256(args.split_manifest) if args.split_manifest else None,
+            "sample_ids": sample_ids,
             "top_k": args.top_k,
             "max_answer_words": args.max_answer_words,
             "knn_threshold": args.knn_threshold,
@@ -728,14 +817,33 @@ def command_validate(args: argparse.Namespace) -> int:
             "generator_model": args.generator_model,
         },
         "results": {},
+        "regression": {},
     }
     need_generator = any(m in ("rag", "hybrid_rag") for m in modes)
+    if args.split_manifest and need_generator:
+        if not args.dense_index:
+            raise ValueError(
+                "Locked RAG baseline yêu cầu --dense-index hiện có; không được chạy BM25-only"
+            )
+        if args.allow_retrieval_fallback:
+            raise ValueError(
+                "Locked RAG baseline không cho phép --allow-retrieval-fallback vì sẽ đổi cấu hình retrieval"
+            )
     with SearchIndex(args.db) as index:
         pipeline = _pipeline(args, index, need_generator=need_generator)
+        if args.split_manifest and need_generator and pipeline.dense_index is None:
+            raise RuntimeError("Dense index không active trong locked RAG baseline")
+        report["config"]["bm25_index"] = index.metadata()  # type: ignore[index]
+        report["config"]["dense_index"] = (  # type: ignore[index]
+            dict(pipeline.dense_index.manifest)
+            if pipeline.dense_index is not None
+            else None
+        )
         for mode in modes:
             predictions: list[str] = []
             references: list[str] = []
             routes: dict[str, int] = {}
+            items: list[dict[str, object]] = []
             for number, sample_id in enumerate(sample_ids, start=1):
                 item = data[sample_id]
                 result = pipeline.predict_one(
@@ -744,6 +852,39 @@ def command_validate(args: argparse.Namespace) -> int:
                 predictions.append(result.answer)
                 references.append(str(item.get("answer") or ""))
                 routes[result.route] = routes.get(result.route, 0) + 1
+                reference = str(item.get("answer") or "")
+                answer_metrics = score_answer(result.answer, reference)
+                if getattr(args, "official_metrics", False):
+                    answer_metrics.update(official_scores(result.answer, reference))
+                audit = prediction_audit_record(sample_id, result)
+                retrieval = score_retrieval_trace(
+                    index,
+                    reference,
+                    audit.get("retrieval_trace", {}),
+                )
+                items.append(
+                    {
+                        "id": sample_id,
+                        "question": item["question"],
+                        "prediction": result.answer,
+                        "reference": reference,
+                        "route": result.route,
+                        "length": {
+                            "prediction_words": answer_metrics["prediction_words"],
+                            "reference_words": answer_metrics["reference_words"],
+                            "length_ratio": answer_metrics["length_ratio"],
+                            "context_words": audit["context_words"],
+                            "generated_tokens": audit["generated_tokens"],
+                        },
+                        "metrics": answer_metrics,
+                        "retrieval": retrieval,
+                        "audit": {
+                            key: value
+                            for key, value in audit.items()
+                            if key != "retrieval_trace"
+                        },
+                    }
+                )
                 if number % 100 == 0:
                     print(
                         f"[validate:{mode}] {number:,}/{len(sample_ids):,}",
@@ -754,13 +895,77 @@ def command_validate(args: argparse.Namespace) -> int:
             if getattr(args, "official_metrics", False):
                 scores.update(aggregate_official_scores(predictions, references))
             scores["routes"] = routes
+            scores["retrieval"] = aggregate_retrieval_items(items)
+            scores["items"] = items
             report["results"][mode] = scores  # type: ignore[index]
+
+            if regression_data:
+                regression_items: list[dict[str, object]] = []
+                regression_routes: dict[str, int] = {}
+                for sample_id, item in regression_data.items():
+                    result = pipeline.predict_one(item["question"], mode=mode)
+                    regression_routes[result.route] = regression_routes.get(result.route, 0) + 1
+                    audit = prediction_audit_record(sample_id, result)
+                    regression_items.append(
+                        {
+                            "id": sample_id,
+                            "question": item["question"],
+                            "prediction": result.answer,
+                            "route": result.route,
+                            "length": {
+                                "prediction_words": audit["answer_words"],
+                                "reference_words": None,
+                                "length_ratio": None,
+                                "context_words": audit["context_words"],
+                                "generated_tokens": audit["generated_tokens"],
+                            },
+                            "metrics": {
+                                "competition_meteor": None,
+                                "competition_rougeL": None,
+                                "reason": "public-official.json không có reference answer",
+                            },
+                            "retrieval": {
+                                "pseudo_gold_available": False,
+                                "pseudo_gold": [],
+                                "stages": {},
+                                "trace": audit.get("retrieval_trace", {}),
+                            },
+                            "audit": {
+                                key: value
+                                for key, value in audit.items()
+                                if key != "retrieval_trace"
+                            },
+                        }
+                    )
+                report["regression"][mode] = {  # type: ignore[index]
+                    "samples": len(regression_items),
+                    "routes": regression_routes,
+                    "items": regression_items,
+                }
 
     target = Path(args.output)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w", encoding="utf-8") as handle:
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=2)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    temporary.replace(target)
+    console_report = {
+        "config": {
+            key: value
+            for key, value in report["config"].items()  # type: ignore[union-attr]
+            if key != "sample_ids"
+        },
+        "results": {
+            mode: {key: value for key, value in values.items() if key != "items"}
+            for mode, values in report["results"].items()  # type: ignore[union-attr]
+        },
+        "regression": {
+            mode: {key: value for key, value in values.items() if key != "items"}
+            for mode, values in report["regression"].items()  # type: ignore[union-attr]
+        },
+        "output": str(target.resolve()),
+    }
+    print(json.dumps(console_report, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -768,6 +973,15 @@ def command_evaluate_retrieval(args: argparse.Namespace) -> int:
     from .retrieval_eval import evaluate_retrieval
 
     data = load_qa(args.train)
+    split_manifest = None
+    if args.split_manifest:
+        sample_ids, split_manifest = load_locked_split(
+            args.split_manifest,
+            args.split_name,
+            data,
+            args.train,
+        )
+        data = {sample_id: data[sample_id] for sample_id in sample_ids}
     raw_ks = [value.strip() for value in str(args.ks).split(",") if value.strip()]
     if not raw_ks:
         raise ValueError("--ks không được rỗng, ví dụ: 1,3,5")
@@ -831,7 +1045,7 @@ def command_evaluate_retrieval(args: argparse.Namespace) -> int:
             dense_index=dense_index,
             embedding_model=embedding_model,
             reranker=reranker,
-            limit=args.limit,
+            limit=len(data) if split_manifest else args.limit,
             seed=args.seed,
             ks=ks,
             bm25_top_k=args.bm25_top_k,
@@ -845,6 +1059,18 @@ def command_evaluate_retrieval(args: argparse.Namespace) -> int:
             gold_min_score=args.gold_min_score,
             gold_relative_score=args.gold_relative_score,
             gold_min_answer_tokens=args.gold_min_answer_tokens,
+            diagnostic_samples=len(data) if split_manifest else 5,
+        )
+
+    if split_manifest:
+        report["config"].update(
+            {
+                "split_source": "locked_manifest",
+                "split_name": args.split_name,
+                "split_manifest": str(Path(args.split_manifest).resolve()),
+                "split_manifest_sha256": file_sha256(args.split_manifest),
+                "sample_ids": list(data),
+            }
         )
 
     target = Path(args.output)
@@ -920,6 +1146,7 @@ def main(argv: list[str] | None = None) -> int:
         "build-dense-index": command_build_dense_index,
         "predict": command_predict,
         "diagnose-retrieval": command_diagnose_retrieval,
+        "freeze-baseline": command_freeze_baseline,
         "validate": command_validate,
         "evaluate-retrieval": command_evaluate_retrieval,
         "inspect": command_inspect,

@@ -21,6 +21,7 @@ from legalqa_baseline.cli import (
     main,
     make_parser,
 )
+from legalqa_baseline.pipeline import Prediction
 
 
 class CliTests(unittest.TestCase):
@@ -277,6 +278,81 @@ class CliTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             command_validate(zero_limit_args)
+
+    def test_locked_rag_validation_requires_dense_without_fallback(self) -> None:
+        parser = make_parser()
+        args = parser.parse_args(
+            [
+                "validate",
+                "--train", "train.json",
+                "--db", "db.sqlite",
+                "--output", "out.json",
+                "--modes", "rag",
+                "--split-manifest", "lock.json",
+            ]
+        )
+        fake_manifest = {"seed": 2026}
+        with patch("legalqa_baseline.cli.load_qa", return_value={"1": {"question": "q", "answer": "a"}}), \
+             patch("legalqa_baseline.cli.load_locked_split", return_value=(["1"], fake_manifest)), \
+             patch("legalqa_baseline.cli.file_sha256", return_value="hash"):
+            with self.assertRaises(ValueError):
+                command_validate(args)
+
+        args.dense_index = "dense"
+        args.allow_retrieval_fallback = True
+        with patch("legalqa_baseline.cli.load_qa", return_value={"1": {"question": "q", "answer": "a"}}), \
+             patch("legalqa_baseline.cli.load_locked_split", return_value=(["1"], fake_manifest)), \
+             patch("legalqa_baseline.cli.file_sha256", return_value="hash"):
+            with self.assertRaises(ValueError):
+                command_validate(args)
+
+    def test_locked_validation_writes_per_question_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "report.json"
+            args = make_parser().parse_args(
+                [
+                    "validate",
+                    "--train", "train.json",
+                    "--db", "db.sqlite",
+                    "--output", str(output),
+                    "--modes", "rag",
+                    "--split-manifest", "lock.json",
+                    "--dense-index", "dense",
+                ]
+            )
+            data = {"1": {"question": "câu hỏi", "answer": "câu trả lời"}}
+            manifest = {"seed": 2026}
+            result = Prediction(
+                answer="câu trả lời",
+                route="generated_512",
+                confidence=1.0,
+                evidence={"context_words": 10, "generated_tokens": 3, "retrieval_trace": {}},
+            )
+            index = MagicMock()
+            index.metadata.return_value = {"corpus_sha256": "corpus"}
+            search_context = MagicMock()
+            search_context.__enter__.return_value = index
+            search_context.__exit__.return_value = False
+            pipeline = MagicMock()
+            pipeline.predict_one.return_value = result
+            pipeline.dense_index.manifest = {"schema_version": 5}
+
+            with patch("legalqa_baseline.cli.load_qa", return_value=data), \
+                 patch("legalqa_baseline.cli.load_locked_split", return_value=(["1"], manifest)), \
+                 patch("legalqa_baseline.cli.file_sha256", return_value="hash"), \
+                 patch("legalqa_baseline.cli.SearchIndex", return_value=search_context), \
+                 patch("legalqa_baseline.cli._pipeline", return_value=pipeline):
+                self.assertEqual(command_validate(args), 0)
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            item = payload["results"]["rag"]["items"][0]
+            self.assertEqual(item["id"], "1")
+            self.assertEqual(item["route"], "generated_512")
+            self.assertIn("meteor_exact_approx", item["metrics"])
+            self.assertIn("rougeL", item["metrics"])
+            self.assertEqual(item["length"]["prediction_words"], 3)
+            self.assertIn("retrieval", item)
 
     def test_evaluate_retrieval_rejects_invalid_numeric_parameters(self) -> None:
         parser = make_parser()
