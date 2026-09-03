@@ -30,6 +30,12 @@ VALID_MODES = ["extractive", "knn", "hybrid", "rag", "hybrid_rag"]
 def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--top-k", type=int, default=12)
     parser.add_argument("--max-answer-words", type=int, default=520)
+    parser.add_argument(
+        "--max-long-answer-words",
+        type=int,
+        default=640,
+        help="Giới hạn số từ cho đáp án extractive dài",
+    )
     parser.add_argument("--knn-threshold", type=float, default=0.72)
     parser.add_argument("--context-top-k", type=int, default=3, help="Số chunk luật đưa vào ngữ cảnh LLM")
     parser.add_argument("--bm25-top-k", type=int, default=50, help="Số candidate truy xuất bằng BM25")
@@ -309,6 +315,7 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         "rerank_top_k": getattr(args, "rerank_top_k", 3),
         "dense_query_max_length": getattr(args, "dense_query_max_length", 256),
         "reranker_max_length": getattr(args, "reranker_max_length", 1024),
+        "max_long_answer_words": getattr(args, "max_long_answer_words", 640),
     }
     invalid = {name: value for name, value in positive_values.items() if value <= 0}
     if invalid:
@@ -426,7 +433,7 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         reranker_max_length=getattr(args, "reranker_max_length", 1024),
         allow_retrieval_fallback=allow_fallback,
         enable_long_answer_extractive=getattr(args, "enable_long_answer_extractive", True),
-        max_long_answer_words=getattr(args, "max_long_answer_words", 800),
+        max_long_answer_words=getattr(args, "max_long_answer_words", 640),
         min_llm_answer_tokens=getattr(args, "min_llm_answer_tokens", 8),
     )
 

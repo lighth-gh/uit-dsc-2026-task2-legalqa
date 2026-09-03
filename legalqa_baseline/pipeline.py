@@ -15,17 +15,18 @@ from .text import (
     LONG_ANSWER_PATTERNS,
     STOPWORDS,
     best_excerpt,
-    build_extractive_answer,
     build_focused_extractive_answer,
     clean_answer,
     expand_retrieval_query,
     is_refusal_answer,
+    is_heading_only_answer,
     is_long_form_question,
     legal_retrieval_signal_matches,
     possibly_cut,
     query_terms,
     retrieval_priority_phrases,
     retrieval_query_aliases,
+    select_relevant_neighbor_chunks,
     tokenize,
 )
 
@@ -677,7 +678,7 @@ class LegalQABaseline:
         reranker_max_length: int = 1024,
         allow_retrieval_fallback: bool = False,
         enable_long_answer_extractive: bool = True,
-        max_long_answer_words: int = 800,
+        max_long_answer_words: int = 640,
         min_llm_answer_tokens: int = 8,
     ):
         positive = {
@@ -692,6 +693,7 @@ class LegalQABaseline:
             "rerank_top_k": rerank_top_k,
             "dense_query_max_length": dense_query_max_length,
             "reranker_max_length": reranker_max_length,
+            "max_long_answer_words": max_long_answer_words,
             "min_llm_answer_tokens": min_llm_answer_tokens,
         }
         invalid = {name: value for name, value in positive.items() if value <= 0}
@@ -715,6 +717,7 @@ class LegalQABaseline:
         self.top_k = top_k
         self.max_answer_words = max_answer_words
         self.enable_long_answer_extractive = bool(enable_long_answer_extractive)
+        self.max_long_answer_words = max_long_answer_words
         self.knn_threshold = knn_threshold
         self.generator = generator
         self.context_top_k = context_top_k
@@ -732,8 +735,13 @@ class LegalQABaseline:
         self.allow_retrieval_fallback = allow_retrieval_fallback
         self.min_llm_answer_tokens = min_llm_answer_tokens
 
-    def _adjacent_chunks(self, best: dict[str, Any]) -> list[dict[str, Any]]:
-        """Return previous/current/next chunks from the best chunk's document."""
+    def _adjacent_chunks(
+        self,
+        best: dict[str, Any],
+        *,
+        question: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return only relevant/continuous local chunks around the best hit."""
         context_id = str(best.get("context_id") or "").strip()
         chunk_no = int(best.get("chunk_no", 0))
         adjacent_nos = [
@@ -761,10 +769,17 @@ class LegalQABaseline:
                 and str(chunk.get("text") or "").strip()
             ):
                 by_key[(chunk_context_id, candidate_no)] = dict(chunk)
-        return sorted(by_key.values(), key=lambda chunk: int(chunk["chunk_no"]))
+        candidates = sorted(by_key.values(), key=lambda chunk: int(chunk["chunk_no"]))
+        if not question:
+            return candidates
+        return select_relevant_neighbor_chunks(
+            question,
+            candidates,
+            best_chunk_no=chunk_no,
+        )
 
-    @staticmethod
     def _merge_raw_chunks(
+        self,
         chunks: list[dict[str, Any]],
         *,
         question: str | None = None,
@@ -776,8 +791,14 @@ class LegalQABaseline:
                 question,
                 chunks,
                 best_chunk_no=int(best.get("chunk_no", 0)),
+                max_words=self.max_long_answer_words,
             )
-        return build_extractive_answer(chunks)
+        return build_focused_extractive_answer(
+            "",
+            chunks,
+            best_chunk_no=int(chunks[0].get("chunk_no", 0)) if chunks else 0,
+            max_words=self.max_long_answer_words,
+        )
 
     def _invalid_generation_reason(self, answer: Any) -> str | None:
         """Classify unusable LLM output that must fall back to raw evidence."""
@@ -822,7 +843,7 @@ class LegalQABaseline:
         )
         best = ranked[0]
         if self.enable_long_answer_extractive and is_long_form_question(question):
-            adjacent_chunks = self._adjacent_chunks(best)
+            adjacent_chunks = self._adjacent_chunks(best, question=question)
             if adjacent_chunks:
                 answer = self._merge_raw_chunks(
                     adjacent_chunks,
@@ -1099,7 +1120,7 @@ class LegalQABaseline:
             )
 
         best = top_chunks[0]
-        adjacent_chunks = self._adjacent_chunks(best)
+        adjacent_chunks = self._adjacent_chunks(best, question=question)
 
         if self.enable_long_answer_extractive and is_long_form_question(question):
             if adjacent_chunks:
@@ -1108,7 +1129,16 @@ class LegalQABaseline:
                     question=question,
                     best=best,
                 )
-                if merged_answer:
+                raw_reranker_score = _audit_float(best.get("rerank_score"))
+                direct_extractive_allowed = (
+                    raw_reranker_score is not None and raw_reranker_score >= 2.0
+                )
+                extractive_is_usable = bool(
+                    merged_answer
+                    and not is_heading_only_answer(merged_answer)
+                    and not possibly_cut(merged_answer)
+                )
+                if direct_extractive_allowed and extractive_is_usable:
                     evidence = {
                         "num_contexts": len(top_chunks),
                         "reranker_candidates": min(

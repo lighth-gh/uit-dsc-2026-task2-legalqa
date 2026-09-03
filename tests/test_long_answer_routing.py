@@ -12,6 +12,7 @@ from legalqa_baseline.text import (
     build_focused_extractive_answer,
     clean_answer,
     deduplicate_overlaps,
+    is_heading_only_answer,
     is_long_answer_question,
     is_long_form_question,
     merge_adjacent_chunks,
@@ -29,6 +30,9 @@ class DummyGenerator:
 
 
 class DummyReranker:
+    def __init__(self, score: float = 3.0) -> None:
+        self.score = score
+
     def rerank(
         self,
         question: str,
@@ -36,7 +40,12 @@ class DummyReranker:
         top_k: int = 3,
         max_length: int = 2304,
     ) -> list[dict]:
-        return candidates[:top_k]
+        output = []
+        for candidate in candidates[:top_k]:
+            item = dict(candidate)
+            item["rerank_score"] = self.score
+            output.append(item)
+        return output
 
 
 class TestLongAnswerPatterns(unittest.TestCase):
@@ -146,21 +155,25 @@ class TestMergeAdjacentChunks(unittest.TestCase):
             [("doc", 5), ("doc", 4), ("doc", 6), ("other", 2)],
         )
 
-    def test_raw_chunk_merge_has_no_800_word_limit(self) -> None:
+    def test_raw_chunk_merge_respects_configured_word_limit(self) -> None:
         chunks = [
             {
                 "context_id": "doc",
                 "chunk_no": number,
-                "text": " ".join(f"chunk{number}_word{word}" for word in range(400)),
+                "text": " ".join(
+                    f"chunk{number}_word{word}{'.' if word % 20 == 19 else ''}"
+                    for word in range(400)
+                ),
             }
             for number in range(3)
         ]
+        pipeline = object.__new__(LegalQABaseline)
+        pipeline.max_long_answer_words = 640
+        merged = pipeline._merge_raw_chunks(chunks)
 
-        merged = LegalQABaseline._merge_raw_chunks(chunks)
-
-        self.assertEqual(len(merged.split()), 1200)
+        self.assertLessEqual(len(merged.split()), 640)
         self.assertIn("chunk0_word0", merged)
-        self.assertIn("chunk2_word399", merged)
+        self.assertFalse(possibly_cut(merged))
 
     def test_merge_ordering_and_dedup(self) -> None:
         chunks = [
@@ -241,7 +254,7 @@ class TestMergeAdjacentChunks(unittest.TestCase):
         self.assertNotIn("THÔNG BÁO THAY ĐỔI NHÂN SỰ", answer)
         self.assertIn("Họ và tên người đại diện mới", answer)
 
-    def test_focused_raw_fallback_uses_best_previous_next_order(self) -> None:
+    def test_focused_raw_fallback_does_not_blindly_join_both_neighbours(self) -> None:
         chunks = [
             {"chunk_no": 4, "text": "Nội dung chunk trước."},
             {"chunk_no": 5, "text": "Nội dung chunk tốt nhất."},
@@ -253,8 +266,9 @@ class TestMergeAdjacentChunks(unittest.TestCase):
             best_chunk_no=5,
         )
 
-        self.assertLess(answer.index("chunk tốt nhất"), answer.index("chunk trước"))
-        self.assertLess(answer.index("chunk trước"), answer.index("chunk sau"))
+        self.assertIn("chunk tốt nhất", answer)
+        self.assertNotIn("chunk trước", answer)
+        self.assertNotIn("chunk sau", answer)
 
     def test_focused_raw_answer_can_start_at_numbered_article(self) -> None:
         chunks = [
@@ -273,6 +287,112 @@ class TestMergeAdjacentChunks(unittest.TestCase):
 
         self.assertTrue(answer.startswith("Điều 12"))
         self.assertNotIn("Điều 11", answer)
+
+    def test_id_31969_heading_only_expands_to_refund_conditions(self) -> None:
+        chunks = [
+            {"chunk_no": 88, "text": "THU NHẬP TÍNH THUẾ"},
+            {
+                "chunk_no": 89,
+                "text": (
+                    "Điều 28. Hoàn thuế. 1. Việc hoàn thuế thu nhập cá nhân áp dụng "
+                    "đối với cá nhân đã đăng ký và có mã số thuế tại thời điểm nộp hồ sơ. "
+                    "2. Cá nhân được hoàn số thuế đã nộp thừa theo đúng quy định pháp luật."
+                ),
+            },
+        ]
+        answer = build_focused_extractive_answer(
+            "Điều kiện hoàn thuế thu nhập cá nhân đối với người lao động chưa đến mức phải nộp thuế là gì?",
+            chunks,
+            best_chunk_no=88,
+        )
+        self.assertFalse(is_heading_only_answer(answer))
+        self.assertIn("mã số thuế", answer)
+
+    def test_id_123257_heading_only_expands_to_classification_conditions(self) -> None:
+        chunks = [
+            {"chunk_no": 16, "text": "XẾP LOẠI"},
+            {
+                "chunk_no": 17,
+                "text": (
+                    "Điều 13. Tiêu chuẩn xếp loại học kỳ và cả năm học. "
+                    "Loại trung bình nếu có đủ các tiêu chuẩn sau đây: điểm trung bình "
+                    "các môn học từ 5,0 trở lên và không có môn học nào dưới mức tối thiểu. "
+                    "Hạnh kiểm phải được xếp từ loại trung bình trở lên."
+                ),
+            },
+        ]
+        answer = build_focused_extractive_answer(
+            "Điều kiện để học sinh THPT được xếp loại trung bình",
+            chunks,
+            best_chunk_no=16,
+        )
+        self.assertFalse(is_heading_only_answer(answer))
+        self.assertIn("Loại trung bình", answer)
+
+    def test_id_35853_stops_before_unrelated_export_section(self) -> None:
+        chunks = [
+            {
+                "chunk_no": 44,
+                "text": (
+                    "Điều 42. Điều kiện buôn bán phân bón. 1. Tổ chức, cá nhân buôn bán "
+                    "phân bón phải có cửa hàng, địa điểm giao dịch hợp pháp. 2. Người trực "
+                    "tiếp buôn bán phải được tập huấn chuyên môn về phân bón. "
+                    "Mục 3. XUẤT KHẨU VÀ NHẬP KHẨU PHÂN BÓN."
+                ),
+            },
+            {"chunk_no": 45, "text": "Điều 43. Xuất khẩu phân bón thực hiện theo pháp luật ngoại thương."},
+        ]
+        answer = build_focused_extractive_answer(
+            "Điều kiện buôn bán phân bón",
+            chunks,
+            best_chunk_no=44,
+        )
+        self.assertIn("địa điểm giao dịch hợp pháp", answer)
+        self.assertNotIn("XUẤT KHẨU", answer)
+        self.assertNotIn("Điều 43", answer)
+
+    def test_id_129215_starts_at_method_heading_not_mid_procedure(self) -> None:
+        chunks = [
+            {
+                "chunk_no": 8,
+                "text": (
+                    "Phần cuối của quy trình nuôi cấy tế bào không liên quan. "
+                    "E.1. Phương pháp ELISA chẩn đoán hội chứng rối loạn sinh sản và "
+                    "hô hấp ở lợn. Bước 1. Chuẩn bị mẫu xét nghiệm và phiến phản ứng. "
+                    "Bước 2. Pha loãng huyết thanh theo hướng dẫn kỹ thuật."
+                ),
+            },
+            {
+                "chunk_no": 9,
+                "text": (
+                    "Bước 3. Ủ phiến phản ứng trong thời gian quy định. "
+                    "Bước 4. Rửa phiến và bổ sung cộng hợp. Bước 5. Đọc kết quả xét nghiệm."
+                ),
+            },
+        ]
+        answer = build_focused_extractive_answer(
+            "Phương pháp ELISA dùng để chẩn đoán hội chứng rối loạn sinh sản và hô hấp ở lợn có bao nhiêu bước thực hiện?",
+            chunks,
+            best_chunk_no=9,
+        )
+        self.assertTrue(answer.startswith("E.1. Phương pháp ELISA"))
+        self.assertNotIn("nuôi cấy tế bào", answer)
+        self.assertIn("Bước 1", answer)
+
+    def test_long_extractive_is_bounded_and_ends_at_sentence(self) -> None:
+        text = " ".join(
+            f"Từ thứ {number} thuộc nội dung điều kiện này{'.' if number % 18 == 17 else ''}"
+            for number in range(260)
+        )
+        answer = build_focused_extractive_answer(
+            "Các điều kiện này bao gồm nội dung gì?",
+            [{"chunk_no": 1, "text": text}],
+            best_chunk_no=1,
+            max_words=620,
+        )
+        self.assertLessEqual(len(answer.split()), 620)
+        self.assertTrue(answer.endswith("."))
+        self.assertFalse(possibly_cut(answer))
 
     def test_clean_answer_only_removes_prefix(self) -> None:
         answer = "Dựa trên ngữ cảnh được cung cấp: Điều 1. Nội dung đầy đủ."
@@ -434,6 +554,23 @@ class TestPipelineLongAnswerRouting(unittest.TestCase):
             )
             question = "Hãy liệt kê hồ sơ gồm những gì theo mẫu số 01?"
             pred = pipeline.predict_one(question, mode="rag")
+            self.assertEqual(pred.route, "generated_512")
+            self.assertEqual(generator.called_count, 1)
+
+    def test_raw_reranker_below_two_uses_generator(self) -> None:
+        generator = DummyGenerator()
+        reranker = DummyReranker(score=1.99)
+        with SearchIndex(self.db_path) as index:
+            pipeline = LegalQABaseline(
+                index=index,
+                generator=generator,
+                reranker=reranker,
+                enable_long_answer_extractive=True,
+            )
+            pred = pipeline.predict_one(
+                "Hãy cho biết Mẫu số 01 và hồ sơ gồm những gì?",
+                mode="rag",
+            )
             self.assertEqual(pred.route, "generated_512")
             self.assertEqual(generator.called_count, 1)
 

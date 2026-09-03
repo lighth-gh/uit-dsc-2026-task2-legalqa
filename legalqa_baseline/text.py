@@ -843,7 +843,7 @@ def _matching_legal_heading_start(question: str, text: str) -> int | None:
         "mẫu" in question_tokens
         or "biểu" in question_tokens
         or "phụ" in question_tokens and "lục" in question_tokens
-        or "điều" in question_tokens
+        or bool(_ARTICLE_REFERENCE_RE.search(question))
     )
     if not requests_named_heading:
         return None
@@ -904,21 +904,56 @@ def _matching_legal_heading_start(question: str, text: str) -> int | None:
     return best[1] if best is not None else None
 
 
-def _overlap_size(left_words: list[str], right_words: list[str]) -> int:
-    maximum = min(len(left_words), len(right_words))
-    left = [word.casefold() for word in left_words]
-    right = [word.casefold() for word in right_words]
-    for size in range(maximum, 2, -1):
-        if left[-size:] == right[:size]:
-            return size
-    return 0
+_MAJOR_SECTION_RE = re.compile(
+    r"(?i)(?<!\w)(?:chương\s+(?:[ivxlcdm]+|\d+)|mục\s+\d+|"
+    r"điều\s+\d+[a-zđ]*|phụ\s+lục(?:\s+[ivxlcdm\d]+)?|"
+    r"mẫu\s+số\s+[\w./-]+|[a-zđ]\s*[.]\s*\d+(?:[.]\d+)*)"
+)
+_SENTENCE_END_RE = re.compile(r"[.!?…](?=(?:[\"'”’\)\]]*)?(?:\s|$))")
 
 
-def _build_best_first_answer(
+def _chunk_query_relevance(question: str, text: str) -> float:
+    """Score local chunks by query coverage; used only to choose neighbours."""
+    question_tokens = {
+        token
+        for token in query_terms(question, max_terms=48)
+        if token not in STOPWORDS and (len(token) >= 2 or token.isdigit())
+    }
+    if not question_tokens:
+        return 0.0
+    text_tokens = set(tokenize(text))
+    coverage = len(question_tokens.intersection(text_tokens)) / len(question_tokens)
+    signals = legal_retrieval_signal_matches(question, text)
+    phrase_tokens = int(signals.get("long_phrase_tokens") or 0)
+    focus_phrases = signals.get("focus_phrases")
+    exact_focus = bool(isinstance(focus_phrases, list) and focus_phrases)
+    return coverage + min(0.35, 0.05 * phrase_tokens) + (0.18 if exact_focus else 0.0)
+
+
+def _continues_numbered_procedure(left: str, right: str) -> bool:
+    """Recognise a procedure/list that crosses a chunk boundary."""
+    left_steps = [int(value) for value in re.findall(r"(?i)\bbước\s+(\d+)\b", left)]
+    right_steps = [int(value) for value in re.findall(r"(?i)\bbước\s+(\d+)\b", right)]
+    if left_steps and right_steps and min(right_steps) <= max(left_steps) + 2:
+        return True
+    if (
+        re.search(r"(?i)\b(?:mẫu|biểu mẫu)\b", left)
+        and re.search(r"(?i)(?:^|[.;]\s+)[^.;:]{2,50}:\s*(?:[.…]|$)", right.strip())
+    ):
+        return True
+    return bool(
+        re.search(r"(?:^|[.;:]\s+)(?:1|a)[.)]\s+", left, flags=re.IGNORECASE)
+        and re.search(r"(?:^|[.;:]\s+)(?:2|b)[.)]\s+", right, flags=re.IGNORECASE)
+    )
+
+
+def select_relevant_neighbor_chunks(
+    question: str,
     chunks: list[dict[str, Any]],
+    *,
     best_chunk_no: int,
-) -> str:
-    """Fallback order: best chunk, previous chunk, then next chunk."""
+) -> list[dict[str, Any]]:
+    """Keep only query-relevant or structurally continuous local chunks."""
     by_number = {
         int(chunk.get("chunk_no", chunk.get("chunk_index", 0))): chunk
         for chunk in chunks
@@ -926,28 +961,118 @@ def _build_best_first_answer(
     }
     best = by_number.get(best_chunk_no)
     if best is None:
-        return build_extractive_answer(chunks)
+        return sorted(by_number.values(), key=lambda chunk: int(chunk.get("chunk_no", 0)))
 
+    scores = {
+        number: _chunk_query_relevance(question, str(chunk.get("text") or ""))
+        for number, chunk in by_number.items()
+    }
+    best_score = scores.get(best_chunk_no, 0.0)
     best_text = str(best.get("text") or "").strip()
-    best_words = best_text.split()
-    parts = [best_text]
+    selected_numbers = {best_chunk_no}
+    # A neighbour must retain most of the query coverage. The structural
+    # exception is needed for numbered lists/procedures split across windows.
+    threshold = max(0.28, 0.60 * best_score)
+    for number in (best_chunk_no - 1, best_chunk_no + 1):
+        neighbour = by_number.get(number)
+        if neighbour is None:
+            continue
+        neighbour_text = str(neighbour.get("text") or "").strip()
+        left, right = (
+            (neighbour_text, best_text)
+            if number < best_chunk_no
+            else (best_text, neighbour_text)
+        )
+        if scores.get(number, 0.0) >= threshold or _continues_numbered_procedure(left, right):
+            selected_numbers.add(number)
 
-    previous = by_number.get(best_chunk_no - 1)
-    if previous is not None:
-        previous_words = str(previous.get("text") or "").strip().split()
-        overlap = _overlap_size(previous_words, best_words)
-        previous_only = previous_words[:-overlap] if overlap else previous_words
-        if previous_only:
-            parts.append(" ".join(previous_only))
+    # Allow one more supplied window only when it is a clear continuation of
+    # a form/procedure already selected. This is deliberately not a generic
+    # previous+current+next expansion.
+    for number in sorted(by_number):
+        if number in selected_numbers or number - 1 not in selected_numbers:
+            continue
+        left = str(by_number[number - 1].get("text") or "")
+        right = str(by_number[number].get("text") or "")
+        if _continues_numbered_procedure(left, right):
+            selected_numbers.add(number)
 
-    following = by_number.get(best_chunk_no + 1)
-    if following is not None:
-        following_words = str(following.get("text") or "").strip().split()
-        overlap = _overlap_size(best_words, following_words)
-        following_only = following_words[overlap:]
-        if following_only:
-            parts.append(" ".join(following_only))
-    return "\n\n".join(parts).strip()
+    return [by_number[number] for number in sorted(selected_numbers)]
+
+
+def is_heading_only_answer(text: str, min_words: int = 20) -> bool:
+    """Return True for empty/very short extracts and title-only fragments."""
+    normalized = " ".join(str(text or "").split()).strip()
+    words = tokenize(normalized)
+    if len(words) < min_words:
+        return True
+    sentence_count = len(_SENTENCE_END_RE.findall(normalized))
+    letters = [char for char in normalized if char.isalpha()]
+    mostly_uppercase = bool(letters) and sum(char.isupper() for char in letters) >= 0.8 * len(letters)
+    return mostly_uppercase and sentence_count <= 1
+
+
+def _relevant_section_start(question: str, text: str) -> int | None:
+    """Find the section marker nearest the strongest exact query phrase."""
+    token_matches = list(TOKEN_RE.finditer(text))
+    text_tokens = [match.group(0).casefold() for match in token_matches]
+    question_tokens = tokenize(question)
+    best_phrase: tuple[int, int] | None = None
+    for size in range(min(14, len(question_tokens)), 1, -1):
+        for query_start in range(len(question_tokens) - size + 1):
+            phrase = question_tokens[query_start : query_start + size]
+            informative = [token for token in phrase if token not in STOPWORDS]
+            if len(informative) < 2:
+                continue
+            for text_start in range(len(text_tokens) - size + 1):
+                if (
+                    best_phrase is None
+                    and text_tokens[text_start : text_start + size] == phrase
+                ):
+                    best_phrase = (size, token_matches[text_start].start())
+        if best_phrase is not None:
+            break
+    if best_phrase is None:
+        return None
+
+    phrase_start = best_phrase[1]
+    preceding = [match for match in _MAJOR_SECTION_RE.finditer(text, 0, phrase_start + 1)]
+    if preceding and phrase_start - preceding[-1].start() <= 320:
+        return preceding[-1].start()
+    return phrase_start
+
+
+def _stop_at_unrelated_section(question: str, text: str) -> str:
+    """Stop before the next major heading whose title no longer matches the query."""
+    headings = list(_MAJOR_SECTION_RE.finditer(text))
+    if len(headings) < 2:
+        return text.strip()
+    baseline_end = headings[1].start()
+    baseline = _chunk_query_relevance(question, text[headings[0].start():baseline_end])
+    for index, heading in enumerate(headings[1:], start=1):
+        next_start = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        section_preview = text[heading.start(): min(next_start, heading.start() + 360)]
+        score = _chunk_query_relevance(question, section_preview)
+        if score < max(0.24, baseline * 0.55):
+            return text[: heading.start()].rstrip(" \n,;:-")
+    return text.strip()
+
+
+def _truncate_complete_sentence(text: str, max_words: int) -> str:
+    """Respect a hard word budget without returning a sentence fragment."""
+    if max_words <= 0:
+        raise ValueError("max_words phải lớn hơn 0")
+    matches = list(re.finditer(r"\S+", text))
+    within_budget = len(matches) <= max_words
+    prefix = text if within_budget else text[: matches[max_words - 1].end()]
+    if within_budget and text.rstrip().endswith(
+        (".", "!", "?", "…", ")", "]", "}", '"', "”", "’")
+    ):
+        return text.strip()
+    ends = [match.end() for match in _SENTENCE_END_RE.finditer(prefix)]
+    minimum_safe_words = min(20, max_words)
+    safe = [end for end in ends if len(tokenize(prefix[:end])) >= minimum_safe_words]
+    return prefix[: safe[-1]].strip() if safe else ""
 
 
 def build_focused_extractive_answer(
@@ -955,13 +1080,26 @@ def build_focused_extractive_answer(
     chunks: list[dict[str, Any]],
     *,
     best_chunk_no: int,
+    max_words: int = 640,
 ) -> str:
-    """Start raw evidence at a matching legal heading, without a char limit."""
-    chronological = build_extractive_answer(chunks)
+    """Build bounded raw evidence from relevant local chunks and legal sections."""
+    if max_words <= 0:
+        raise ValueError("max_words phải lớn hơn 0")
+    selected = select_relevant_neighbor_chunks(
+        question,
+        chunks,
+        best_chunk_no=best_chunk_no,
+    )
+    chronological = build_extractive_answer(selected)
     heading_start = _matching_legal_heading_start(question, chronological)
-    if heading_start is not None:
-        return chronological[heading_start:].lstrip()
-    return _build_best_first_answer(chunks, best_chunk_no)
+    relevant_start = _relevant_section_start(question, chronological)
+    # A specifically requested Mẫu/Phụ lục/Điều is stronger than an incidental
+    # earlier query phrase (for example a table of contents mentioning a form).
+    answer_start = heading_start if heading_start is not None else relevant_start
+    if answer_start is not None:
+        chronological = chronological[answer_start:].lstrip()
+    chronological = _stop_at_unrelated_section(question, chronological)
+    return _truncate_complete_sentence(chronological, max_words)
 
 
 def merge_adjacent_chunks(

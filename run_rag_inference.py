@@ -188,8 +188,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-long-answer-words",
         type=int,
-        default=800,
-        help="Tham số tương thích cũ; raw/extractive hiện không giới hạn số từ",
+        default=640,
+        help="Giới hạn cứng số từ cho đáp án extractive dài (mặc định: 640)",
     )
     parser.add_argument(
         "--limit",
