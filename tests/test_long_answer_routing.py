@@ -154,6 +154,60 @@ class TestLongAnswerPatterns(unittest.TestCase):
             needs_extended_generation_retry("Hồ sơ này có hợp lệ không?")
         )
 
+    def test_release_smoke_token_limit_questions_are_retry_eligible(self) -> None:
+        questions = {
+            "63093": (
+                "Khi vi phạm pháp luật về đất đai sẽ bị xử phạt hành chính "
+                "bằng các hình thức nào?"
+            ),
+            "55463": (
+                "Thực hiện báo cáo phương tiện phòng cháy chữa cháy như thế nào "
+                "và tại đâu?"
+            ),
+            "67397": (
+                "Những quy định chung về kỹ thuật đối với quá trình xây dựng, "
+                "khai thác và sử dụng công trình tàu điện ngầm là gì?"
+            ),
+            "138443": (
+                "Các biện pháp dự phòng cho nhân viên y tế để tránh tình trạng "
+                "lây nhiễm COVID-19 như thế nào?"
+            ),
+        }
+        for sample_id, question in questions.items():
+            with self.subTest(sample_id=sample_id):
+                self.assertTrue(needs_extended_generation_retry(question))
+
+    def test_validation100_list_and_process_token_limits_are_retry_eligible(self) -> None:
+        questions = {
+            "46443": "Thời gian học tập và chương trình đào tạo hệ đại học được quy định như thế nào?",
+            "130171": "Viên chức Cảng vụ hàng không nữ sẽ có trang phục như thế nào?",
+            "104693": "Trách nhiệm của Hội đồng tư vấn thuế được đề cập ra sao?",
+            "12451": "Lực lượng cảnh sát đường thủy thực hiện tuần tra, kiểm soát như thế nào?",
+            "36675": "Nguyên tắc phân vị trí các loại đất nông nghiệp, phi nông nghiệp?",
+            "45085": "Sản lượng sản xuất và nhập khẩu thuốc lá được giới hạn thế nào?",
+            "62387": "Điều kiện cấp chứng chỉ thiết kế, giám sát công trình giao thông?",
+            "140001": "Cán bộ kiểm tra có nhiệm vụ và quyền hạn như thế nào?",
+            "77119": "Hệ thống định mức xây dựng gồm những định mức nào?",
+            "75715": "Quy trình cưỡng chế được thực hiện theo mấy bước?",
+            "75603": "Một số quy định khác gồm những gì?",
+            "5017": "Hồ sơ được quy định như thế nào?",
+        }
+        for sample_id, question in questions.items():
+            with self.subTest(sample_id=sample_id):
+                self.assertTrue(needs_extended_generation_retry(question))
+
+    def test_scalar_and_yes_no_questions_do_not_request_larger_budget(self) -> None:
+        questions = (
+            "Nếu không ghi nhãn hàng hóa thì bị xử phạt bao nhiêu tiền?",
+            "Mức đóng BHXH tự nguyện được tính ra sao?",
+            "Ai là người có nghĩa vụ nộp thuế tài nguyên?",
+            "Hồ sơ này có hợp lệ không?",
+            "Điều kiện này có được áp dụng hay không?",
+        )
+        for question in questions:
+            with self.subTest(question=question):
+                self.assertFalse(needs_extended_generation_retry(question))
+
 
 class TestMergeAdjacentChunks(unittest.TestCase):
     def test_prompt_context_order_is_best_previous_next_then_other_docs(self) -> None:

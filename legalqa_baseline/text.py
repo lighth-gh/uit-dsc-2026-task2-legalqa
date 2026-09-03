@@ -707,6 +707,23 @@ _EXTENDED_RETRY_PATTERNS: tuple[str, ...] = (
     r"\b(?:nguyên văn|toàn văn)\b",
     r"\bhồ sơ\b[^?]{0,70}\b(?:gồm|cần nộp|những gì|giấy tờ|tài liệu)\b",
     r"\b(?:gồm|cần nộp|giấy tờ|tài liệu)\b[^?]{0,70}\bhồ sơ\b",
+    # Các biến thể danh sách/quy trình thực tế đã chạm trần 512 token trong
+    # release smoke. Retry chỉ được xét sau khi model thực sự hit token limit,
+    # nên có thể nhận diện rộng hơn direct-extractive mà không tăng chi phí
+    # cho câu trả lời ngắn.
+    r"\b(?:các|những)\s+(?:hình thức|biện pháp|quy định|yêu cầu|nội dung|"
+    r"công việc|nhiệm vụ|quyền hạn)\b",
+    r"\b(?:thực hiện|được thực hiện)\b[^?]{0,140}"
+    r"\b(?:như thế nào|ra sao|tại đâu)\b",
+    r"\bđược quy định\b[^?]{0,100}\b(?:như thế nào|ra sao)\b",
+    r"\b(?:điều kiện|nguyên tắc|trách nhiệm|quy trình)\b",
+    r"\bnhiệm vụ\s+và\s+quyền hạn\b",
+    r"\bgồm\s+những\b[^?]{0,100}\b(?:gì|nào)\b",
+    r"\b(?:mấy|bao nhiêu)\s+bước\b",
+    r"\bmột số quy định\b",
+    r"\btrang phục\b[^?]{0,100}\b(?:như thế nào|ra sao|gồm)\b",
+    r"\b[^?]{0,80}\bvà\b[^?]{0,80}\b(?:được\s+)?giới hạn\b[^?]{0,50}"
+    r"\b(?:như thế nào|ra sao|thế nào)\b",
 )
 
 
@@ -746,7 +763,17 @@ def needs_extended_generation_retry(question: str) -> bool:
     if not isinstance(question, str):
         return False
     normalized = unicodedata.normalize("NFC", question.casefold())
-    return any(re.search(pattern, normalized) for pattern in _EXTENDED_RETRY_PATTERNS)
+    # Câu yes/no không trở thành câu dài chỉ vì có từ như "hồ sơ", "điều kiện"
+    # hoặc "thủ tục". Khi model chạm trần ở nhóm này, tăng budget thường chỉ làm
+    # dài thêm một generation hỏng; refusal recovery sẽ xử lý riêng.
+    if re.search(
+        r"\b(?:có|được|phải|bị)\b[^?]{0,140}\b(?:hay\s+)?không\s*[?]?$",
+        normalized,
+    ):
+        return False
+    return is_long_form_question(normalized) or any(
+        re.search(pattern, normalized) for pattern in _EXTENDED_RETRY_PATTERNS
+    )
 
 
 BOILERPLATE_PATTERNS: tuple[str, ...] = (

@@ -182,6 +182,9 @@ def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str,
             evidence.get("initial_hit_token_limit", False)
         ),
         "generation_attempts": int(evidence.get("generation_attempts") or 0),
+        "generation_attempt_seconds": evidence.get("generation_attempt_seconds", []),
+        "initial_generation_seconds": evidence.get("initial_generation_seconds"),
+        "retry_generation_seconds": evidence.get("retry_generation_seconds"),
         "retry_max_new_tokens": evidence.get("retry_max_new_tokens"),
         "recovery_strategy": evidence.get("recovery_strategy"),
         "routing_decision": evidence.get("routing_decision"),
@@ -473,6 +476,73 @@ def _rag_confidence(question: str, result: dict[str, Any]) -> float:
             return 0.0
         return max(0.0, min(1.0, score / 20.0))
     return 0.0
+
+
+def _has_strong_legal_evidence(candidate: dict[str, Any]) -> bool:
+    """Return whether exact legal signals support this reranked candidate."""
+    components = candidate.get("rerank_guardrail_components")
+    components = components if isinstance(components, dict) else {}
+    strong_component = any(
+        (_audit_float(components.get(name)) or 0.0) > 0.0
+        for name in (
+            "exact_form",
+            "exact_article",
+            "exact_document_reference",
+            "exact_document_name",
+            "exact_long_phrase",
+        )
+    )
+    exact_focus = _audit_float(components.get("exact_focus")) or 0.0
+    try:
+        exact_phrase_matches = int(candidate.get("exact_phrase_matches") or 0)
+    except (TypeError, ValueError, OverflowError):
+        exact_phrase_matches = 0
+    matches = candidate.get("legal_signal_matches")
+    try:
+        long_phrase_tokens = (
+            int(matches.get("long_phrase_tokens") or 0)
+            if isinstance(matches, dict)
+            else 0
+        )
+    except (TypeError, ValueError, OverflowError):
+        long_phrase_tokens = 0
+    return bool(
+        exact_phrase_matches > 0
+        or strong_component
+        or exact_focus >= 4.5
+        or long_phrase_tokens >= 4
+    )
+
+
+def _safe_generation_failure_extractive(
+    question: str,
+    candidate: dict[str, Any],
+    answer: str,
+) -> bool:
+    """Allow failure recovery only from strong, directly usable evidence."""
+    raw_score = _audit_float(candidate.get("rerank_score"))
+    if raw_score is None or raw_score < 2.0:
+        return False
+    if (
+        len(tokenize(answer)) < 20
+        or is_heading_only_answer(answer)
+        or possibly_cut(answer)
+    ):
+        return False
+
+    normalized_question = unicodedata.normalize("NFC", str(question).casefold())
+    if re.search(
+        r"\b(?:phân tích|so sánh|đánh giá|giải thích|tổng hợp|suy luận|"
+        r"tại sao|vì sao)\b",
+        normalized_question,
+    ):
+        return False
+    if re.search(
+        r"\b(?:có|được|phải|bị)\b[^?]{0,140}\b(?:hay\s+)?không\s*[?]?$",
+        normalized_question,
+    ):
+        return False
+    return _has_strong_legal_evidence(candidate)
 
 
 def reciprocal_rank_fusion(
@@ -1654,8 +1724,18 @@ class LegalQABaseline:
             for key in ("name", "title", "link")
             if isinstance(chunk.get(key), str) and str(chunk.get(key)).strip()
         ]
+        refusal_anchor = {
+            "best": best,
+            "top_chunks": list(top_chunks),
+            "adjacent_chunks": list(adjacent_chunks),
+            "prompt_chunks": list(prompt_chunks),
+            "joined_context": joined_context,
+            "raw_context_answer": raw_context_answer,
+            "trusted_metadata": list(generation_trusted_metadata),
+        }
         generation_started = time.perf_counter()
         generation_attempts = 0
+        generation_attempt_seconds: list[float] = []
         initial_hit_token_limit = False
         retry_budget: int | None = None
         recovery_strategy: str | None = None
@@ -1668,6 +1748,7 @@ class LegalQABaseline:
         ) -> tuple[str, str | None, dict[str, Any]]:
             nonlocal generation_attempts
             generation_attempts += 1
+            attempt_started = time.perf_counter()
             try:
                 raw_answer = self._call_generator(
                     context=context,
@@ -1678,12 +1759,18 @@ class LegalQABaseline:
                 stats = getattr(self.generator, "last_generation_stats", {})
                 if not isinstance(stats, dict):
                     stats = {}
+                generation_attempt_seconds.append(
+                    round(time.perf_counter() - attempt_started, 4)
+                )
                 return "", "token_limit", {
                     **stats,
                     "generated_tokens": stats.get("generated_tokens", exc.generated_tokens),
                     "max_new_tokens": stats.get("max_new_tokens", exc.max_new_tokens),
                     "hit_token_limit": True,
                 }
+            generation_attempt_seconds.append(
+                round(time.perf_counter() - attempt_started, 4)
+            )
             generation_stats = getattr(self.generator, "last_generation_stats", {})
             if not isinstance(generation_stats, dict):
                 generation_stats = {}
@@ -1728,66 +1815,159 @@ class LegalQABaseline:
                         route = f"generated_retry_{retry_budget}"
                         recovery_strategy = "token_limit_retry"
 
-        if invalid_reason == "refusal" and generation_attempts == 1:
+        refusal_recovery_requested = (
+            invalid_reason == "refusal" and generation_attempts == 1
+        )
+        if refusal_recovery_requested:
             guarded_knn = self._guarded_knn(question, exclude_id=exclude_id)
             if guarded_knn is not None:
                 answer = guarded_knn.answer
                 invalid_reason = None
                 route = "knn_guarded_refusal"
                 recovery_strategy = "guarded_knn"
-            else:
-                current_key = (
-                    str(best.get("context_id") or ""),
-                    int(best.get("chunk_no", 0)),
+
+        if refusal_recovery_requested and invalid_reason == "refusal":
+            anchor_best = refusal_anchor["best"]
+            anchor_answer = str(refusal_anchor["raw_context_answer"] or "").strip()
+            focused_context_usable = bool(
+                _has_strong_legal_evidence(anchor_best)
+                and len(tokenize(anchor_answer)) >= 20
+                and not is_heading_only_answer(anchor_answer)
+                and not possibly_cut(anchor_answer)
+            )
+            if focused_context_usable:
+                best = anchor_best
+                top_chunks = list(refusal_anchor["top_chunks"])
+                adjacent_chunks = list(refusal_anchor["adjacent_chunks"])
+                prompt_chunks = list(refusal_anchor["prompt_chunks"])
+                raw_context_answer = anchor_answer
+                generation_trusted_metadata = list(
+                    refusal_anchor["trusted_metadata"]
                 )
-                alternative_pool = [
-                    candidate
-                    for candidate in [*requery_candidates, *reranked_pool]
-                    if (
-                        str(candidate.get("context_id") or ""),
-                        int(candidate.get("chunk_no", 0)),
-                    ) != current_key
-                    and (_audit_float(candidate.get("rerank_score")) or float("-inf")) >= 2.0
+                anchor_name = str(anchor_best.get("name") or "").strip()
+                joined_context = (
+                    f"[1] Văn bản: {anchor_name}\n{anchor_answer}"
+                    if anchor_name
+                    else f"[1] {anchor_answer}"
+                )
+                answer, invalid_reason, generation_stats = generate_once(joined_context)
+                recovery_strategy = "focused_context"
+                if invalid_reason is None:
+                    route = "generated_refusal_recovery"
+
+        # Focused context is only the first refusal retry. If it also refuses,
+        # continue with a different candidate/re-query; this is essential for
+        # yes/no questions where direct extractive fallback is intentionally blocked.
+        if refusal_recovery_requested and invalid_reason == "refusal":
+            current_key = (
+                str(best.get("context_id") or ""),
+                int(best.get("chunk_no", 0)),
+            )
+            alternative_pool = [
+                candidate
+                for candidate in [*requery_candidates, *reranked_pool]
+                if (
+                    str(candidate.get("context_id") or ""),
+                    int(candidate.get("chunk_no", 0)),
+                ) != current_key
+                and (_audit_float(candidate.get("rerank_score")) or float("-inf"))
+                >= 2.0
+            ]
+            if not alternative_pool and not requery_candidates:
+                recovered, requery_trace = self._requery_candidates(
+                    question,
+                    excluded_keys={current_key},
+                )
+                retrieval_trace["recovery"] = {
+                    "trigger": "generator_refusal",
+                    **requery_trace,
+                }
+                alternative_pool = recovered
+            if alternative_pool:
+                alternative_best = alternative_pool[0]
+                alternative_chunks = [alternative_best, *top_chunks]
+                (
+                    adjacent_chunks,
+                    prompt_chunks,
+                    joined_context,
+                    raw_context_answer,
+                ) = self._build_generation_context(
+                    question,
+                    alternative_best,
+                    alternative_chunks,
+                )
+                generation_trusted_metadata = [
+                    chunk.get(key)
+                    for chunk in prompt_chunks
+                    for key in ("name", "title", "link")
+                    if isinstance(chunk.get(key), str)
+                    and str(chunk.get(key)).strip()
                 ]
-                if not alternative_pool and not requery_candidates:
-                    recovered, requery_trace = self._requery_candidates(
-                        question,
-                        excluded_keys={current_key},
-                    )
-                    retrieval_trace["recovery"] = {
-                        "trigger": "generator_refusal",
-                        **requery_trace,
-                    }
-                    alternative_pool = recovered
-                if alternative_pool:
-                    alternative_best = alternative_pool[0]
-                    alternative_chunks = [alternative_best, *top_chunks]
-                    (
-                        adjacent_chunks,
-                        prompt_chunks,
-                        joined_context,
-                        raw_context_answer,
-                    ) = self._build_generation_context(
-                        question,
-                        alternative_best,
-                        alternative_chunks,
-                    )
-                    answer, invalid_reason, generation_stats = generate_once(joined_context)
-                    best = alternative_best
-                    top_chunks = alternative_chunks[: self.context_top_k]
-                    raw_reranker_score = _audit_float(best.get("rerank_score"))
-                    recovery_strategy = "alternate_candidate"
-                    if invalid_reason is None:
-                        route = "generated_refusal_recovery"
+                answer, invalid_reason, generation_stats = generate_once(joined_context)
+                best = alternative_best
+                top_chunks = alternative_chunks[: self.context_top_k]
+                raw_reranker_score = _audit_float(best.get("rerank_score"))
+                recovery_strategy = "alternate_candidate"
+                if invalid_reason is None:
+                    route = "generated_refusal_recovery"
+
+        focused_extractive_used = False
+        failure_before_extractive = invalid_reason
+        if (
+            invalid_reason is not None
+            and (refusal_recovery_requested or initial_hit_token_limit)
+        ):
+            anchor_best = refusal_anchor["best"]
+            anchor_answer = str(refusal_anchor["raw_context_answer"] or "").strip()
+            if _safe_generation_failure_extractive(
+                question,
+                anchor_best,
+                anchor_answer,
+            ):
+                best = anchor_best
+                top_chunks = list(refusal_anchor["top_chunks"])
+                adjacent_chunks = list(refusal_anchor["adjacent_chunks"])
+                prompt_chunks = list(refusal_anchor["prompt_chunks"])
+                joined_context = str(refusal_anchor["joined_context"])
+                raw_context_answer = anchor_answer
+                generation_trusted_metadata = list(
+                    refusal_anchor["trusted_metadata"]
+                )
+                answer = anchor_answer
+                invalid_reason = None
+                route = "extractive_fallback"
+                recovery_strategy = (
+                    "token_limit_focused_extractive"
+                    if failure_before_extractive == "token_limit"
+                    else "refusal_focused_extractive"
+                )
+                raw_reranker_score = _audit_float(best.get("rerank_score"))
+                focused_extractive_used = True
 
         raw_fallback_allowed = bool(
-            raw_reranker_score is not None
-            and raw_reranker_score >= 2.0
-            and is_structured_extractive_question(question)
-            and raw_context_answer
-            and not is_heading_only_answer(raw_context_answer)
-            and not possibly_cut(raw_context_answer)
+            focused_extractive_used
+            or (
+                raw_reranker_score is not None
+                and raw_reranker_score >= 2.0
+                and is_structured_extractive_question(question)
+                and raw_context_answer
+                and not is_heading_only_answer(raw_context_answer)
+                and not possibly_cut(raw_context_answer)
+            )
         )
+        generation_timing = {
+            "generation_attempt_seconds": generation_attempt_seconds,
+            "initial_generation_seconds": (
+                generation_attempt_seconds[0]
+                if generation_attempt_seconds
+                else None
+            ),
+            "retry_generation_seconds": (
+                round(sum(generation_attempt_seconds[1:]), 4)
+                if len(generation_attempt_seconds) > 1
+                else 0.0
+            ),
+        }
         if invalid_reason is None:
             if route is None:
                 route = f"generated_{initial_budget}"
@@ -1797,6 +1977,7 @@ class LegalQABaseline:
                 "hit_token_limit": False,
                 "initial_hit_token_limit": initial_hit_token_limit,
                 "generation_attempts": generation_attempts,
+                **generation_timing,
                 "retry_max_new_tokens": retry_budget,
                 "recovery_strategy": recovery_strategy,
                 "raw_reranker_score": raw_reranker_score,
@@ -1804,7 +1985,11 @@ class LegalQABaseline:
                 "routing_decision": (
                     "guarded_knn_after_refusal"
                     if route == "knn_guarded_refusal"
-                    else "generator_success"
+                    else (
+                        "guarded_focused_extractive_after_generation_failure"
+                        if focused_extractive_used
+                        else "generator_success"
+                    )
                 ),
                 "says_no_information": False,
                 "possibly_cut": False,
@@ -1819,6 +2004,7 @@ class LegalQABaseline:
                 "hit_token_limit": invalid_reason == "token_limit",
                 "initial_hit_token_limit": initial_hit_token_limit,
                 "generation_attempts": generation_attempts,
+                **generation_timing,
                 "retry_max_new_tokens": retry_budget,
                 "recovery_strategy": recovery_strategy,
                 "raw_reranker_score": raw_reranker_score,
@@ -1838,6 +2024,7 @@ class LegalQABaseline:
                 "hit_token_limit": invalid_reason == "token_limit",
                 "initial_hit_token_limit": initial_hit_token_limit,
                 "generation_attempts": generation_attempts,
+                **generation_timing,
                 "retry_max_new_tokens": retry_budget,
                 "recovery_strategy": recovery_strategy or "none_available",
                 "raw_reranker_score": raw_reranker_score,

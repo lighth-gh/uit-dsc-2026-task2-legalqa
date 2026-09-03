@@ -613,7 +613,83 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(pred.evidence["generation_attempts"], 2)
         self.assertTrue(pred.evidence["initial_hit_token_limit"])
         self.assertFalse(pred.evidence["hit_token_limit"])
+        self.assertEqual(len(pred.evidence["generation_attempt_seconds"]), 2)
+        self.assertIsNotNone(pred.evidence["initial_generation_seconds"])
+        self.assertIsNotNone(pred.evidence["retry_generation_seconds"])
+        audit = prediction_audit_record("retry", pred)
+        self.assertEqual(len(audit["generation_attempt_seconds"]), 2)
+        self.assertIsNotNone(audit["initial_generation_seconds"])
+        self.assertIsNotNone(audit["retry_generation_seconds"])
         self.assertIn("Danh sách hồ sơ", pred.answer)
+
+    def test_token_limit_retry_uses_strong_focused_extractive_if_retry_fails(self) -> None:
+        class StrongArticleIndex:
+            def search_contexts(
+                self,
+                question: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [{
+                    "context_id": "article-12",
+                    "chunk_no": 0,
+                    "name": "Nghị định quy định thủ tục",
+                    "link": "https://example.com/article-12",
+                    "text": (
+                        "Điều 12. Quy trình xử lý gồm ba bước. Bước một, cơ quan tiếp nhận "
+                        "kiểm tra hồ sơ và ghi nhận thời điểm nhận. Bước hai, người có thẩm "
+                        "quyền thẩm định tài liệu theo quy định. Bước ba, cơ quan ban hành "
+                        "quyết định và gửi kết quả cho người đề nghị trong thời hạn luật định."
+                    ),
+                    "bm25_score": -20.0,
+                }]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class AlwaysTokenLimited:
+            max_new_tokens = 512
+
+            def __init__(self) -> None:
+                self.budgets: list[int | None] = []
+                self.last_generation_stats: dict[str, Any] = {}
+
+            def generate(
+                self,
+                context: str,
+                question: str,
+                *,
+                max_new_tokens: int | None = None,
+            ) -> str:
+                self.budgets.append(max_new_tokens)
+                budget = max_new_tokens or self.max_new_tokens
+                raise GenerationTokenLimitReached(budget - 1, budget)
+
+        generator = AlwaysTokenLimited()
+        pipeline = LegalQABaseline(
+            index=StrongArticleIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(score=3.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(
+            "Theo Điều 12, quy trình xử lý được thực hiện theo mấy bước?",
+            mode="rag",
+        )
+
+        self.assertEqual(generator.budgets, [None, 768])
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertEqual(pred.evidence["generation_attempts"], 2)
+        self.assertEqual(
+            pred.evidence["recovery_strategy"],
+            "token_limit_focused_extractive",
+        )
+        self.assertIn("Bước ba", pred.answer)
+        self.assertFalse(pred.evidence["says_no_information"])
 
     def test_refusal_retries_different_candidate_without_larger_budget(self) -> None:
         class RefusalThenAnswerGenerator:
@@ -651,6 +727,154 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual([budget for _, budget in generator.calls], [None, None])
         self.assertNotEqual(generator.calls[0][0], generator.calls[1][0])
         self.assertEqual(pred.evidence["recovery_strategy"], "alternate_candidate")
+
+    def test_refusal_uses_original_strong_top_one_focused_extractive(self) -> None:
+        question = (
+            "Thời hiệu khiếu nại thông báo không kháng nghị theo thủ tục tái thẩm "
+            "đối với bản án hình sự không đủ căn cứ, điều kiện kháng nghị là bao lâu?"
+        )
+
+        class StrongRetrievalIndex:
+            def search_contexts(
+                self,
+                query: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [
+                    {
+                        "context_id": "102434",
+                        "chunk_no": 306,
+                        "name": "Bộ luật Tố tụng hình sự",
+                        "link": "https://example.com/102434",
+                        "text": (
+                            "Điều 399. Thời hiệu khiếu nại thông báo không kháng nghị "
+                            "theo thủ tục tái thẩm là 15 ngày kể từ ngày nhận được thông báo. "
+                            "Người có quyền khiếu nại gửi đơn đến cơ quan có thẩm quyền để "
+                            "được xem xét theo quy định của pháp luật tố tụng hình sự."
+                        ),
+                        "bm25_score": -20.0,
+                    },
+                    {
+                        "context_id": "wrong",
+                        "chunk_no": 1,
+                        "name": "Văn bản khác",
+                        "link": "https://example.com/wrong",
+                        "text": (
+                            "Nội dung khác quy định về thời hạn xử lý công việc và trách "
+                            "nhiệm chung của cơ quan có thẩm quyền trong một thủ tục khác."
+                        ),
+                        "bm25_score": -10.0,
+                    },
+                ]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class AlwaysRefuses:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def generate(self, context: str, question: str) -> str:
+                self.calls += 1
+                return "Không đủ thông tin trong ngữ cảnh."
+
+        generator = AlwaysRefuses()
+        pipeline = LegalQABaseline(
+            index=StrongRetrievalIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(score=3.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(generator.calls, 3)
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertIn("15 ngày", pred.answer)
+        self.assertEqual(
+            pred.evidence["recovery_strategy"],
+            "refusal_focused_extractive",
+        )
+        self.assertEqual(pred.evidence["top_contexts"][0]["context_id"], "102434")
+        self.assertGreaterEqual(pred.evidence["raw_reranker_score"], 2.0)
+        self.assertFalse(pred.evidence["says_no_information"])
+        self.assertEqual(len(pred.evidence["generation_attempt_seconds"]), 3)
+
+    def test_yes_no_refusal_moves_from_strong_focus_to_alternate_candidate(self) -> None:
+        question = "Theo Điều 12, người đang trả nợ tiền sử dụng đất có bị cấm chia di sản không?"
+
+        class YesNoRecoveryIndex:
+            def search_contexts(
+                self,
+                query: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [
+                    {
+                        "context_id": "primary",
+                        "chunk_no": 12,
+                        "name": "Luật Đất đai",
+                        "link": "https://example.com/primary",
+                        "text": (
+                            "Điều 12 quy định về quyền và nghĩa vụ của người sử dụng đất "
+                            "trong thời gian còn nợ tiền sử dụng đất. Người sử dụng đất "
+                            "thực hiện các quyền theo điều kiện và phạm vi luật định."
+                        ),
+                        "bm25_score": -20.0,
+                    },
+                    {
+                        "context_id": "alternate",
+                        "chunk_no": 5,
+                        "name": "Nghị định hướng dẫn Luật Đất đai",
+                        "link": "https://example.com/alternate",
+                        "text": (
+                            "Quyền phân chia di sản là quyền sử dụng đất được thực hiện "
+                            "khi đáp ứng nghĩa vụ tài chính. Việc còn trả nợ tiền sử dụng "
+                            "đất không tự động làm mất quyền, nhưng phải tuân thủ điều kiện."
+                        ),
+                        "bm25_score": -18.0,
+                    },
+                ]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class RefuseTwiceThenAnswer:
+            def __init__(self) -> None:
+                self.contexts: list[str] = []
+
+            def generate(self, context: str, question: str) -> str:
+                self.contexts.append(context)
+                if len(self.contexts) < 3:
+                    return "Không đủ thông tin trong ngữ cảnh."
+                return (
+                    "Người sử dụng đất không tự động bị cấm phân chia di sản, "
+                    "nhưng phải hoàn thành hoặc tuân thủ nghĩa vụ tài chính theo quy định."
+                )
+
+        generator = RefuseTwiceThenAnswer()
+        pipeline = LegalQABaseline(
+            index=YesNoRecoveryIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(score=3.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(len(generator.contexts), 3)
+        self.assertEqual(pred.route, "generated_refusal_recovery")
+        self.assertEqual(pred.evidence["recovery_strategy"], "alternate_candidate")
+        self.assertIn("không tự động bị cấm", pred.answer)
+        self.assertFalse(pred.evidence["raw_fallback_allowed"])
 
     def test_refusal_can_use_guarded_knn_at_point_nine(self) -> None:
         class RefusalGenerator:
