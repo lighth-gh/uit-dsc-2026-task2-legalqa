@@ -45,6 +45,7 @@ class NotebookCacheContractTests(unittest.TestCase):
         smoke_code = self._notebook_code("legalqa-pipeline-smoke30-ready.ipynb")
 
         for expected in (
+            'MODE = "hybrid_rag"',
             "RRF_TOP_K = 50",
             "RERANKER_MAX_LENGTH = 1024",
             '"--reranker-candidate-k", str(RERANKER_CANDIDATE_K)',

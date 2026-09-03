@@ -276,12 +276,75 @@ def question_similarity(left: str, right: str) -> float:
 
 
 _KNN_INTENT_PATTERNS: dict[str, tuple[str, ...]] = {
-    "amount": (r"\bmức\b", r"\bbao nhiêu\b", r"\btiền\b"),
+    "penalty": (r"\bmức phạt\b", r"\bxử phạt\b", r"\bchế tài\b"),
     "authority": (r"\bthẩm quyền\b", r"\bcơ quan nào\b", r"\bai\b"),
     "condition": (r"\bđiều kiện\b", r"\btiêu chuẩn\b"),
-    "procedure": (r"\bthủ tục\b", r"\btrình tự\b", r"\bcác bước\b", r"\bhồ sơ\b"),
+    "dossier": (r"\bhồ sơ\b", r"\bgiấy tờ\b", r"\btài liệu cần\b"),
+    "principle": (r"\bnguyên tắc\b",),
+    "procedure": (r"\bthủ tục\b", r"\btrình tự\b", r"\bcác bước\b"),
+    "responsibility": (r"\btrách nhiệm\b", r"\bnghĩa vụ\b"),
     "time": (r"\bthời hạn\b", r"\bthời hiệu\b", r"\bbao lâu\b", r"\bkhi nào\b"),
     "yes_no": (r"\b(?:có|được|phải|bị)\b[^?]{0,100}\bkhông\s*[?]?$",),
+}
+
+_KNN_GUARD_DIMENSIONS: dict[str, tuple[str, ...]] = {
+    "education_level": (
+        "sơ cấp",
+        "trung cấp",
+        "cao đẳng",
+        "đại học",
+        "thạc sĩ",
+        "tiến sĩ",
+        "mầm non",
+        "tiểu học",
+        "trung học cơ sở",
+        "thcs",
+        "trung học phổ thông",
+        "thpt",
+    ),
+    "subject": (
+        "người sử dụng lao động",
+        "người lao động",
+        "hộ kinh doanh",
+        "doanh nghiệp",
+        "tổ chức",
+        "cá nhân",
+        "học sinh",
+        "sinh viên",
+        "giáo viên",
+        "giảng viên",
+        "cán bộ",
+        "công chức",
+        "viên chức",
+        "người chưa thành niên",
+    ),
+    "entity_role": (
+        "cơ quan chủ trì soạn thảo",
+        "cơ quan thẩm định",
+        "cơ quan quản lý nhà nước",
+        "ủy ban nhân dân cấp xã",
+        "ủy ban nhân dân cấp huyện",
+        "ủy ban nhân dân cấp tỉnh",
+        "tòa án nhân dân",
+        "viện kiểm sát nhân dân",
+    ),
+    "legal_scope": (
+        "bình đẳng giới",
+        "bảo hiểm xã hội",
+        "bảo hiểm thất nghiệp",
+        "hôn nhân và gia đình",
+        "tố tụng dân sự",
+        "tố tụng hình sự",
+        "tố tụng hành chính",
+        "dân sự",
+        "hình sự",
+        "hành chính",
+        "đất đai",
+        "lao động",
+        "giáo dục",
+        "thuế",
+        "giao thông",
+    ),
 }
 
 
@@ -291,6 +354,45 @@ def _question_intents(question: str) -> set[str]:
         intent
         for intent, patterns in _KNN_INTENT_PATTERNS.items()
         if any(re.search(pattern, normalized) for pattern in patterns)
+    }
+
+
+def _normalized_question_key(question: str) -> str:
+    """Normalize case, accents, punctuation and whitespace without reordering words."""
+    return " ".join(
+        _normalize_similarity_token(token)
+        for token in tokenize(question)
+    )
+
+
+def _knn_guard_signature(question: str) -> dict[str, list[str]]:
+    normalized = " ".join(tokenize(question))
+    padded = f" {normalized} "
+    signature: dict[str, list[str]] = {}
+    for dimension, phrases in _KNN_GUARD_DIMENSIONS.items():
+        matched = [phrase for phrase in phrases if f" {phrase} " in padded]
+        signature[dimension] = matched
+    return signature
+
+
+def _knn_guards_match(left: str, right: str) -> tuple[bool, dict[str, Any]]:
+    left_intents = _question_intents(left)
+    right_intents = _question_intents(right)
+    left_signature = _knn_guard_signature(left)
+    right_signature = _knn_guard_signature(right)
+    mismatches = [
+        dimension
+        for dimension in _KNN_GUARD_DIMENSIONS
+        if set(left_signature[dimension]) != set(right_signature[dimension])
+        and (left_signature[dimension] or right_signature[dimension])
+    ]
+    intents_match = bool(left_intents) and left_intents == right_intents
+    return intents_match and not mismatches, {
+        "query_intents": sorted(left_intents),
+        "candidate_intents": sorted(right_intents),
+        "query_signature": left_signature,
+        "candidate_signature": right_signature,
+        "mismatched_dimensions": mismatches,
     }
 
 
@@ -874,20 +976,59 @@ class LegalQABaseline:
         exclude_id: str | None,
     ) -> Prediction | None:
         """Use train answers only for near-duplicates with matching intent/entity guards."""
-        candidate = self._knn(question, exclude_id=exclude_id)
-        if candidate is None or candidate.confidence < self.guarded_knn_threshold:
-            return None
-        candidate_question = str(candidate.evidence.get("question") or "")
-        source_intents = _question_intents(question)
-        candidate_intents = _question_intents(candidate_question)
-        if source_intents != candidate_intents:
-            return None
-        evidence = {
-            **candidate.evidence,
-            "guarded_knn_threshold": self.guarded_knn_threshold,
-            "intent_guard": sorted(source_intents),
-        }
-        return Prediction(candidate.answer, "knn_guarded", candidate.confidence, evidence)
+        neighbors = self.index.search_train(question, top_k=5, exclude_id=exclude_id)
+        candidates: list[dict[str, Any]] = []
+        query_key = _normalized_question_key(question)
+        for neighbor in neighbors:
+            if (
+                not isinstance(neighbor, dict)
+                or not isinstance(neighbor.get("question"), str)
+                or not str(neighbor.get("answer") or "").strip()
+            ):
+                continue
+            item = dict(neighbor)
+            candidate_question = str(item["question"])
+            item["similarity"] = question_similarity(question, candidate_question)
+            item["exact_normalized"] = (
+                bool(query_key)
+                and query_key == _normalized_question_key(candidate_question)
+            )
+            candidates.append(item)
+
+        candidates.sort(
+            key=lambda item: (
+                bool(item["exact_normalized"]),
+                float(item["similarity"]),
+            ),
+            reverse=True,
+        )
+        for candidate in candidates:
+            similarity = float(candidate["similarity"])
+            exact_normalized = bool(candidate["exact_normalized"])
+            candidate_question = str(candidate["question"])
+            guards_match, guard_evidence = _knn_guards_match(
+                question,
+                candidate_question,
+            )
+            if not exact_normalized and (
+                similarity < self.guarded_knn_threshold or not guards_match
+            ):
+                continue
+            match_type = "exact_normalized" if exact_normalized else "near_duplicate"
+            return Prediction(
+                str(candidate["answer"]),
+                "knn_exact" if exact_normalized else "knn_guarded",
+                similarity,
+                {
+                    "sample_id": candidate.get("sample_id"),
+                    "question": candidate_question,
+                    "bm25_score": candidate.get("bm25_score"),
+                    "guarded_knn_threshold": self.guarded_knn_threshold,
+                    "knn_match_type": match_type,
+                    "guard_checks": guard_evidence,
+                },
+            )
+        return None
 
     def _requery_candidates(
         self,
@@ -1680,7 +1821,7 @@ class LegalQABaseline:
     def predict_one(
         self,
         question: str,
-        mode: Mode = "hybrid",
+        mode: Mode = "hybrid_rag",
         exclude_id: str | None = None,
     ) -> Prediction:
         if mode not in ("extractive", "knn", "hybrid", "rag", "hybrid_rag"):
@@ -1707,8 +1848,8 @@ class LegalQABaseline:
         elif mode == "rag":
             result = self._rag(question, exclude_id=exclude_id)
         elif mode == "hybrid_rag":
-            knn = self._knn(question, exclude_id=exclude_id)
-            if knn is not None and knn.confidence >= self.knn_threshold:
+            knn = self._guarded_knn(question, exclude_id=exclude_id)
+            if knn is not None:
                 result = knn
             else:
                 result = self._rag(question, exclude_id=exclude_id)

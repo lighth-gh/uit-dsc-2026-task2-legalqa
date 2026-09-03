@@ -184,7 +184,7 @@ def make_parser() -> argparse.ArgumentParser:
         help="JSONL audit từng ID; mặc định là <output>.audit.jsonl",
     )
     predict.add_argument(
-        "--mode", choices=VALID_MODES, default="hybrid"
+        "--mode", choices=VALID_MODES, default="hybrid_rag"
     )
     predict.add_argument("--resume", action="store_true", help="Tiếp tục từ checkpoint đã lưu nếu có")
     predict.add_argument(

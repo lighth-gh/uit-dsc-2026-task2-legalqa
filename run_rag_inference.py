@@ -178,9 +178,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         type=str,
-        default="rag",
+        default="hybrid_rag",
         choices=["rag", "hybrid_rag"],
-        help="Chế độ chạy (rag thuần hoặc hybrid_rag kết hợp KNN train)",
+        help="Chế độ chạy (mặc định hybrid_rag với guarded KNN)",
     )
     parser.add_argument(
         "--knn-threshold",

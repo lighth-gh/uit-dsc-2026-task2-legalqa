@@ -745,18 +745,23 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(recovery["status"], "ok")
 
     def test_guarded_knn_rejects_different_intent(self) -> None:
+        class IntentMismatchIndex(MockSearchIndex):
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return [{
+                    "sample_id": "other",
+                    "question": "Cơ quan nào có thẩm quyền xử phạt?",
+                    "answer": "Cơ quan cấp huyện có thẩm quyền.",
+                    "bm25_score": -1.0,
+                }]
+
         pipeline = LegalQABaseline(
-            index=MockSearchIndex(),  # type: ignore[arg-type]
+            index=IntentMismatchIndex(),  # type: ignore[arg-type]
             generator=MockGenerator(),
-        )
-        pipeline._knn = lambda question, exclude_id=None: Prediction(  # type: ignore[method-assign]
-            "Cơ quan cấp huyện có thẩm quyền.",
-            "knn",
-            0.99,
-            {
-                "question": "Cơ quan nào có thẩm quyền xử phạt?",
-                "sample_id": "other",
-            },
         )
 
         self.assertIsNone(

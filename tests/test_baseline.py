@@ -12,6 +12,7 @@ from unittest.mock import patch
 from legalqa_baseline.metrics import answer_token_f1, meteor_exact, rouge_l_f1
 from legalqa_baseline.pipeline import (
     LegalQABaseline,
+    Prediction,
     question_similarity,
     reciprocal_rank_fusion,
 )
@@ -240,6 +241,145 @@ class PipelineRoutingTests(unittest.TestCase):
 
         prediction = LegalQABaseline(index=BlankAnswerIndex()).predict_one("same", mode="hybrid")  # type: ignore[arg-type]
         self.assertEqual(prediction.route, "fallback")
+
+    def test_id_129859_exact_normalized_question_uses_train_answer(self) -> None:
+        question = (
+            "Cơ quan chủ trì soạn thảo văn bản quy phạm pháp luật có những trách nhiệm "
+            "gì trong việc lồng ghép vấn đề bình đẳng giới vào văn bản?"
+        )
+
+        class ExactIndex(self.EmptyIndex):
+            def search_contexts(self, question: str, top_k: int = 12) -> list[dict[str, object]]:
+                raise AssertionError("exact normalized KNN must not call RAG retrieval")
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, object]]:
+                return [{
+                    "sample_id": "88019",
+                    "question": question.upper().replace("?", " ? "),
+                    "answer": "Đáp án đúng từ train cho trách nhiệm của cơ quan chủ trì soạn thảo.",
+                    "bm25_score": -20.0,
+                }]
+
+        prediction = LegalQABaseline(
+            index=ExactIndex(),  # type: ignore[arg-type]
+            knn_threshold=1.0,
+        ).predict_one(
+            question,
+            mode="hybrid_rag",
+        )
+
+        self.assertEqual(prediction.route, "knn_exact")
+        self.assertEqual(prediction.evidence["sample_id"], "88019")
+        self.assertEqual(prediction.evidence["knn_match_type"], "exact_normalized")
+
+    def test_near_duplicate_requires_point_nine_and_matching_guards(self) -> None:
+        query = "Hồ sơ cấp giấy phép cho doanh nghiệp gồm những gì?"
+
+        class NearIndex(self.EmptyIndex):
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, object]]:
+                return [{
+                    "sample_id": "near",
+                    "question": "Hồ sơ cấp giấy phép cho doanh nghiệp gồm những giấy tờ gì?",
+                    "answer": "Hồ sơ gồm đơn đề nghị và giấy tờ của doanh nghiệp.",
+                    "bm25_score": -9.0,
+                }]
+
+        pipeline = LegalQABaseline(
+            index=NearIndex(),  # type: ignore[arg-type]
+            guarded_knn_threshold=0.90,
+        )
+        prediction = pipeline._guarded_knn(query, exclude_id=None)
+
+        self.assertIsNotNone(prediction)
+        assert prediction is not None
+        self.assertEqual(prediction.route, "knn_guarded")
+        self.assertGreaterEqual(prediction.confidence, 0.90)
+        self.assertEqual(prediction.evidence["knn_match_type"], "near_duplicate")
+
+    def test_near_duplicate_below_point_nine_falls_back_to_rag(self) -> None:
+        query = "Hồ sơ cấp giấy phép cho doanh nghiệp gồm những gì?"
+
+        class BelowThresholdIndex(self.EmptyIndex):
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, object]]:
+                return [{
+                    "sample_id": "below-threshold",
+                    "question": "Hồ sơ đăng ký giấy phép cho doanh nghiệp gồm các giấy tờ nào?",
+                    "answer": "Không được phép lấy đáp án dưới ngưỡng.",
+                    "bm25_score": -8.0,
+                }]
+
+        pipeline = LegalQABaseline(index=BelowThresholdIndex())  # type: ignore[arg-type]
+        pipeline._rag = lambda question, retrieval_only=False, exclude_id=None: Prediction(  # type: ignore[method-assign]
+            "Đáp án từ RAG.",
+            "generated_512",
+            0.8,
+            {},
+        )
+        prediction = pipeline.predict_one(query, mode="hybrid_rag")
+
+        self.assertEqual(prediction.route, "generated_512")
+        self.assertEqual(prediction.answer, "Đáp án từ RAG.")
+
+    def test_guarded_knn_rejects_intent_level_subject_and_legal_scope_mismatch(self) -> None:
+        pairs = (
+            (
+                "Nguyên tắc cấp giấy phép hoạt động giáo dục nghề nghiệp cho trường cao đẳng theo quy định hiện hành là gì?",
+                "Hồ sơ cấp giấy phép hoạt động giáo dục nghề nghiệp cho trường cao đẳng theo quy định hiện hành là gì?",
+            ),
+            (
+                "Điều kiện cấp giấy phép đào tạo nghề cho người học trình độ cao đẳng theo quy định hiện hành là gì?",
+                "Điều kiện cấp giấy phép đào tạo nghề cho người học trình độ trung cấp theo quy định hiện hành là gì?",
+            ),
+            (
+                "Điều kiện xử phạt vi phạm hành chính đối với cá nhân kinh doanh theo quy định hiện hành là gì?",
+                "Điều kiện xử phạt vi phạm hành chính đối với tổ chức kinh doanh theo quy định hiện hành là gì?",
+            ),
+            (
+                "Thời hạn kháng nghị trong tố tụng dân sự theo thủ tục hiện hành được xác định như thế nào?",
+                "Thời hạn kháng nghị trong tố tụng hình sự theo thủ tục hiện hành được xác định như thế nào?",
+            ),
+        )
+        for query, candidate_question in pairs:
+            with self.subTest(query=query, candidate=candidate_question):
+                class GuardIndex(self.EmptyIndex):
+                    def search_train(
+                        self,
+                        question: str,
+                        top_k: int = 5,
+                        exclude_id: str | None = None,
+                    ) -> list[dict[str, object]]:
+                        return [{
+                            "sample_id": "wrong-scope",
+                            "question": candidate_question,
+                            "answer": "Không được phép dùng đáp án này.",
+                            "bm25_score": -15.0,
+                        }]
+
+                pipeline = LegalQABaseline(index=GuardIndex())  # type: ignore[arg-type]
+                pipeline._rag = lambda question, retrieval_only=False, exclude_id=None: Prediction(  # type: ignore[method-assign]
+                    "Đáp án từ RAG.",
+                    "generated_512",
+                    0.8,
+                    {},
+                )
+                prediction = pipeline.predict_one(query, mode="hybrid_rag")
+                self.assertEqual(prediction.route, "generated_512")
+                self.assertEqual(prediction.answer, "Đáp án từ RAG.")
 
     def test_rrf_validates_and_deduplicates_candidates(self) -> None:
         with self.assertRaises(ValueError):

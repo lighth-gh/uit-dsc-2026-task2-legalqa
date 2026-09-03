@@ -25,6 +25,22 @@ from legalqa_baseline.pipeline import Prediction
 
 
 class CliTests(unittest.TestCase):
+    def test_predict_defaults_to_guarded_hybrid_rag(self) -> None:
+        args = make_parser().parse_args(
+            [
+                "predict",
+                "--input",
+                "input.json",
+                "--db",
+                "index.sqlite",
+                "--output",
+                "submission.json",
+            ]
+        )
+
+        self.assertEqual(args.mode, "hybrid_rag")
+        self.assertEqual(args.guarded_knn_threshold, 0.90)
+
     def test_rag_defaults_match_hybrid_retrieval_contract(self) -> None:
         args = make_parser().parse_args(
             [
