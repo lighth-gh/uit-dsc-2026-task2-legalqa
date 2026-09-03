@@ -63,6 +63,25 @@ class MockSearchIndex:
         ]
 
 
+class FixedScoreReranker:
+    def __init__(self, score: float = 3.0) -> None:
+        self.score = score
+
+    def rerank(
+        self,
+        question: str,
+        candidates: list[dict[str, Any]],
+        top_k: int = 3,
+        max_length: int = 1024,
+    ) -> list[dict[str, Any]]:
+        output = []
+        for candidate in candidates[:top_k]:
+            item = dict(candidate)
+            item["rerank_score"] = self.score
+            output.append(item)
+        return output
+
+
 class _FakeInferenceMode:
     def __enter__(self) -> _FakeInferenceMode:
         return self
@@ -490,7 +509,7 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(pred.route, "generated_512")
 
 
-    def test_pipeline_falls_back_for_unusable_generator_outputs(self) -> None:
+    def test_unusable_generation_does_not_dump_low_confidence_raw_text(self) -> None:
         unusable_outputs = [
             ("empty", None),
             ("too_short", "Có."),
@@ -515,11 +534,12 @@ class RAGPipelineTests(unittest.TestCase):
                 )
                 pred = pipeline.predict_one("Mức phạt?", mode="rag")
 
-                self.assertEqual(pred.answer, self._raw_answer())
-                self.assertEqual(pred.route, "extractive_fallback")
+                self.assertNotEqual(pred.answer, self._raw_answer())
+                self.assertEqual(pred.route, "recovery_exhausted")
                 self.assertEqual(pred.evidence["fallback_reason"], expected_reason)
+                self.assertFalse(pred.evidence["raw_fallback_allowed"])
 
-    def test_pipeline_falls_back_when_generator_hits_token_limit(self) -> None:
+    def test_non_list_token_limit_is_not_retried_or_dumped_to_raw(self) -> None:
         class TokenLimitedGenerator:
             def __init__(self) -> None:
                 self.calls = 0
@@ -535,17 +555,213 @@ class RAGPipelineTests(unittest.TestCase):
         )
         pred = pipeline.predict_one("Mức phạt?", mode="rag")
 
-        self.assertEqual(pred.answer, self._raw_answer())
-        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertNotEqual(pred.answer, self._raw_answer())
+        self.assertEqual(pred.route, "recovery_exhausted")
         self.assertEqual(pred.evidence["generated_tokens"], 509)
         self.assertEqual(pred.evidence["max_new_tokens"], 512)
-        self.assertEqual(generator.calls, 1, "Không được tự retry LLM bằng 1024 token")
+        self.assertEqual(generator.calls, 1)
         audit = prediction_audit_record("sample-1", pred)
-        self.assertEqual(audit["route"], "extractive_fallback")
+        self.assertEqual(audit["route"], "recovery_exhausted")
         self.assertEqual(audit["generated_tokens"], 509)
         self.assertTrue(audit["hit_token_limit"])
-        self.assertTrue(audit["possibly_cut"])
+        self.assertFalse(audit["possibly_cut"])
+        self.assertTrue(audit["initial_hit_token_limit"])
+        self.assertEqual(audit["generation_attempts"], 1)
         self.assertEqual(audit["top_document_id"], "100")
+
+    def test_list_token_limit_retries_once_with_768_and_keeps_generation(self) -> None:
+        class RetryGenerator:
+            max_new_tokens = 512
+
+            def __init__(self) -> None:
+                self.budgets: list[int | None] = []
+                self.last_generation_stats: dict[str, Any] = {}
+
+            def generate(
+                self,
+                context: str,
+                question: str,
+                *,
+                max_new_tokens: int | None = None,
+            ) -> str:
+                self.budgets.append(max_new_tokens)
+                if len(self.budgets) == 1:
+                    raise GenerationTokenLimitReached(509, 512)
+                self.last_generation_stats = {
+                    "generated_tokens": 620,
+                    "max_new_tokens": max_new_tokens,
+                    "hit_token_limit": False,
+                }
+                return (
+                    "Danh sách hồ sơ gồm đơn đề nghị, giấy tờ pháp lý và "
+                    "tài liệu chứng minh đáp ứng đầy đủ điều kiện."
+                )
+
+        generator = RetryGenerator()
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(),
+        )
+        pred = pipeline.predict_one(
+            "Hãy phân tích và liệt kê danh sách hồ sơ cần nộp.",
+            mode="rag",
+        )
+
+        self.assertEqual(pred.route, "generated_retry_768")
+        self.assertEqual(generator.budgets, [None, 768])
+        self.assertEqual(pred.evidence["generation_attempts"], 2)
+        self.assertTrue(pred.evidence["initial_hit_token_limit"])
+        self.assertFalse(pred.evidence["hit_token_limit"])
+        self.assertIn("Danh sách hồ sơ", pred.answer)
+
+    def test_refusal_retries_different_candidate_without_larger_budget(self) -> None:
+        class RefusalThenAnswerGenerator:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, int | None]] = []
+
+            def generate(
+                self,
+                context: str,
+                question: str,
+                *,
+                max_new_tokens: int | None = None,
+            ) -> str:
+                self.calls.append((context, max_new_tokens))
+                if len(self.calls) == 1:
+                    return "Không đủ thông tin trong ngữ cảnh."
+                return (
+                    "Khoản 2 Điều 5 xác định cơ quan có thẩm quyền xử phạt "
+                    "theo phạm vi nhiệm vụ được giao."
+                )
+
+        generator = RefusalThenAnswerGenerator()
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(),
+        )
+        pred = pipeline.predict_one(
+            "Hãy giải thích cơ quan có thẩm quyền xử phạt.",
+            mode="rag",
+        )
+
+        self.assertEqual(pred.route, "generated_refusal_recovery")
+        self.assertEqual(len(generator.calls), 2)
+        self.assertEqual([budget for _, budget in generator.calls], [None, None])
+        self.assertNotEqual(generator.calls[0][0], generator.calls[1][0])
+        self.assertEqual(pred.evidence["recovery_strategy"], "alternate_candidate")
+
+    def test_refusal_can_use_guarded_knn_at_point_nine(self) -> None:
+        class RefusalGenerator:
+            def generate(self, context: str, question: str) -> str:
+                return "Không đủ thông tin trong ngữ cảnh."
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=RefusalGenerator(),
+            reranker=FixedScoreReranker(),
+            guarded_knn_threshold=0.90,
+        )
+        pred = pipeline.predict_one("Mức phạt vi phạm hành chính?", mode="rag")
+
+        self.assertEqual(pred.route, "knn_guarded_refusal")
+        self.assertGreaterEqual(pred.confidence, 0.90)
+        self.assertEqual(pred.evidence["recovery_strategy"], "guarded_knn")
+
+    def test_low_raw_score_uses_guarded_knn_before_generation(self) -> None:
+        class MustNotGenerate:
+            def generate(self, context: str, question: str) -> str:
+                raise AssertionError("low-confidence exact KNN must bypass generation")
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MustNotGenerate(),
+            guarded_knn_threshold=0.90,
+        )
+        pred = pipeline.predict_one("Mức phạt vi phạm hành chính?", mode="rag")
+
+        self.assertEqual(pred.route, "knn_guarded_low_confidence")
+        self.assertEqual(pred.evidence["generation_attempts"], 0)
+        self.assertEqual(pred.evidence["recovery_strategy"], "guarded_knn")
+
+    def test_low_raw_score_runs_controlled_requery_before_generation(self) -> None:
+        question = "Mức phạt doanh nghiệp là bao nhiêu?"
+
+        class RequeryIndex:
+            def search_contexts(self, query: str, top_k: int = 50) -> list[dict[str, Any]]:
+                if query == question:
+                    return [{
+                        "context_id": "low",
+                        "chunk_no": 0,
+                        "name": "Văn bản nhiễu",
+                        "link": "https://example.com/low",
+                        "text": "Nội dung không xác định đúng mức phạt doanh nghiệp.",
+                        "bm25_score": -5.0,
+                    }]
+                return [{
+                    "context_id": "recovered",
+                    "chunk_no": 4,
+                    "name": "Nghị định xử phạt",
+                    "link": "https://example.com/recovered",
+                    "text": "Điều 8 quy định rõ mức phạt áp dụng đối với doanh nghiệp vi phạm.",
+                    "bm25_score": -9.0,
+                }]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class ScoreByContextReranker:
+            def rerank(
+                self,
+                question: str,
+                candidates: list[dict[str, Any]],
+                top_k: int = 3,
+                max_length: int = 1024,
+            ) -> list[dict[str, Any]]:
+                output = []
+                for candidate in candidates[:top_k]:
+                    item = dict(candidate)
+                    item["rerank_score"] = 3.0 if item["context_id"] == "recovered" else 1.0
+                    output.append(item)
+                return output
+
+        pipeline = LegalQABaseline(
+            index=RequeryIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            reranker=ScoreByContextReranker(),
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(pred.route, "generated_512")
+        self.assertEqual(pred.evidence["top_contexts"][0]["context_id"], "recovered")
+        recovery = pred.evidence["retrieval_trace"]["recovery"]
+        self.assertEqual(recovery["trigger"], "raw_reranker_score_below_2")
+        self.assertEqual(recovery["status"], "ok")
+
+    def test_guarded_knn_rejects_different_intent(self) -> None:
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=MockGenerator(),
+        )
+        pipeline._knn = lambda question, exclude_id=None: Prediction(  # type: ignore[method-assign]
+            "Cơ quan cấp huyện có thẩm quyền.",
+            "knn",
+            0.99,
+            {
+                "question": "Cơ quan nào có thẩm quyền xử phạt?",
+                "sample_id": "other",
+            },
+        )
+
+        self.assertIsNone(
+            pipeline._guarded_knn("Mức phạt là bao nhiêu?", exclude_id=None)
+        )
 
     def test_pipeline_cleans_boilerplate_without_truncating_answer(self) -> None:
         class BoilerplateGenerator:
@@ -615,7 +831,7 @@ class RAGPipelineTests(unittest.TestCase):
         )
         pred = pipeline.predict_one("Quy định xử lý thế nào?", mode="rag")
 
-        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertEqual(pred.route, "recovery_exhausted")
         self.assertEqual(pred.evidence["fallback_reason"], "possibly_cut")
 
     def test_pipeline_honors_generator_token_limit_metadata(self) -> None:
@@ -635,7 +851,7 @@ class RAGPipelineTests(unittest.TestCase):
         )
         pred = pipeline.predict_one("Mức phạt?", mode="rag")
 
-        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertEqual(pred.route, "recovery_exhausted")
         self.assertEqual(pred.evidence["fallback_reason"], "token_limit")
         self.assertTrue(pred.evidence["hit_token_limit"])
 

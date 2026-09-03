@@ -671,6 +671,44 @@ LONG_ANSWER_PATTERNS: tuple[str, ...] = (
 )
 LONG_PATTERNS = LONG_ANSWER_PATTERNS
 
+_STRUCTURED_EXTRACTIVE_PATTERNS: tuple[str, ...] = (
+    r"\bhồ sơ\b",
+    r"\bdanh sách\b",
+    r"\bliệt kê\b",
+    r"\bbao gồm\b",
+    r"\bcác trường hợp\b",
+    r"\bcác bước\b",
+    r"\btrình tự\b",
+    r"\bthủ tục\b",
+    r"\bđiều kiện\b",
+    r"\btiêu chuẩn\b",
+    r"\bquyền và nghĩa vụ\b",
+    r"\bbiểu mẫu\b",
+    r"\bmẫu(?: số)?\b",
+    r"\bphụ lục\b",
+    r"\b(?:nội dung|nguyên văn|toàn văn)\s+(?:điều|khoản|văn bản)\b",
+)
+_SYNTHESIS_QUESTION_PATTERNS: tuple[str, ...] = (
+    r"\b(?:phân tích|so sánh|đánh giá|giải thích|tổng hợp|suy luận)\b",
+    r"\b(?:tại sao|vì sao)\b",
+    r"\b(?:có|được|phải|bị)\b[^?]{0,100}\bkhông\s*[?]?$",
+)
+_EXTENDED_RETRY_PATTERNS: tuple[str, ...] = (
+    r"\bdanh sách\b",
+    r"\bliệt kê\b",
+    r"\bbao gồm\b",
+    r"\bcác trường hợp\b",
+    r"\bcác bước\b",
+    r"\btrình tự\b",
+    r"\bthủ tục\b",
+    r"\bbiểu mẫu\b",
+    r"\bmẫu(?: số)?\b",
+    r"\bphụ lục\b",
+    r"\b(?:nguyên văn|toàn văn)\b",
+    r"\bhồ sơ\b[^?]{0,70}\b(?:gồm|cần nộp|những gì|giấy tờ|tài liệu)\b",
+    r"\b(?:gồm|cần nộp|giấy tờ|tài liệu)\b[^?]{0,70}\bhồ sơ\b",
+)
+
 
 def is_long_form_question(
     question: str, patterns: Iterable[str] = LONG_ANSWER_PATTERNS
@@ -691,6 +729,24 @@ def is_long_answer_question(
 ) -> bool:
     """Alias tương thích cho tên hàm cũ."""
     return is_long_form_question(question, patterns=patterns)
+
+
+def is_structured_extractive_question(question: str) -> bool:
+    """True for questions asking for a directly extractable legal structure."""
+    if not isinstance(question, str):
+        return False
+    normalized = unicodedata.normalize("NFC", question.casefold())
+    if any(re.search(pattern, normalized) for pattern in _SYNTHESIS_QUESTION_PATTERNS):
+        return False
+    return any(re.search(pattern, normalized) for pattern in _STRUCTURED_EXTRACTIVE_PATTERNS)
+
+
+def needs_extended_generation_retry(question: str) -> bool:
+    """Limit costly token-budget retries to genuinely long list-like answers."""
+    if not isinstance(question, str):
+        return False
+    normalized = unicodedata.normalize("NFC", question.casefold())
+    return any(re.search(pattern, normalized) for pattern in _EXTENDED_RETRY_PATTERNS)
 
 
 BOILERPLATE_PATTERNS: tuple[str, ...] = (

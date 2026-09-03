@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import inspect
 import math
+import re
 import sys
 import time
 import unicodedata
@@ -21,7 +22,9 @@ from .text import (
     is_refusal_answer,
     is_heading_only_answer,
     is_long_form_question,
+    is_structured_extractive_question,
     legal_retrieval_signal_matches,
+    needs_extended_generation_retry,
     possibly_cut,
     query_terms,
     retrieval_priority_phrases,
@@ -173,10 +176,20 @@ def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str,
         "context_words": int(evidence.get("context_words") or 0),
         "generated_tokens": evidence.get("generated_tokens"),
         "hit_token_limit": bool(evidence.get("hit_token_limit", False)),
+        "initial_hit_token_limit": bool(
+            evidence.get("initial_hit_token_limit", False)
+        ),
+        "generation_attempts": int(evidence.get("generation_attempts") or 0),
+        "retry_max_new_tokens": evidence.get("retry_max_new_tokens"),
+        "recovery_strategy": evidence.get("recovery_strategy"),
+        "routing_decision": evidence.get("routing_decision"),
+        "raw_fallback_allowed": bool(evidence.get("raw_fallback_allowed", False)),
         "says_no_information": bool(says_no_information),
         "possibly_cut": bool(evidence.get("possibly_cut", False)),
         "top_document_id": top_document_id,
         "reranker_score": reranker_score,
+        "raw_reranker_score": evidence.get("raw_reranker_score", reranker_score),
+        "fallback_reason": evidence.get("fallback_reason"),
         "reranker_candidates": evidence.get("reranker_candidates"),
         "reranker_max_length": evidence.get("reranker_max_length"),
         "retrieval_trace": evidence.get("retrieval_trace", {}),
@@ -260,6 +273,25 @@ def question_similarity(left: str, right: str) -> float:
         # must not pass the high-confidence exact-answer route.
         score *= 0.5
     return score
+
+
+_KNN_INTENT_PATTERNS: dict[str, tuple[str, ...]] = {
+    "amount": (r"\bmức\b", r"\bbao nhiêu\b", r"\btiền\b"),
+    "authority": (r"\bthẩm quyền\b", r"\bcơ quan nào\b", r"\bai\b"),
+    "condition": (r"\bđiều kiện\b", r"\btiêu chuẩn\b"),
+    "procedure": (r"\bthủ tục\b", r"\btrình tự\b", r"\bcác bước\b", r"\bhồ sơ\b"),
+    "time": (r"\bthời hạn\b", r"\bthời hiệu\b", r"\bbao lâu\b", r"\bkhi nào\b"),
+    "yes_no": (r"\b(?:có|được|phải|bị)\b[^?]{0,100}\bkhông\s*[?]?$",),
+}
+
+
+def _question_intents(question: str) -> set[str]:
+    normalized = unicodedata.normalize("NFC", str(question or "").casefold())
+    return {
+        intent
+        for intent, patterns in _KNN_INTENT_PATTERNS.items()
+        if any(re.search(pattern, normalized) for pattern in patterns)
+    }
 
 
 def _context_rerank_score(question: str, result: dict[str, Any]) -> float:
@@ -680,6 +712,8 @@ class LegalQABaseline:
         enable_long_answer_extractive: bool = True,
         max_long_answer_words: int = 640,
         min_llm_answer_tokens: int = 8,
+        token_limit_retry_tokens: int = 768,
+        guarded_knn_threshold: float = 0.90,
     ):
         positive = {
             "top_k": top_k,
@@ -695,12 +729,17 @@ class LegalQABaseline:
             "reranker_max_length": reranker_max_length,
             "max_long_answer_words": max_long_answer_words,
             "min_llm_answer_tokens": min_llm_answer_tokens,
+            "token_limit_retry_tokens": token_limit_retry_tokens,
         }
         invalid = {name: value for name, value in positive.items() if value <= 0}
         if invalid:
             raise ValueError(f"Các tham số pipeline phải lớn hơn 0: {invalid}")
         if not 0.0 <= knn_threshold <= 1.0:
             raise ValueError("knn_threshold phải nằm trong [0, 1]")
+        if not 0.90 <= guarded_knn_threshold <= 1.0:
+            raise ValueError("guarded_knn_threshold phải nằm trong [0.90, 1]")
+        if token_limit_retry_tokens not in (768, 1024):
+            raise ValueError("token_limit_retry_tokens phải là 768 hoặc 1024")
         if not (
             context_top_k
             <= rerank_top_k
@@ -734,6 +773,8 @@ class LegalQABaseline:
         self.reranker_max_length = reranker_max_length
         self.allow_retrieval_fallback = allow_retrieval_fallback
         self.min_llm_answer_tokens = min_llm_answer_tokens
+        self.token_limit_retry_tokens = token_limit_retry_tokens
+        self.guarded_knn_threshold = guarded_knn_threshold
 
     def _adjacent_chunks(
         self,
@@ -799,6 +840,137 @@ class LegalQABaseline:
             best_chunk_no=int(chunks[0].get("chunk_no", 0)) if chunks else 0,
             max_words=self.max_long_answer_words,
         )
+
+    def _call_generator(
+        self,
+        *,
+        context: str,
+        question: str,
+        max_new_tokens: int | None = None,
+    ) -> Any:
+        """Call production and lightweight generators with an optional retry budget."""
+        if self.generator is None:
+            from .generator import ViQwenRAGGenerator
+            self.generator = ViQwenRAGGenerator()
+        generate = self.generator.generate
+        kwargs: dict[str, Any] = {"context": context, "question": question}
+        if max_new_tokens is not None:
+            try:
+                parameters = inspect.signature(generate).parameters
+            except (TypeError, ValueError):
+                parameters = {}
+            accepts_kwargs = any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+            if accepts_kwargs or "max_new_tokens" in parameters:
+                kwargs["max_new_tokens"] = max_new_tokens
+        return generate(**kwargs)
+
+    def _guarded_knn(
+        self,
+        question: str,
+        *,
+        exclude_id: str | None,
+    ) -> Prediction | None:
+        """Use train answers only for near-duplicates with matching intent/entity guards."""
+        candidate = self._knn(question, exclude_id=exclude_id)
+        if candidate is None or candidate.confidence < self.guarded_knn_threshold:
+            return None
+        candidate_question = str(candidate.evidence.get("question") or "")
+        source_intents = _question_intents(question)
+        candidate_intents = _question_intents(candidate_question)
+        if source_intents != candidate_intents:
+            return None
+        evidence = {
+            **candidate.evidence,
+            "guarded_knn_threshold": self.guarded_knn_threshold,
+            "intent_guard": sorted(source_intents),
+        }
+        return Prediction(candidate.answer, "knn_guarded", candidate.confidence, evidence)
+
+    def _requery_candidates(
+        self,
+        question: str,
+        *,
+        excluded_keys: set[tuple[str, int]],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Run one controlled lexical re-query and retain only confident reranker hits."""
+        requery = " ".join(query_terms(question, max_terms=24)).strip()
+        trace: dict[str, Any] = {
+            "query": requery,
+            "status": "skipped",
+            "returned": 0,
+        }
+        if not requery:
+            return [], trace
+        try:
+            candidates = self.index.search_contexts(requery, top_k=self.bm25_top_k)
+            candidates = [
+                dict(candidate)
+                for candidate in candidates
+                if (
+                    str(candidate.get("context_id") or "").strip(),
+                    int(candidate.get("chunk_no", 0)),
+                ) not in excluded_keys
+            ][: self.reranker_candidate_k]
+            if self.reranker is not None and candidates:
+                candidates = self.reranker.rerank(
+                    question,
+                    candidates,
+                    top_k=len(candidates),
+                    max_length=self.reranker_max_length,
+                )
+            candidates = _apply_reranker_legal_guardrails(question, candidates)
+            confident = [
+                candidate
+                for candidate in candidates
+                if (_audit_float(candidate.get("rerank_score")) or float("-inf")) >= 2.0
+            ]
+            trace.update(
+                {
+                    "status": "ok" if confident else "no_confident_candidate",
+                    "returned": len(confident),
+                    "candidates": [
+                        _retrieval_candidate_record(
+                            candidate,
+                            rank=rank,
+                            score_field="final_rerank_score",
+                        )
+                        for rank, candidate in enumerate(confident[:3], start=1)
+                    ],
+                }
+            )
+            return confident, trace
+        except Exception as exc:
+            trace.update({"status": "error", "error": str(exc)})
+            return [], trace
+
+    def _build_generation_context(
+        self,
+        question: str,
+        best: dict[str, Any],
+        ranked_chunks: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str, str]:
+        adjacent_chunks = self._adjacent_chunks(best, question=question)
+        prompt_chunks = self._prioritize_prompt_chunks(
+            [best, *adjacent_chunks],
+            ranked_chunks,
+        )
+        context_blocks: list[str] = []
+        for index, chunk in enumerate(prompt_chunks, start=1):
+            name = str(chunk.get("name") or "").strip()
+            text = str(chunk.get("text") or "").strip()
+            context_blocks.append(
+                f"[{index}] Văn bản: {name}\n{text}" if name else f"[{index}] {text}"
+            )
+        joined_context = "\n\n".join(context_blocks)
+        raw_answer = self._merge_raw_chunks(
+            adjacent_chunks,
+            question=question,
+            best=best,
+        )
+        return adjacent_chunks, prompt_chunks, joined_context, raw_answer
 
     def _invalid_generation_reason(self, answer: Any) -> str | None:
         """Classify unusable LLM output that must fall back to raw evidence."""
@@ -911,6 +1083,7 @@ class LegalQABaseline:
         question: str,
         *,
         retrieval_only: bool = False,
+        exclude_id: str | None = None,
     ) -> Prediction | None:
         rag_started = time.perf_counter()
         stage_seconds: dict[str, float] = {}
@@ -1120,16 +1293,79 @@ class LegalQABaseline:
             )
 
         best = top_chunks[0]
+        raw_reranker_score = _audit_float(best.get("rerank_score"))
+        low_confidence_retrieval = (
+            raw_reranker_score is None or raw_reranker_score < 2.0
+        )
+        requery_candidates: list[dict[str, Any]] = []
+        if low_confidence_retrieval:
+            guarded_knn = self._guarded_knn(question, exclude_id=exclude_id)
+            if guarded_knn is not None:
+                return Prediction(
+                    guarded_knn.answer,
+                    "knn_guarded_low_confidence",
+                    guarded_knn.confidence,
+                    {
+                        **guarded_knn.evidence,
+                        "retrieval_trace": retrieval_trace,
+                        "raw_reranker_score": raw_reranker_score,
+                        "recovery_strategy": "guarded_knn",
+                        "routing_decision": "low_confidence_guarded_knn",
+                        "generated_tokens": 0,
+                        "generation_attempts": 0,
+                        "hit_token_limit": False,
+                        "says_no_information": False,
+                        "possibly_cut": False,
+                        "stage_seconds": {
+                            **stage_seconds,
+                            "generation": 0.0,
+                            "total": round(time.perf_counter() - rag_started, 4),
+                        },
+                    },
+                )
+            excluded_keys = {
+                (str(chunk.get("context_id") or ""), int(chunk.get("chunk_no", 0)))
+                for chunk in top_chunks
+            }
+            requery_candidates, requery_trace = self._requery_candidates(
+                question,
+                excluded_keys=excluded_keys,
+            )
+            retrieval_trace["recovery"] = {
+                "trigger": "raw_reranker_score_below_2",
+                **requery_trace,
+            }
+            if requery_candidates:
+                recovered_best = requery_candidates[0]
+                unique_chunks = [recovered_best, *top_chunks]
+                seen_keys: set[tuple[str, int]] = set()
+                top_chunks = []
+                for chunk in unique_chunks:
+                    key = (
+                        str(chunk.get("context_id") or ""),
+                        int(chunk.get("chunk_no", 0)),
+                    )
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        top_chunks.append(chunk)
+                    if len(top_chunks) >= self.context_top_k:
+                        break
+                best = top_chunks[0]
+                raw_reranker_score = _audit_float(best.get("rerank_score"))
+                low_confidence_retrieval = False
+
         adjacent_chunks = self._adjacent_chunks(best, question=question)
 
-        if self.enable_long_answer_extractive and is_long_form_question(question):
+        if (
+            self.enable_long_answer_extractive
+            and is_structured_extractive_question(question)
+        ):
             if adjacent_chunks:
                 merged_answer = self._merge_raw_chunks(
                     adjacent_chunks,
                     question=question,
                     best=best,
                 )
-                raw_reranker_score = _audit_float(best.get("rerank_score"))
                 direct_extractive_allowed = (
                     raw_reranker_score is not None and raw_reranker_score >= 2.0
                 )
@@ -1164,6 +1400,10 @@ class LegalQABaseline:
                         ],
                         "merged_chunk_nos": [c["chunk_no"] for c in adjacent_chunks],
                         "context_words": len(tokenize(merged_answer)),
+                        "raw_reranker_score": raw_reranker_score,
+                        "routing_decision": "focused_extractive_good_retrieval",
+                        "raw_fallback_allowed": False,
+                        "generation_attempts": 0,
                         "generated_tokens": 0,
                         "hit_token_limit": False,
                         "says_no_information": False,
@@ -1177,91 +1417,195 @@ class LegalQABaseline:
                     confidence = _rag_confidence(question, best)
                     return Prediction(merged_answer, "extractive_long", confidence, evidence)
 
-        # Preserve the legal document's local continuity first. Other reranker
-        # results come later and are retained only while the generator's prompt
-        # budget still has room (the generator truncates context from the tail).
-        prompt_chunks = self._prioritize_prompt_chunks(
-            [best, *adjacent_chunks],
-            top_chunks,
+        adjacent_chunks, prompt_chunks, joined_context, raw_context_answer = (
+            self._build_generation_context(question, best, top_chunks)
         )
-        context_blocks = []
-        for idx, chunk in enumerate(prompt_chunks, start=1):
-            name = str(chunk.get("name") or "").strip()
-            text = str(chunk.get("text") or "").strip()
-            if name:
-                context_blocks.append(f"[{idx}] Văn bản: {name}\n{text}")
-            else:
-                context_blocks.append(f"[{idx}] {text}")
-        joined_context = "\n\n".join(context_blocks)
-
-        raw_context_answer = self._merge_raw_chunks(
-            adjacent_chunks,
-            question=question,
-            best=best,
-        )
-        if self.generator is None:
-            from .generator import ViQwenRAGGenerator
-            self.generator = ViQwenRAGGenerator()
-        generator_kwargs: dict[str, Any] = {
-            "context": joined_context,
-            "question": question,
-        }
         generation_started = time.perf_counter()
-        try:
-            raw_generated_answer = self.generator.generate(**generator_kwargs)
-            answer = clean_answer(raw_generated_answer)
+        generation_attempts = 0
+        initial_hit_token_limit = False
+        retry_budget: int | None = None
+        recovery_strategy: str | None = None
+        route: str | None = None
+
+        def generate_once(
+            context: str,
+            *,
+            max_new_tokens: int | None = None,
+        ) -> tuple[str, str | None, dict[str, Any]]:
+            nonlocal generation_attempts
+            generation_attempts += 1
+            try:
+                raw_answer = self._call_generator(
+                    context=context,
+                    question=question,
+                    max_new_tokens=max_new_tokens,
+                )
+            except GenerationTokenLimitReached as exc:
+                stats = getattr(self.generator, "last_generation_stats", {})
+                if not isinstance(stats, dict):
+                    stats = {}
+                return "", "token_limit", {
+                    **stats,
+                    "generated_tokens": stats.get("generated_tokens", exc.generated_tokens),
+                    "max_new_tokens": stats.get("max_new_tokens", exc.max_new_tokens),
+                    "hit_token_limit": True,
+                }
+            cleaned = clean_answer(raw_answer)
             generation_stats = getattr(self.generator, "last_generation_stats", {})
             if not isinstance(generation_stats, dict):
                 generation_stats = {}
-            invalid_reason = (
+            reason = (
                 "token_limit"
                 if generation_stats.get("hit_token_limit")
-                else self._invalid_generation_reason(answer)
+                else self._invalid_generation_reason(cleaned)
             )
-            if invalid_reason is not None:
-                if not raw_context_answer:
-                    raise RuntimeError(
-                        "Generator output is unusable but the context fallback is empty"
+            return cleaned, reason, generation_stats
+
+        answer, invalid_reason, generation_stats = generate_once(joined_context)
+        initial_budget = int(
+            generation_stats.get("max_new_tokens")
+            or getattr(self.generator, "max_new_tokens", 512)
+            or 512
+        )
+
+        if invalid_reason == "token_limit":
+            initial_hit_token_limit = True
+            if needs_extended_generation_retry(question):
+                if initial_budget < self.token_limit_retry_tokens:
+                    retry_budget = self.token_limit_retry_tokens
+                elif initial_budget < 1024:
+                    retry_budget = 1024
+                if retry_budget is not None:
+                    answer, invalid_reason, generation_stats = generate_once(
+                        joined_context,
+                        max_new_tokens=retry_budget,
                     )
-                answer = raw_context_answer
-                route = "extractive_fallback"
-                generation_evidence = {
-                    "fallback_reason": invalid_reason,
-                    "generated_tokens": generation_stats.get("generated_tokens"),
-                    "max_new_tokens": generation_stats.get("max_new_tokens", 512),
-                    "hit_token_limit": bool(generation_stats.get("hit_token_limit", False)),
-                    "says_no_information": invalid_reason == "refusal",
-                    "possibly_cut": invalid_reason in ("possibly_cut", "token_limit"),
-                }
+                    if invalid_reason is None:
+                        route = f"generated_retry_{retry_budget}"
+                        recovery_strategy = "token_limit_retry"
+
+        if invalid_reason == "refusal" and generation_attempts == 1:
+            guarded_knn = self._guarded_knn(question, exclude_id=exclude_id)
+            if guarded_knn is not None:
+                answer = guarded_knn.answer
+                invalid_reason = None
+                route = "knn_guarded_refusal"
+                recovery_strategy = "guarded_knn"
             else:
-                route = "generated_512"
-                generation_evidence = {
-                    "generated_tokens": generation_stats.get("generated_tokens"),
-                    "max_new_tokens": generation_stats.get("max_new_tokens", 512),
-                    "hit_token_limit": bool(generation_stats.get("hit_token_limit", False)),
-                    "says_no_information": False,
-                    "possibly_cut": False,
-                }
-        except GenerationTokenLimitReached as exc:
-            if not raw_context_answer:
-                raise RuntimeError(
-                    "Generator reached its token limit but the context fallback is empty"
-                ) from exc
+                current_key = (
+                    str(best.get("context_id") or ""),
+                    int(best.get("chunk_no", 0)),
+                )
+                alternative_pool = [
+                    candidate
+                    for candidate in [*requery_candidates, *reranked_pool]
+                    if (
+                        str(candidate.get("context_id") or ""),
+                        int(candidate.get("chunk_no", 0)),
+                    ) != current_key
+                    and (_audit_float(candidate.get("rerank_score")) or float("-inf")) >= 2.0
+                ]
+                if not alternative_pool and not requery_candidates:
+                    recovered, requery_trace = self._requery_candidates(
+                        question,
+                        excluded_keys={current_key},
+                    )
+                    retrieval_trace["recovery"] = {
+                        "trigger": "generator_refusal",
+                        **requery_trace,
+                    }
+                    alternative_pool = recovered
+                if alternative_pool:
+                    alternative_best = alternative_pool[0]
+                    alternative_chunks = [alternative_best, *top_chunks]
+                    (
+                        adjacent_chunks,
+                        prompt_chunks,
+                        joined_context,
+                        raw_context_answer,
+                    ) = self._build_generation_context(
+                        question,
+                        alternative_best,
+                        alternative_chunks,
+                    )
+                    answer, invalid_reason, generation_stats = generate_once(joined_context)
+                    best = alternative_best
+                    top_chunks = alternative_chunks[: self.context_top_k]
+                    raw_reranker_score = _audit_float(best.get("rerank_score"))
+                    recovery_strategy = "alternate_candidate"
+                    if invalid_reason is None:
+                        route = "generated_refusal_recovery"
+
+        raw_fallback_allowed = bool(
+            raw_reranker_score is not None
+            and raw_reranker_score >= 2.0
+            and is_structured_extractive_question(question)
+            and raw_context_answer
+            and not is_heading_only_answer(raw_context_answer)
+            and not possibly_cut(raw_context_answer)
+        )
+        if invalid_reason is None:
+            if route is None:
+                route = f"generated_{initial_budget}"
+            generation_evidence = {
+                "generated_tokens": generation_stats.get("generated_tokens"),
+                "max_new_tokens": generation_stats.get("max_new_tokens", initial_budget),
+                "hit_token_limit": False,
+                "initial_hit_token_limit": initial_hit_token_limit,
+                "generation_attempts": generation_attempts,
+                "retry_max_new_tokens": retry_budget,
+                "recovery_strategy": recovery_strategy,
+                "raw_reranker_score": raw_reranker_score,
+                "raw_fallback_allowed": raw_fallback_allowed,
+                "routing_decision": (
+                    "guarded_knn_after_refusal"
+                    if route == "knn_guarded_refusal"
+                    else "generator_success"
+                ),
+                "says_no_information": False,
+                "possibly_cut": False,
+            }
+        elif raw_fallback_allowed:
             answer = raw_context_answer
             route = "extractive_fallback"
             generation_evidence = {
-                "hit_token_limit": True,
-                "generated_tokens": exc.generated_tokens,
-                "max_new_tokens": exc.max_new_tokens,
-                "fallback_reason": "token_limit",
+                "fallback_reason": invalid_reason,
+                "generated_tokens": generation_stats.get("generated_tokens"),
+                "max_new_tokens": generation_stats.get("max_new_tokens", initial_budget),
+                "hit_token_limit": invalid_reason == "token_limit",
+                "initial_hit_token_limit": initial_hit_token_limit,
+                "generation_attempts": generation_attempts,
+                "retry_max_new_tokens": retry_budget,
+                "recovery_strategy": recovery_strategy,
+                "raw_reranker_score": raw_reranker_score,
+                "raw_fallback_allowed": True,
+                "routing_decision": "guarded_focused_extractive_fallback",
                 "says_no_information": False,
-                "possibly_cut": True,
+                "possibly_cut": False,
             }
-        finally:
-            stage_seconds["generation"] = round(
-                time.perf_counter() - generation_started,
-                4,
-            )
+        else:
+            if invalid_reason != "refusal" or not answer:
+                answer = "Không tìm thấy căn cứ đủ tin cậy để trả lời câu hỏi."
+            route = "recovery_exhausted"
+            generation_evidence = {
+                "fallback_reason": invalid_reason,
+                "generated_tokens": generation_stats.get("generated_tokens"),
+                "max_new_tokens": generation_stats.get("max_new_tokens", initial_budget),
+                "hit_token_limit": invalid_reason == "token_limit",
+                "initial_hit_token_limit": initial_hit_token_limit,
+                "generation_attempts": generation_attempts,
+                "retry_max_new_tokens": retry_budget,
+                "recovery_strategy": recovery_strategy or "none_available",
+                "raw_reranker_score": raw_reranker_score,
+                "raw_fallback_allowed": False,
+                "routing_decision": "recovery_exhausted_without_raw_dump",
+                "says_no_information": True,
+                "possibly_cut": invalid_reason == "possibly_cut",
+            }
+        stage_seconds["generation"] = round(
+            time.perf_counter() - generation_started,
+            4,
+        )
         if not isinstance(answer, str) or not answer.strip():
             raise RuntimeError("Generator và raw context đều trả về answer rỗng")
         answer = answer.strip()
@@ -1361,13 +1705,13 @@ class LegalQABaseline:
             else:
                 result = self._extractive(question)
         elif mode == "rag":
-            result = self._rag(question)
+            result = self._rag(question, exclude_id=exclude_id)
         elif mode == "hybrid_rag":
             knn = self._knn(question, exclude_id=exclude_id)
             if knn is not None and knn.confidence >= self.knn_threshold:
                 result = knn
             else:
-                result = self._rag(question)
+                result = self._rag(question, exclude_id=exclude_id)
         else:
             raise ValueError(f"Mode không hỗ trợ: {mode}")
 

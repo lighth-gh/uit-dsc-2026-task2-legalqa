@@ -161,6 +161,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-input-tokens", type=int, default=7168)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--min-llm-answer-tokens", type=int, default=8)
+    parser.add_argument(
+        "--token-limit-retry-tokens",
+        type=int,
+        default=768,
+        choices=[768, 1024],
+        help="Budget retry duy nhất cho câu trả lời dạng danh sách dài",
+    )
+    parser.add_argument("--guarded-knn-threshold", type=float, default=0.90)
     parser.add_argument("--generation-seed", type=int, default=2026)
     parser.add_argument(
         "--allow-retrieval-fallback",
@@ -303,6 +311,12 @@ def main() -> int:
 
     predictions: dict[str, str] = {}
     routes: dict[str, int] = {}
+    quality_counts = {
+        "unresolved_token_limit": 0,
+        "initial_token_limit": 0,
+        "refusal": 0,
+        "extractive_fallback": 0,
+    }
     started = time.time()
 
     with SearchIndex(db_path) as index:
@@ -337,15 +351,33 @@ def main() -> int:
             enable_long_answer_extractive=not args.disable_long_answer_extractive,
             max_long_answer_words=args.max_long_answer_words,
             min_llm_answer_tokens=args.min_llm_answer_tokens,
+            token_limit_retry_tokens=args.token_limit_retry_tokens,
+            guarded_knn_threshold=args.guarded_knn_threshold,
         )
 
         total = len(sample_ids)
         for idx, sample_id in enumerate(sample_ids, start=1):
             item = data[sample_id]
             question = item["question"]
-            pred = pipeline.predict_one(question, mode=args.mode)
+            pred = pipeline.predict_one(
+                question,
+                mode=args.mode,
+                exclude_id=sample_id,
+            )
             predictions[sample_id] = pred.answer
             routes[pred.route] = routes.get(pred.route, 0) + 1
+            quality_counts["unresolved_token_limit"] += int(
+                bool(pred.evidence.get("hit_token_limit", False))
+            )
+            quality_counts["initial_token_limit"] += int(
+                bool(pred.evidence.get("initial_hit_token_limit", False))
+            )
+            quality_counts["refusal"] += int(
+                bool(pred.evidence.get("says_no_information", False))
+            )
+            quality_counts["extractive_fallback"] += int(
+                pred.route == "extractive_fallback"
+            )
             stage_seconds = pred.evidence.get("stage_seconds", {})
             if not isinstance(stage_seconds, dict):
                 stage_seconds = {}
@@ -381,6 +413,20 @@ def main() -> int:
     print(f"[✓] File kết quả: {output_path.resolve()}")
     print(f"[✓] Audit log: {audit_path.resolve()}")
     print(f"[✓] Dense active: {dense_index is not None} | Reranker configured: {reranker is not None}")
+    denominator = max(1, len(predictions))
+    token_limit_rate = quality_counts["unresolved_token_limit"] / denominator
+    refusal_rate = quality_counts["refusal"] / denominator
+    fallback_rate = quality_counts["extractive_fallback"] / denominator
+    print(
+        "[Quality gate] "
+        f"token-limit={token_limit_rate:.2%} (<5%: {token_limit_rate < 0.05}) | "
+        f"refusal={refusal_rate:.2%} (<2%: {refusal_rate < 0.02}) | "
+        f"extractive-fallback={fallback_rate:.2%} (<10%: {fallback_rate < 0.10})"
+    )
+    print(
+        "[Quality audit] "
+        f"initial token-limit={quality_counts['initial_token_limit']} | routes={routes}"
+    )
     print("=" * 60)
     return 0
 

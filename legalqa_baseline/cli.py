@@ -121,6 +121,8 @@ def _add_pipeline_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-input-tokens", type=int, default=7168)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--min-llm-answer-tokens", type=int, default=8)
+    parser.add_argument("--token-limit-retry-tokens", type=int, default=768, choices=[768, 1024])
+    parser.add_argument("--guarded-knn-threshold", type=float, default=0.90)
     parser.add_argument("--generation-seed", type=int, default=2026)
 
 
@@ -316,6 +318,7 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         "dense_query_max_length": getattr(args, "dense_query_max_length", 256),
         "reranker_max_length": getattr(args, "reranker_max_length", 1024),
         "max_long_answer_words": getattr(args, "max_long_answer_words", 640),
+        "token_limit_retry_tokens": getattr(args, "token_limit_retry_tokens", 768),
     }
     invalid = {name: value for name, value in positive_values.items() if value <= 0}
     if invalid:
@@ -332,6 +335,8 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         )
     if not 0.0 <= args.knn_threshold <= 1.0:
         raise ValueError("knn_threshold phải nằm trong [0, 1]")
+    if not 0.90 <= getattr(args, "guarded_knn_threshold", 0.90) <= 1.0:
+        raise ValueError("guarded_knn_threshold phải nằm trong [0.90, 1]")
     allow_fallback = bool(getattr(args, "allow_retrieval_fallback", False))
 
     if need_generator:
@@ -435,6 +440,8 @@ def _pipeline(args: argparse.Namespace, index: SearchIndex, need_generator: bool
         enable_long_answer_extractive=getattr(args, "enable_long_answer_extractive", True),
         max_long_answer_words=getattr(args, "max_long_answer_words", 640),
         min_llm_answer_tokens=getattr(args, "min_llm_answer_tokens", 8),
+        token_limit_retry_tokens=getattr(args, "token_limit_retry_tokens", 768),
+        guarded_knn_threshold=getattr(args, "guarded_knn_threshold", 0.90),
     )
 
 
@@ -819,9 +826,13 @@ def command_validate(args: argparse.Namespace) -> int:
             "sample_ids": sample_ids,
             "top_k": args.top_k,
             "max_answer_words": args.max_answer_words,
+            "max_long_answer_words": args.max_long_answer_words,
             "knn_threshold": args.knn_threshold,
+            "guarded_knn_threshold": args.guarded_knn_threshold,
             "context_top_k": args.context_top_k,
             "generator_model": args.generator_model,
+            "max_new_tokens": args.max_new_tokens,
+            "token_limit_retry_tokens": args.token_limit_retry_tokens,
         },
         "results": {},
         "regression": {},
@@ -903,6 +914,38 @@ def command_validate(args: argparse.Namespace) -> int:
                 scores.update(aggregate_official_scores(predictions, references))
             scores["routes"] = routes
             scores["retrieval"] = aggregate_retrieval_items(items)
+            quality_total = max(1, len(items))
+            token_limit_count = sum(
+                bool(item.get("audit", {}).get("hit_token_limit", False))
+                for item in items
+                if isinstance(item.get("audit"), dict)
+            )
+            refusal_count = sum(
+                bool(item.get("audit", {}).get("says_no_information", False))
+                for item in items
+                if isinstance(item.get("audit"), dict)
+            )
+            fallback_count = sum(item.get("route") == "extractive_fallback" for item in items)
+            scores["routing_quality"] = {
+                "token_limit": {
+                    "count": token_limit_count,
+                    "rate": token_limit_count / quality_total,
+                    "target": 0.05,
+                    "passed": token_limit_count / quality_total < 0.05,
+                },
+                "refusal": {
+                    "count": refusal_count,
+                    "rate": refusal_count / quality_total,
+                    "target": 0.02,
+                    "passed": refusal_count / quality_total < 0.02,
+                },
+                "extractive_fallback": {
+                    "count": fallback_count,
+                    "rate": fallback_count / quality_total,
+                    "target": 0.10,
+                    "passed": fallback_count / quality_total < 0.10,
+                },
+            }
             scores["items"] = items
             report["results"][mode] = scores  # type: ignore[index]
 
@@ -910,7 +953,11 @@ def command_validate(args: argparse.Namespace) -> int:
                 regression_items: list[dict[str, object]] = []
                 regression_routes: dict[str, int] = {}
                 for sample_id, item in regression_data.items():
-                    result = pipeline.predict_one(item["question"], mode=mode)
+                    result = pipeline.predict_one(
+                        item["question"],
+                        mode=mode,
+                        exclude_id=sample_id,
+                    )
                     regression_routes[result.route] = regression_routes.get(result.route, 0) + 1
                     audit = prediction_audit_record(sample_id, result)
                     regression_items.append(

@@ -16,3 +16,4 @@ artifacts/hf-cache/
 !data/*.zip
 .env
 .DS_Store
+/AGENTS.md

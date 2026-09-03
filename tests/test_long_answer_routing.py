@@ -15,7 +15,9 @@ from legalqa_baseline.text import (
     is_heading_only_answer,
     is_long_answer_question,
     is_long_form_question,
+    is_structured_extractive_question,
     merge_adjacent_chunks,
+    needs_extended_generation_retry,
     possibly_cut,
 )
 
@@ -136,6 +138,20 @@ class TestLongAnswerPatterns(unittest.TestCase):
         self.assertFalse(is_long_answer_question(None))  # type: ignore[arg-type]
         self.assertFalse(is_long_answer_question(123))  # type: ignore[arg-type]
         self.assertTrue(is_long_form_question("Trình tự gồm các bước nào?"))
+
+    def test_synthesis_question_is_not_direct_extractive(self) -> None:
+        self.assertTrue(is_structured_extractive_question("Hồ sơ gồm những gì?"))
+        self.assertFalse(
+            is_structured_extractive_question(
+                "Hãy phân tích và so sánh điều kiện của hai thủ tục này."
+            )
+        )
+        self.assertTrue(
+            needs_extended_generation_retry("Hãy liệt kê danh sách hồ sơ cần nộp.")
+        )
+        self.assertFalse(
+            needs_extended_generation_retry("Hồ sơ này có hợp lệ không?")
+        )
 
 
 class TestMergeAdjacentChunks(unittest.TestCase):
