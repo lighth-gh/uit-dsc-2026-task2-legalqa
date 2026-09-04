@@ -102,6 +102,30 @@ class TextTests(unittest.TestCase):
         self.assertIn("Bắt đầu vào khu vực", retrieval_query_aliases(zone_question))
         self.assertIn("bắt đầu vào khu vực", retrieval_priority_phrases(zone_question))
 
+        pccc_report_question = (
+            "Thực hiện báo cáo phương tiện phòng cháy chữa cháy như thế nào "
+            "và tại đâu?"
+        )
+        pccc_aliases = retrieval_query_aliases(pccc_report_question)
+        self.assertIn(
+            "Trình tự báo cáo và cơ quan tiếp nhận báo cáo",
+            pccc_aliases,
+        )
+        self.assertIn(
+            "trình tự báo cáo và cơ quan tiếp nhận báo cáo",
+            retrieval_priority_phrases(pccc_report_question),
+        )
+        self.assertEqual(
+            retrieval_query_aliases("Ai phải lập phương án phòng cháy chữa cháy?"),
+            [],
+        )
+
+        fund_question = "Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp?"
+        self.assertIn(
+            "sử dụng quỹ bảo hiểm tai nạn lao động bệnh nghề nghiệp",
+            retrieval_priority_phrases(fund_question),
+        )
+
         form_question = "Mẫu kế hoạch giáo dục của giáo viên mới nhất?"
         self.assertIn(
             "kế hoạch giáo dục của giáo viên",

@@ -271,6 +271,63 @@ class StorageRemainingRegressionTests(unittest.TestCase):
         self.assertEqual(matches[0]["context_id"], "power-plan-viii")
         self.assertGreater(int(matches[0]["exact_phrase_matches"]), 0)
 
+    def test_smoke_query_priorities_rescue_exact_governing_sections(self) -> None:
+        contexts = self.root / "smoke_query_priorities"
+        fixtures = (
+            (
+                "pccc-report",
+                "Thông tư 17/2021/TT-BCA",
+                "Điều 10. Thống kê, báo cáo công tác quản lý, bảo quản, bảo dưỡng "
+                "phương tiện phòng cháy, chữa cháy. Trình tự báo cáo và cơ quan "
+                "tiếp nhận báo cáo được xác định theo đơn vị trực tiếp quản lý "
+                "phương tiện và phạm vi quản lý của cơ quan công an có thẩm quyền.",
+            ),
+            (
+                "pccc-noise",
+                "Quy định phòng cháy chữa cháy",
+                "Cơ sở lập phương án phòng cháy chữa cháy, tổ chức thực tập, báo cáo "
+                "kết quả và quản lý nhiều loại phương tiện theo kế hoạch hằng năm. "
+                "Nội dung chung này không quy định nơi nhận báo cáo bảo dưỡng.",
+            ),
+            (
+                "fund-article-42",
+                "Luật An toàn, vệ sinh lao động",
+                "Điều 42. Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp. "
+                "Quỹ chi trả phí giám định, trợ cấp, hỗ trợ phòng ngừa và phục hồi "
+                "chức năng lao động cho người lao động theo các khoản của điều này.",
+            ),
+            (
+                "fund-noise",
+                "Chi phí quản lý bảo hiểm",
+                "Cơ quan báo cáo việc quản lý và sử dụng quỹ bảo hiểm xã hội, quỹ "
+                "bảo hiểm tai nạn lao động và kinh phí hành chính theo dự toán. "
+                "Nội dung tập trung vào quyết toán chi phí quản lý hằng năm.",
+            ),
+        )
+        for context_id, name, passage in fixtures:
+            _write_json(
+                contexts / f"context_{context_id}.json",
+                {"id": context_id, "name": name, "link": "", "passage": passage},
+            )
+        database = self.root / "smoke_query_priorities.sqlite"
+        self._build(contexts, database)
+
+        with SearchIndex(database) as index:
+            pccc_matches = index.search_contexts(
+                "Thực hiện báo cáo phương tiện phòng cháy chữa cháy như thế nào "
+                "và tại đâu?",
+                top_k=4,
+            )
+            fund_matches = index.search_contexts(
+                "Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp?",
+                top_k=4,
+            )
+
+        self.assertEqual(pccc_matches[0]["context_id"], "pccc-report")
+        self.assertGreater(int(pccc_matches[0]["exact_phrase_matches"]), 0)
+        self.assertEqual(fund_matches[0]["context_id"], "fund-article-42")
+        self.assertGreater(int(fund_matches[0]["exact_phrase_matches"]), 0)
+
     def test_hash_and_bm25_ties_are_independent_of_filename_order(self) -> None:
         databases: list[Path] = []
         for variant, assignments in enumerate(

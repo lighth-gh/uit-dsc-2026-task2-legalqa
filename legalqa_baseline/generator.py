@@ -9,9 +9,17 @@ from .hardware import recommended_cuda_dtype
 class GenerationTokenLimitReached(RuntimeError):
     """Raised when generation likely stopped because ``max_new_tokens`` was exhausted."""
 
-    def __init__(self, generated_tokens: int, max_new_tokens: int) -> None:
+    def __init__(
+        self,
+        generated_tokens: int,
+        max_new_tokens: int,
+        partial_answer: str | None = None,
+    ) -> None:
         self.generated_tokens = generated_tokens
         self.max_new_tokens = max_new_tokens
+        # Keep the decoded text for diagnostics/recovery checks. Callers must
+        # still validate completeness and grounding before using it.
+        self.partial_answer = str(partial_answer or "").strip()
         super().__init__(
             "Generator reached its token limit "
             f"({generated_tokens}/{max_new_tokens} generated tokens)"
@@ -386,18 +394,23 @@ class ViQwenRAGGenerator:
             output_len = len(outputs[0])
         generated_tokens = output_len - input_len
         hit_token_limit = generated_tokens >= effective_max_new_tokens - 4
+        response_tokens = outputs[0][input_len:]
+        response_text = self._tokenizer.decode(
+            response_tokens,
+            skip_special_tokens=True,
+        ).strip()
         self.last_generation_stats = {
             "input_tokens": input_len,
             "generated_tokens": generated_tokens,
             "max_new_tokens": effective_max_new_tokens,
             "hit_token_limit": hit_token_limit,
+            "partial_answer_available": bool(response_text) if hit_token_limit else False,
         }
         if hit_token_limit:
             raise GenerationTokenLimitReached(
                 generated_tokens=generated_tokens,
                 max_new_tokens=effective_max_new_tokens,
+                partial_answer=response_text,
             )
 
-        response_tokens = outputs[0][input_len:]
-        response_text = self._tokenizer.decode(response_tokens, skip_special_tokens=True).strip()
         return response_text

@@ -697,6 +697,75 @@ class TestPipelineLongAnswerRouting(unittest.TestCase):
             self.assertEqual(pred.route, "generated_512")
             self.assertEqual(generator.called_count, 1)
 
+    def test_id_129215_step_count_uses_decisive_adjacent_chunks(self) -> None:
+        question = (
+            "Phương pháp ELISA dùng để chẩn đoán hội chứng rối loạn sinh sản "
+            "và hô hấp ở lợn có bao nhiêu bước thực hiện?"
+        )
+
+        class StepIndex:
+            chunks = [
+                {
+                    "context_id": "elisa",
+                    "chunk_no": 8,
+                    "name": "Tiêu chuẩn chẩn đoán thú y",
+                    "text": (
+                        "Phần cuối của quy trình khác. E.1. Phương pháp ELISA chẩn đoán "
+                        "hội chứng rối loạn sinh sản và hô hấp ở lợn. Bước 1. Chuẩn bị "
+                        "mẫu xét nghiệm. Bước 2. Pha loãng huyết thanh."
+                    ),
+                    "bm25_score": -12.0,
+                },
+                {
+                    "context_id": "elisa",
+                    "chunk_no": 9,
+                    "name": "Tiêu chuẩn chẩn đoán thú y",
+                    "text": (
+                        "Bước 3. Ủ phiến phản ứng. Bước 4. Rửa phiến và bổ sung "
+                        "cộng hợp. Bước 5. Đọc kết quả xét nghiệm theo tiêu chuẩn."
+                    ),
+                    "bm25_score": -20.0,
+                },
+            ]
+
+            def search_contexts(self, query: str, top_k: int = 50) -> list[dict]:
+                return [dict(self.chunks[1])]
+
+            def get_context_chunks(
+                self,
+                context_id: str,
+                chunk_nos: list[int] | None = None,
+            ) -> list[dict]:
+                wanted = set(chunk_nos or [])
+                return [
+                    dict(chunk)
+                    for chunk in self.chunks
+                    if chunk["context_id"] == context_id
+                    and int(chunk["chunk_no"]) in wanted
+                ]
+
+            def search_train(
+                self,
+                query: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict]:
+                return []
+
+        generator = DummyGenerator()
+        pipeline = LegalQABaseline(
+            index=StepIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=DummyReranker(score=1.0),
+            enable_long_answer_extractive=True,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(pred.route, "extractive_long")
+        self.assertEqual(generator.called_count, 0)
+        self.assertIn("Bước 1", pred.answer)
+        self.assertIn("Bước 5", pred.answer)
+
     def test_raw_reranker_below_two_uses_generator(self) -> None:
         generator = DummyGenerator()
         reranker = DummyReranker(score=1.99)

@@ -442,14 +442,14 @@ class ViQwenRAGGeneratorTests(unittest.TestCase):
             max_new_tokens=32,
         )
 
-        with (
-            patch.dict(sys.modules, {"torch": _fake_torch_module()}),
-            self.assertRaises(GenerationTokenLimitReached),
-        ):
-            generator.generate(context="context", question="question")
+        with patch.dict(sys.modules, {"torch": _fake_torch_module()}):
+            with self.assertRaises(GenerationTokenLimitReached) as raised:
+                generator.generate(context="context", question="question")
 
         self.assertEqual(generator.last_generation_stats["generated_tokens"], 28)
         self.assertTrue(generator.last_generation_stats["hit_token_limit"])
+        self.assertTrue(generator.last_generation_stats["partial_answer_available"])
+        self.assertEqual(raised.exception.partial_answer, "x" * 28)
 
     def test_generate_falls_back_to_raw_chatml_without_chat_template(self) -> None:
         tokenizer = _MissingChatTemplateTokenizer()
@@ -569,6 +569,64 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(audit["generation_attempts"], 1)
         self.assertEqual(audit["top_document_id"], "100")
 
+    def test_non_list_token_limit_uses_decisive_focused_evidence(self) -> None:
+        question = "Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp?"
+
+        class ExactFundIndex:
+            def search_contexts(
+                self,
+                query: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [{
+                    "context_id": "fund-rule",
+                    "chunk_no": 4,
+                    "name": "Quy định về bảo hiểm xã hội",
+                    "text": (
+                        "Việc sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp "
+                        "phải đúng mục đích và được thực hiện theo quyết định của cơ quan "
+                        "có thẩm quyền. Kinh phí được dùng cho hoạt động phòng ngừa, hỗ trợ "
+                        "người lao động và chi trả các chế độ theo quy định pháp luật."
+                    ),
+                    "bm25_score": -20.0,
+                }]
+
+            def search_train(
+                self,
+                query: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class OneTokenLimit:
+            max_new_tokens = 512
+
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def generate(self, context: str, question: str) -> str:
+                self.calls += 1
+                raise GenerationTokenLimitReached(509, 512)
+
+        generator = OneTokenLimit()
+        pipeline = LegalQABaseline(
+            index=ExactFundIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(score=-1.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(generator.calls, 1)
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertEqual(
+            pred.evidence["recovery_strategy"],
+            "token_limit_focused_extractive",
+        )
+        self.assertIn("Quỹ bảo hiểm tai nạn lao động", pred.answer)
+        self.assertFalse(pred.evidence["says_no_information"])
+
     def test_list_token_limit_retries_once_with_768_and_keeps_generation(self) -> None:
         class RetryGenerator:
             max_new_tokens = 512
@@ -615,7 +673,7 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(pred.route, "generated_retry_768")
         self.assertEqual(generator.budgets, [None, 768])
         self.assertNotEqual(generator.questions[0], generator.questions[1])
-        self.assertIn("không quá 520 từ", generator.questions[1])
+        self.assertIn("không quá 360 từ", generator.questions[1])
         self.assertLessEqual(len(generator.contexts[1]), len(generator.contexts[0]))
         self.assertEqual(pred.evidence["generation_attempts"], 2)
         self.assertTrue(pred.evidence["initial_hit_token_limit"])
@@ -674,13 +732,20 @@ class RAGPipelineTests(unittest.TestCase):
             ) -> str:
                 self.budgets.append(max_new_tokens)
                 budget = max_new_tokens or self.max_new_tokens
-                raise GenerationTokenLimitReached(budget - 1, budget)
+                raise GenerationTokenLimitReached(
+                    budget - 1,
+                    budget,
+                    partial_answer=(
+                        "Bản sinh tạm thời có một số nội dung liên quan nhưng việc "
+                        "đánh giá cuối cùng vẫn phải dựa trên căn cứ trích xuất."
+                    ),
+                )
 
         generator = AlwaysTokenLimited()
         pipeline = LegalQABaseline(
             index=StrongArticleIndex(),  # type: ignore[arg-type]
             generator=generator,
-            reranker=FixedScoreReranker(score=3.0),
+            reranker=FixedScoreReranker(score=-1.0),
             enable_long_answer_extractive=False,
         )
         pred = pipeline.predict_one(
@@ -690,6 +755,7 @@ class RAGPipelineTests(unittest.TestCase):
 
         self.assertEqual(generator.budgets, [None, 768])
         self.assertEqual(pred.route, "extractive_fallback")
+        self.assertLess(pred.evidence["raw_reranker_score"], 2.0)
         self.assertEqual(pred.evidence["generation_attempts"], 2)
         self.assertEqual(
             pred.evidence["recovery_strategy"],
@@ -697,6 +763,12 @@ class RAGPipelineTests(unittest.TestCase):
         )
         self.assertIn("Bước ba", pred.answer)
         self.assertFalse(pred.evidence["says_no_information"])
+        self.assertTrue(pred.evidence["partial_answer_available"])
+        self.assertTrue(pred.evidence["partial_answer_usable"])
+        self.assertGreater(pred.evidence["partial_answer_words"], 8)
+        audit = prediction_audit_record("token-partial", pred)
+        self.assertTrue(audit["partial_answer_available"])
+        self.assertTrue(audit["partial_answer_usable"])
 
     def test_token_retry_refusal_transitions_to_refusal_recovery_without_more_tokens(self) -> None:
         class StrongListIndex:
@@ -1009,6 +1081,112 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertEqual(pred.route, "generated_refusal_recovery")
         self.assertEqual(pred.evidence["recovery_strategy"], "alternate_candidate")
         self.assertIn("không tự động bị cấm", pred.answer)
+        self.assertFalse(pred.evidence["raw_fallback_allowed"])
+
+    def test_yes_no_refusal_returns_only_decisive_grounded_clause(self) -> None:
+        question = (
+            "Theo Điều 12, người đang trả nợ tiền sử dụng đất "
+            "có bị cấm phân chia di sản không?"
+        )
+
+        class GroundedYesNoIndex:
+            def search_contexts(
+                self,
+                query: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [{
+                    "context_id": "land-12",
+                    "chunk_no": 12,
+                    "name": "Luật Đất đai",
+                    "link": "https://example.com/land-12",
+                    "text": (
+                        "Điều 12. Người đang trả nợ tiền sử dụng đất có quyền phân chia "
+                        "di sản là quyền sử dụng đất khi đáp ứng nghĩa vụ tài chính. "
+                        "Việc còn trả nợ không tự động làm mất quyền nhưng người sử dụng "
+                        "đất phải tuân thủ đầy đủ điều kiện do pháp luật quy định."
+                    ),
+                    "bm25_score": -20.0,
+                }]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class AlwaysRefuses:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def generate(self, context: str, question: str) -> str:
+                self.calls += 1
+                return "Không đủ thông tin trong ngữ cảnh."
+
+        generator = AlwaysRefuses()
+        pipeline = LegalQABaseline(
+            index=GroundedYesNoIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(score=3.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(generator.calls, 2)
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertEqual(
+            pred.evidence["recovery_strategy"],
+            "refusal_grounded_yes_no_clause",
+        )
+        self.assertIn("không tự động làm mất quyền", pred.answer)
+        self.assertNotIn("Có,", pred.answer)
+        self.assertFalse(pred.evidence["says_no_information"])
+
+    def test_yes_no_refusal_does_not_dump_weak_clause(self) -> None:
+        class WeakYesNoIndex:
+            def search_contexts(
+                self,
+                query: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [{
+                    "context_id": "unrelated",
+                    "chunk_no": 1,
+                    "name": "Văn bản khác",
+                    "text": (
+                        "Cơ quan quản lý phải công bố báo cáo định kỳ và thực hiện "
+                        "nhiệm vụ theo thẩm quyền. Nội dung này không quy định về "
+                        "nghĩa vụ quân sự hoặc điều kiện đối với hình xăm."
+                    ),
+                    "bm25_score": -5.0,
+                }]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class AlwaysRefuses:
+            def generate(self, context: str, question: str) -> str:
+                return "Không đủ thông tin trong ngữ cảnh."
+
+        pipeline = LegalQABaseline(
+            index=WeakYesNoIndex(),  # type: ignore[arg-type]
+            generator=AlwaysRefuses(),
+            reranker=FixedScoreReranker(score=3.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(
+            "Người trong độ tuổi nghĩa vụ quân sự có bị cấm xăm hình không?",
+            mode="rag",
+        )
+
+        self.assertEqual(pred.route, "recovery_exhausted")
         self.assertFalse(pred.evidence["raw_fallback_allowed"])
 
     def test_refusal_can_use_guarded_knn_at_point_nine(self) -> None:

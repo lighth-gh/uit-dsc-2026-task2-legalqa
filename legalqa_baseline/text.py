@@ -45,6 +45,11 @@ _PRRS_LONG_NAME_RE = re.compile(
     r"(?:ở|trên)\s+lợn\b"
 )
 _ZONE_TRAFFIC_SIGN_RE = re.compile(r"(?i)\bbiển\s+báo\s+zone\b")
+_PCCC_EQUIPMENT_REPORT_RE = re.compile(
+    r"(?is)(?:\bbáo\s+cáo\b.{0,120}\bphương\s+tiện\s+phòng\s+cháy(?:\s+và)?\s+"
+    r"chữa\s+cháy\b|\bphương\s+tiện\s+phòng\s+cháy(?:\s+và)?\s+chữa\s+cháy\b"
+    r".{0,120}\bbáo\s+cáo\b)"
+)
 _DOCUMENT_REFERENCE_RE = re.compile(
     r"(?i)\b(?P<kind>nghị\s+định|quyết\s+định|thông\s+tư|nghị\s+quyết|"
     r"công\s+văn|luật)\s*(?:số\s*)?"
@@ -58,6 +63,9 @@ _PRIORITY_LEGAL_PHRASES = (
     "mức lương cơ sở",
     "prrs",
     "bắt đầu vào khu vực",
+    "sử dụng quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp",
+    "thống kê báo cáo công tác quản lý bảo quản bảo dưỡng phương tiện phòng cháy chữa cháy",
+    "trình tự báo cáo và cơ quan tiếp nhận báo cáo",
 )
 _FORM_NAME_END_TOKENS = {
     "mới", "nhất", "hiện", "nay", "là", "gì", "nào", "ở", "đâu",
@@ -164,6 +172,16 @@ def retrieval_query_aliases(text: str) -> list[str]:
         aliases.extend(("PRRS", "bệnh tai xanh"))
     if _ZONE_TRAFFIC_SIGN_RE.search(source):
         aliases.append("Bắt đầu vào khu vực")
+    # The public question asks generically how/where to report firefighting
+    # equipment. The governing provision uses these two exact headings. Keep
+    # the expansion gated by both "báo cáo" and the full equipment concept so
+    # it cannot broaden unrelated fire-prevention questions.
+    if _PCCC_EQUIPMENT_REPORT_RE.search(source):
+        aliases.extend((
+            "Thống kê, báo cáo công tác quản lý, bảo quản, bảo dưỡng phương tiện "
+            "phòng cháy, chữa cháy",
+            "Trình tự báo cáo và cơ quan tiếp nhận báo cáo",
+        ))
 
     source_folded = source.casefold()
     return [
@@ -737,7 +755,8 @@ _STRUCTURED_EXTRACTIVE_PATTERNS: tuple[str, ...] = (
     r"\bmẫu(?: số)?\b",
     r"\bphụ lục\b",
     r"\b(?:nội dung|nguyên văn|toàn văn)\s+(?:điều|khoản|văn bản)\b",
-    r"\b(?:các|những)\s+(?:hình thức|yêu cầu|nội dung|nhiệm vụ|quyền hạn)\b",
+    r"\b(?:các|những)\s+(?:hình thức|biện pháp|quy định|yêu cầu|nội dung|nhiệm vụ|quyền hạn)\b",
+    r"\b(?:mấy|bao nhiêu)\s+bước\b",
     r"\b(?:thực hiện|được thực hiện)\b[^?]{0,140}"
     r"\b(?:như thế nào|ra sao|tại đâu)\b",
 )

@@ -186,6 +186,11 @@ def prediction_audit_record(sample_id: str, prediction: Prediction) -> dict[str,
         "initial_generation_seconds": evidence.get("initial_generation_seconds"),
         "retry_generation_seconds": evidence.get("retry_generation_seconds"),
         "retry_max_new_tokens": evidence.get("retry_max_new_tokens"),
+        "partial_answer_available": bool(
+            evidence.get("partial_answer_available", False)
+        ),
+        "partial_answer_usable": bool(evidence.get("partial_answer_usable", False)),
+        "partial_answer_words": int(evidence.get("partial_answer_words") or 0),
         "recovery_strategy": evidence.get("recovery_strategy"),
         "routing_decision": evidence.get("routing_decision"),
         "raw_fallback_allowed": bool(evidence.get("raw_fallback_allowed", False)),
@@ -554,6 +559,38 @@ def _has_decisive_legal_evidence(candidate: dict[str, Any]) -> bool:
     )
 
 
+def _has_decisive_answer_evidence(question: str, answer: str) -> bool:
+    """Check exact query evidence across the complete focused chunk window."""
+    if not str(answer or "").strip():
+        return False
+    matches = legal_retrieval_signal_matches(question, answer)
+    named_exact = any(
+        bool(matches.get(name))
+        for name in (
+            "document_references",
+            "article_references",
+            "document_names",
+            "plan_names",
+            "form_names",
+        )
+    )
+    try:
+        long_phrase_tokens = int(matches.get("long_phrase_tokens") or 0)
+        heading_overlap_tokens = int(matches.get("heading_overlap_tokens") or 0)
+    except (TypeError, ValueError, OverflowError):
+        long_phrase_tokens = 0
+        heading_overlap_tokens = 0
+    return bool(
+        named_exact
+        or long_phrase_tokens >= 6
+        or (
+            long_phrase_tokens >= 5
+            and heading_overlap_tokens >= 4
+            and bool(matches.get("focus_phrases"))
+        )
+    )
+
+
 def _recovery_generation_question(question: str, *, reason: str) -> str:
     """Add a final, narrow instruction for the one permitted recovery attempt."""
     base = str(question or "").strip()
@@ -561,7 +598,7 @@ def _recovery_generation_question(question: str, *, reason: str) -> str:
         instruction = (
             "Lần trả lời trước đã chạm giới hạn. Chỉ lấy các mục trực tiếp trả lời "
             "câu hỏi, không lặp lại nội dung, bỏ các phần trước/sau không liên quan "
-            "và kết thúc ngay sau mục cuối. Trả lời đầy đủ nhưng không quá 520 từ."
+            "và kết thúc ngay sau mục cuối. Trả lời đầy đủ nhưng không quá 360 từ."
         )
     else:
         instruction = (
@@ -570,6 +607,72 @@ def _recovery_generation_question(question: str, *, reason: str) -> str:
             "kiện. Chỉ nói thiếu thông tin khi căn cứ thực sự không chứa câu trả lời."
         )
     return f"{base}\n\n{instruction}".strip()
+
+
+def _is_yes_no_question(question: str) -> bool:
+    normalized = unicodedata.normalize("NFC", str(question or "").casefold())
+    return bool(
+        re.search(
+            r"\b(?:có|được|phải|bị)\b[^?]{0,140}"
+            r"\b(?:hay\s+)?không\s*[?]?$",
+            normalized,
+        )
+    )
+
+
+def _is_step_count_question(question: str) -> bool:
+    normalized = unicodedata.normalize("NFC", str(question or "").casefold())
+    return bool(re.search(r"\b(?:mấy|bao nhiêu)\s+bước\b", normalized))
+
+
+def _safe_grounded_yes_no_extractive(
+    question: str,
+    candidate: dict[str, Any],
+    answer: str,
+) -> bool:
+    """Allow a clause-only fallback without inventing a Có/Không conclusion."""
+    if not _is_yes_no_question(question):
+        return False
+    raw_score = _audit_float(candidate.get("rerank_score"))
+    if raw_score is None:
+        return False
+    if (
+        len(tokenize(answer)) < 20
+        or is_heading_only_answer(answer)
+        or possibly_cut(answer)
+    ):
+        return False
+
+    question_terms = set(query_terms(question, max_terms=60))
+    answer_terms = set(tokenize(answer))
+    if not question_terms:
+        return False
+    coverage = len(question_terms & answer_terms) / len(question_terms)
+    normative_terms = {
+        "không",
+        "cấm",
+        "được",
+        "quyền",
+        "phải",
+        "hạn",
+        "chế",
+        "chưa",
+        "trừ",
+        "điều",
+        "kiện",
+        "nghĩa",
+        "vụ",
+    }
+    decisive = bool(
+        _has_decisive_legal_evidence(candidate)
+        or _has_decisive_answer_evidence(question, answer)
+    )
+    strong_scored = raw_score >= 2.0 and _has_strong_legal_evidence(candidate)
+    return bool(
+        coverage >= 0.5
+        and normative_terms.intersection(answer_terms)
+        and (decisive or strong_scored)
+    )
 
 
 def _safe_generation_failure_extractive(
@@ -584,7 +687,11 @@ def _safe_generation_failure_extractive(
     if raw_score is None:
         return False
     if raw_score < 2.0 and not (
-        allow_low_raw_decisive and _has_decisive_legal_evidence(candidate)
+        allow_low_raw_decisive
+        and (
+            _has_decisive_legal_evidence(candidate)
+            or _has_decisive_answer_evidence(question, answer)
+        )
     ):
         return False
     if (
@@ -601,12 +708,12 @@ def _safe_generation_failure_extractive(
         normalized_question,
     ):
         return False
-    if re.search(
-        r"\b(?:có|được|phải|bị)\b[^?]{0,140}\b(?:hay\s+)?không\s*[?]?$",
-        normalized_question,
-    ):
+    if _is_yes_no_question(normalized_question):
         return False
-    return _has_strong_legal_evidence(candidate)
+    return bool(
+        _has_strong_legal_evidence(candidate)
+        or _has_decisive_answer_evidence(question, answer)
+    )
 
 
 def reciprocal_rank_fusion(
@@ -1742,7 +1849,13 @@ class LegalQABaseline:
                     and not is_heading_only_answer(merged_answer)
                     and not possibly_cut(merged_answer)
                 )
-                if direct_extractive_allowed and extractive_is_usable:
+                step_count_has_decisive_evidence = bool(
+                    _is_step_count_question(question)
+                    and _has_decisive_answer_evidence(question, merged_answer)
+                )
+                if (
+                    direct_extractive_allowed or step_count_has_decisive_evidence
+                ) and extractive_is_usable:
                     evidence = {
                         "num_contexts": len(top_chunks),
                         "reranker_candidates": min(
@@ -1769,7 +1882,12 @@ class LegalQABaseline:
                         "merged_chunk_nos": [c["chunk_no"] for c in adjacent_chunks],
                         "context_words": len(tokenize(merged_answer)),
                         "raw_reranker_score": raw_reranker_score,
-                        "routing_decision": "focused_extractive_good_retrieval",
+                        "routing_decision": (
+                            "focused_extractive_decisive_step_count"
+                            if step_count_has_decisive_evidence
+                            and not direct_extractive_allowed
+                            else "focused_extractive_good_retrieval"
+                        ),
                         "raw_fallback_allowed": False,
                         "generation_attempts": 0,
                         "generated_tokens": 0,
@@ -1830,6 +1948,27 @@ class LegalQABaseline:
                 stats = getattr(self.generator, "last_generation_stats", {})
                 if not isinstance(stats, dict):
                     stats = {}
+                partial_answer = str(
+                    getattr(exc, "partial_answer", "") or ""
+                ).strip()
+                cleaned_partial = ""
+                if partial_answer:
+                    try:
+                        cleaned_partial = clean_answer(
+                            partial_answer,
+                            trusted_metadata=generation_trusted_metadata,
+                        )
+                    except ValueError:
+                        cleaned_partial = ""
+                partial_answer_usable = bool(
+                    cleaned_partial
+                    and len(tokenize(cleaned_partial)) >= self.min_llm_answer_tokens
+                    and not is_refusal_answer(cleaned_partial)
+                    and not possibly_cut(cleaned_partial)
+                    and cleaned_partial.endswith(
+                        (".", "!", "?", "…", ")", "]", "}", '"', "”", "’")
+                    )
+                )
                 generation_attempt_seconds.append(
                     round(time.perf_counter() - attempt_started, 4)
                 )
@@ -1838,6 +1977,9 @@ class LegalQABaseline:
                     "generated_tokens": stats.get("generated_tokens", exc.generated_tokens),
                     "max_new_tokens": stats.get("max_new_tokens", exc.max_new_tokens),
                     "hit_token_limit": True,
+                    "partial_answer_available": bool(cleaned_partial),
+                    "partial_answer_usable": partial_answer_usable,
+                    "partial_answer_words": len(tokenize(cleaned_partial)),
                 }
             generation_attempt_seconds.append(
                 round(time.perf_counter() - attempt_started, 4)
@@ -2028,7 +2170,7 @@ class LegalQABaseline:
                 question,
                 anchor_best,
                 anchor_answer,
-                allow_low_raw_decisive=(failure_before_extractive == "refusal"),
+                allow_low_raw_decisive=True,
             ):
                 best = anchor_best
                 top_chunks = list(refusal_anchor["top_chunks"])
@@ -2053,6 +2195,49 @@ class LegalQABaseline:
                 )
                 raw_reranker_score = _audit_float(best.get("rerank_score"))
                 focused_extractive_used = True
+
+        # Yes/no questions must not receive an inferred Có/Không from weak
+        # evidence. After all generation recovery attempts refuse, a highly
+        # matching legal clause is still safer and more useful than a generic
+        # refusal, so return the clause verbatim without adding a conclusion.
+        grounded_yes_no_source: dict[str, Any] | None = None
+        if invalid_reason == "refusal" and refusal_recovery_requested:
+            current_source = {
+                "best": best,
+                "top_chunks": list(top_chunks),
+                "adjacent_chunks": list(adjacent_chunks),
+                "prompt_chunks": list(prompt_chunks),
+                "joined_context": joined_context,
+                "raw_context_answer": raw_context_answer,
+                "trusted_metadata": list(generation_trusted_metadata),
+            }
+            for source in (current_source, refusal_anchor):
+                source_answer = str(source["raw_context_answer"] or "").strip()
+                if _safe_grounded_yes_no_extractive(
+                    question,
+                    source["best"],
+                    source_answer,
+                ):
+                    grounded_yes_no_source = source
+                    break
+        if grounded_yes_no_source is not None:
+            best = grounded_yes_no_source["best"]
+            top_chunks = list(grounded_yes_no_source["top_chunks"])
+            adjacent_chunks = list(grounded_yes_no_source["adjacent_chunks"])
+            prompt_chunks = list(grounded_yes_no_source["prompt_chunks"])
+            joined_context = str(grounded_yes_no_source["joined_context"])
+            raw_context_answer = str(
+                grounded_yes_no_source["raw_context_answer"] or ""
+            ).strip()
+            generation_trusted_metadata = list(
+                grounded_yes_no_source["trusted_metadata"]
+            )
+            answer = raw_context_answer
+            invalid_reason = None
+            route = "extractive_fallback"
+            recovery_strategy = "refusal_grounded_yes_no_clause"
+            raw_reranker_score = _audit_float(best.get("rerank_score"))
+            focused_extractive_used = True
 
         raw_fallback_allowed = bool(
             focused_extractive_used
@@ -2092,6 +2277,15 @@ class LegalQABaseline:
                 "recovery_strategy": recovery_strategy,
                 "raw_reranker_score": raw_reranker_score,
                 "raw_fallback_allowed": raw_fallback_allowed,
+                "partial_answer_available": bool(
+                    generation_stats.get("partial_answer_available", False)
+                ),
+                "partial_answer_usable": bool(
+                    generation_stats.get("partial_answer_usable", False)
+                ),
+                "partial_answer_words": int(
+                    generation_stats.get("partial_answer_words") or 0
+                ),
                 "routing_decision": (
                     "guarded_knn_after_refusal"
                     if route == "knn_guarded_refusal"
@@ -2119,6 +2313,15 @@ class LegalQABaseline:
                 "recovery_strategy": recovery_strategy,
                 "raw_reranker_score": raw_reranker_score,
                 "raw_fallback_allowed": True,
+                "partial_answer_available": bool(
+                    generation_stats.get("partial_answer_available", False)
+                ),
+                "partial_answer_usable": bool(
+                    generation_stats.get("partial_answer_usable", False)
+                ),
+                "partial_answer_words": int(
+                    generation_stats.get("partial_answer_words") or 0
+                ),
                 "routing_decision": "guarded_focused_extractive_fallback",
                 "says_no_information": False,
                 "possibly_cut": False,
@@ -2139,6 +2342,15 @@ class LegalQABaseline:
                 "recovery_strategy": recovery_strategy or "none_available",
                 "raw_reranker_score": raw_reranker_score,
                 "raw_fallback_allowed": False,
+                "partial_answer_available": bool(
+                    generation_stats.get("partial_answer_available", False)
+                ),
+                "partial_answer_usable": bool(
+                    generation_stats.get("partial_answer_usable", False)
+                ),
+                "partial_answer_words": int(
+                    generation_stats.get("partial_answer_words") or 0
+                ),
                 "routing_decision": "recovery_exhausted_without_raw_dump",
                 "says_no_information": True,
                 "possibly_cut": invalid_reason == "possibly_cut",
