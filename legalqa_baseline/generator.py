@@ -59,6 +59,8 @@ YÊU CẦU:
 - Phân biệt các khái niệm gần nhau như thời hiệu khiếu nại, thời hạn kháng nghị và thời hạn giải quyết.
 - Giữ đầy đủ các bước, điều kiện, hồ sơ, biểu mẫu, mốc thời gian, ngoại lệ, mức tiền và căn cứ pháp lý liên quan trong CONTEXT.
 - Không rút gọn danh sách hoặc thủ tục thành kết luận chung.
+- Chỉ chép các mục trực tiếp trả lời câu hỏi; bỏ phần trước hoặc sau thuộc chủ đề khác.
+- Không lặp lại nội dung và kết thúc ngay sau mục liên quan cuối cùng.
 - Không mở đầu bằng "Dựa trên ngữ cảnh được cung cấp".
 - Không nói thiếu thông tin nếu CONTEXT có nội dung trả lời.
 """.strip()

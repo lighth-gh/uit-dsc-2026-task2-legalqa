@@ -119,6 +119,13 @@ class TestLongAnswerPatterns(unittest.TestCase):
             with self.subTest(sample_id=sample_id):
                 self.assertTrue(is_long_form_question(question))
 
+        self.assertTrue(is_structured_extractive_question(structured_questions["63093"]))
+        self.assertTrue(
+            is_structured_extractive_question(
+                "Thực hiện báo cáo phương tiện phòng cháy chữa cháy như thế nào và tại đâu?"
+            )
+        )
+
     def test_smoke30_short_synthesis_questions_stay_on_llm_512(self) -> None:
         short_questions = {
             "62147": (
@@ -449,6 +456,25 @@ class TestMergeAdjacentChunks(unittest.TestCase):
         self.assertTrue(answer.startswith("E.1. Phương pháp ELISA"))
         self.assertNotIn("nuôi cấy tế bào", answer)
         self.assertIn("Bước 1", answer)
+
+    def test_id_138443_stops_before_unrelated_uppercase_heading(self) -> None:
+        chunks = [{
+            "chunk_no": 19,
+            "text": (
+                "Để tránh lây nhiễm COVID-19, nhân viên y tế phải sử dụng phương tiện "
+                "phòng hộ cá nhân, vệ sinh tay và tuân thủ quy trình kiểm soát nhiễm khuẩn. "
+                "DỰ PHÒNG NGUY CƠ VỀ BẠO HÀNH VÀ QUẤY RỐI "
+                "Cơ sở y tế xây dựng biện pháp phòng ngừa bạo hành tại nơi làm việc."
+            ),
+        }]
+        answer = build_focused_extractive_answer(
+            "Các biện pháp dự phòng cho nhân viên y tế để tránh lây nhiễm COVID-19 như thế nào?",
+            chunks,
+            best_chunk_no=19,
+        )
+        self.assertIn("kiểm soát nhiễm khuẩn", answer)
+        self.assertNotIn("BẠO HÀNH", answer)
+        self.assertNotIn("quấy rối", answer.casefold())
 
     def test_long_extractive_is_bounded_and_ends_at_sentence(self) -> None:
         text = " ".join(

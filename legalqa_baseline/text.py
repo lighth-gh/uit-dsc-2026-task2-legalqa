@@ -40,6 +40,11 @@ _MILLION_AMOUNT_RE = re.compile(
 _GROUPED_VND_RE = re.compile(
     r"(?i)(?<![\w.,])(?P<amount>\d{1,3}(?:[.]\d{3})+)\s*đồng\b"
 )
+_PRRS_LONG_NAME_RE = re.compile(
+    r"(?i)\bhội\s+chứng\s+rối\s+loạn\s+sinh\s+sản\s+và\s+hô\s+hấp\s+"
+    r"(?:ở|trên)\s+lợn\b"
+)
+_ZONE_TRAFFIC_SIGN_RE = re.compile(r"(?i)\bbiển\s+báo\s+zone\b")
 _DOCUMENT_REFERENCE_RE = re.compile(
     r"(?i)\b(?P<kind>nghị\s+định|quyết\s+định|thông\s+tư|nghị\s+quyết|"
     r"công\s+văn|luật)\s*(?:số\s*)?"
@@ -49,7 +54,14 @@ _ARTICLE_REFERENCE_RE = re.compile(
     r"(?i)\bđiều\s+(?P<number>\d+[a-zđ]?)\b"
 )
 _YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
-_PRIORITY_LEGAL_PHRASES = ("mức lương cơ sở",)
+_PRIORITY_LEGAL_PHRASES = (
+    "mức lương cơ sở",
+    "prrs",
+    "bắt đầu vào khu vực",
+)
+_FORM_NAME_END_TOKENS = {
+    "mới", "nhất", "hiện", "nay", "là", "gì", "nào", "ở", "đâu",
+}
 _MAX_EXACT_PHRASE_TOKENS = 8
 _MIN_EXACT_PHRASE_TOKENS = 4
 
@@ -118,7 +130,7 @@ def _format_million_amount(dong: int) -> str | None:
 
 
 def retrieval_query_aliases(text: str) -> list[str]:
-    """Return only high-confidence aliases for named plans and money values."""
+    """Return only high-confidence aliases for named plans, diseases and money."""
     source = unicodedata.normalize("NFC", str(text or ""))
     aliases: list[str] = []
 
@@ -144,6 +156,14 @@ def retrieval_query_aliases(text: str) -> list[str]:
         formatted = _format_million_amount(dong)
         if formatted:
             aliases.append(formatted)
+
+    # The full Vietnamese disease name and PRRS are an unambiguous pair in
+    # veterinary standards. This recovers ELISA procedures whose source uses
+    # only the acronym without broadening unrelated disease queries.
+    if _PRRS_LONG_NAME_RE.search(source):
+        aliases.extend(("PRRS", "bệnh tai xanh"))
+    if _ZONE_TRAFFIC_SIGN_RE.search(source):
+        aliases.append("Bắt đầu vào khu vực")
 
     source_folded = source.casefold()
     return [
@@ -171,6 +191,17 @@ def retrieval_priority_phrases(text: str) -> list[str]:
     for phrase in _PRIORITY_LEGAL_PHRASES:
         if phrase in expanded_folded:
             phrases.append(phrase)
+    question_tokens = tokenize(text)
+    for index, token in enumerate(question_tokens):
+        if token != "mẫu" or index + 3 >= len(question_tokens):
+            continue
+        form_tokens: list[str] = []
+        for form_token in question_tokens[index + 1 : index + 13]:
+            if form_token in _FORM_NAME_END_TOKENS:
+                break
+            form_tokens.append(form_token)
+        if len(form_tokens) >= 3:
+            phrases.append(" ".join(form_tokens))
     for pattern in (_MILLION_AMOUNT_RE, _GROUPED_VND_RE):
         phrases.extend(match.group(0) for match in pattern.finditer(expanded))
 
@@ -236,6 +267,14 @@ def _longest_matching_form_name(
         max_size = min(12, len(question_tokens) - start)
         for size in range(max_size, 2, -1):
             phrase = " ".join(question_tokens[start : start + size])
+            if f" {phrase} " in candidate_text:
+                return phrase
+        # Legal documents often print the title without the leading word
+        # "Mẫu". Preserve that exact title as an equally strong form signal.
+        title_start = start + 1
+        max_title_size = min(11, len(question_tokens) - title_start)
+        for size in range(max_title_size, 2, -1):
+            phrase = " ".join(question_tokens[title_start : title_start + size])
             if f" {phrase} " in candidate_text:
                 return phrase
     return None
@@ -328,6 +367,17 @@ def _matching_question_focus_phrases(question: str, candidate_text: str) -> list
         for phrase in legal_question_focus_phrases(question)
         if f" {phrase} " in candidate
     ]
+    question_tokens = f" {' '.join(tokenize(question))} "
+    covid_infection_query = " lây nhiễm covid 19 " in question_tokens
+    covid_infection_evidence = any(
+        phrase in candidate
+        for phrase in (
+            " lây nhiễm covid 19 ",
+            " lây nhiễm sars cov 2 ",
+        )
+    )
+    if covid_infection_query and covid_infection_evidence:
+        matches.insert(0, "lây nhiễm covid 19")
     # Prefixes của cùng một cụm không được tính lặp nhiều lần.
     kept: list[str] = []
     for phrase in matches:
@@ -687,6 +737,9 @@ _STRUCTURED_EXTRACTIVE_PATTERNS: tuple[str, ...] = (
     r"\bmẫu(?: số)?\b",
     r"\bphụ lục\b",
     r"\b(?:nội dung|nguyên văn|toàn văn)\s+(?:điều|khoản|văn bản)\b",
+    r"\b(?:các|những)\s+(?:hình thức|yêu cầu|nội dung|nhiệm vụ|quyền hạn)\b",
+    r"\b(?:thực hiện|được thực hiện)\b[^?]{0,140}"
+    r"\b(?:như thế nào|ra sao|tại đâu)\b",
 )
 _SYNTHESIS_QUESTION_PATTERNS: tuple[str, ...] = (
     r"\b(?:phân tích|so sánh|đánh giá|giải thích|tổng hợp|suy luận)\b",
@@ -1277,19 +1330,68 @@ def _relevant_section_start(question: str, text: str) -> int | None:
     return phrase_start
 
 
+def _section_starts(text: str) -> list[int]:
+    """Return legal markers plus uppercase headings, including flattened ones."""
+    starts = {match.start() for match in _MAJOR_SECTION_RE.finditer(text)}
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        letters = [char for char in stripped if char.isalpha()]
+        if (
+            5 <= len(stripped) <= 180
+            and len(letters) >= 4
+            and stripped.upper() == stripped
+            and not stripped.endswith((".", ";", ","))
+        ):
+            starts.add(offset + len(line) - len(line.lstrip()))
+        offset += len(line)
+
+    # ``chunk_passage`` deliberately creates word windows and therefore
+    # flattens newlines. Recover headings such as "DỰ PHÒNG NGUY CƠ VỀ BẠO
+    # HÀNH..." from a run of uppercase words inside that flattened chunk.
+    run_start: int | None = None
+    previous_end: int | None = None
+    uppercase_words = 0
+    for match in TOKEN_RE.finditer(text):
+        token = match.group(0)
+        is_upper_word = any(char.isalpha() for char in token) and token.isupper()
+        is_heading_number = run_start is not None and token.isdigit()
+        gap_is_heading = bool(
+            previous_end is None
+            or re.fullmatch(r"[\s:/()\-–—]*", text[previous_end:match.start()])
+        )
+        if (is_upper_word or is_heading_number) and gap_is_heading:
+            if run_start is None:
+                run_start = match.start()
+                uppercase_words = 0
+            if is_upper_word:
+                uppercase_words += 1
+        else:
+            if run_start is not None and uppercase_words >= 4:
+                starts.add(run_start)
+            run_start = match.start() if is_upper_word else None
+            uppercase_words = 1 if is_upper_word else 0
+        previous_end = match.end()
+    if run_start is not None and uppercase_words >= 4:
+        starts.add(run_start)
+    return sorted(starts)
+
+
 def _stop_at_unrelated_section(question: str, text: str) -> str:
     """Stop before the next major heading whose title no longer matches the query."""
-    headings = list(_MAJOR_SECTION_RE.finditer(text))
-    if len(headings) < 2:
+    starts = _section_starts(text)
+    if not starts or starts[0] != 0:
+        starts.insert(0, 0)
+    if len(starts) < 2:
         return text.strip()
-    baseline_end = headings[1].start()
-    baseline = _chunk_query_relevance(question, text[headings[0].start():baseline_end])
-    for index, heading in enumerate(headings[1:], start=1):
-        next_start = headings[index + 1].start() if index + 1 < len(headings) else len(text)
-        section_preview = text[heading.start(): min(next_start, heading.start() + 360)]
+    baseline_end = starts[1]
+    baseline = _chunk_query_relevance(question, text[starts[0]:baseline_end])
+    for index, heading_start in enumerate(starts[1:], start=1):
+        next_start = starts[index + 1] if index + 1 < len(starts) else len(text)
+        section_preview = text[heading_start:min(next_start, heading_start + 360)]
         score = _chunk_query_relevance(question, section_preview)
         if score < max(0.24, baseline * 0.55):
-            return text[: heading.start()].rstrip(" \n,;:-")
+            return text[:heading_start].rstrip(" \n,;:-")
     return text.strip()
 
 

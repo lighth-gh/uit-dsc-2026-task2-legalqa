@@ -514,14 +514,78 @@ def _has_strong_legal_evidence(candidate: dict[str, Any]) -> bool:
     )
 
 
+def _has_decisive_legal_evidence(candidate: dict[str, Any]) -> bool:
+    """Require exact named/legal focus evidence before overriding a low raw score."""
+    components = candidate.get("rerank_guardrail_components")
+    components = components if isinstance(components, dict) else {}
+    named_exact = any(
+        (_audit_float(components.get(name)) or 0.0) > 0.0
+        for name in (
+            "exact_form",
+            "exact_article",
+            "exact_document_reference",
+            "exact_document_name",
+        )
+    )
+    exact_focus = _audit_float(components.get("exact_focus")) or 0.0
+    exact_scope = _audit_float(components.get("scope")) or 0.0
+    exact_long_phrase = _audit_float(components.get("exact_long_phrase")) or 0.0
+    try:
+        exact_phrase_matches = int(candidate.get("exact_phrase_matches") or 0)
+    except (TypeError, ValueError, OverflowError):
+        exact_phrase_matches = 0
+    matches = candidate.get("legal_signal_matches")
+    matches = matches if isinstance(matches, dict) else {}
+    try:
+        long_phrase_tokens = int(matches.get("long_phrase_tokens") or 0)
+        heading_overlap_tokens = int(matches.get("heading_overlap_tokens") or 0)
+    except (TypeError, ValueError, OverflowError):
+        long_phrase_tokens = 0
+        heading_overlap_tokens = 0
+    return bool(
+        named_exact
+        or exact_phrase_matches > 0
+        or (exact_focus >= 4.5 and (exact_scope > 0.0 or exact_long_phrase > 0.0))
+        or (
+            exact_long_phrase >= 1.0
+            and long_phrase_tokens >= 5
+            and heading_overlap_tokens >= 5
+        )
+    )
+
+
+def _recovery_generation_question(question: str, *, reason: str) -> str:
+    """Add a final, narrow instruction for the one permitted recovery attempt."""
+    base = str(question or "").strip()
+    if reason == "token_limit":
+        instruction = (
+            "Lần trả lời trước đã chạm giới hạn. Chỉ lấy các mục trực tiếp trả lời "
+            "câu hỏi, không lặp lại nội dung, bỏ các phần trước/sau không liên quan "
+            "và kết thúc ngay sau mục cuối. Trả lời đầy đủ nhưng không quá 520 từ."
+        )
+    else:
+        instruction = (
+            "Ngữ cảnh đã được thu gọn vào căn cứ liên quan. Hãy trả lời trực tiếp từ "
+            "căn cứ này; với câu hỏi có/không, nêu Có hoặc Không trước rồi nêu điều "
+            "kiện. Chỉ nói thiếu thông tin khi căn cứ thực sự không chứa câu trả lời."
+        )
+    return f"{base}\n\n{instruction}".strip()
+
+
 def _safe_generation_failure_extractive(
     question: str,
     candidate: dict[str, Any],
     answer: str,
+    *,
+    allow_low_raw_decisive: bool = False,
 ) -> bool:
     """Allow failure recovery only from strong, directly usable evidence."""
     raw_score = _audit_float(candidate.get("rerank_score"))
-    if raw_score is None or raw_score < 2.0:
+    if raw_score is None:
+        return False
+    if raw_score < 2.0 and not (
+        allow_low_raw_decisive and _has_decisive_legal_evidence(candidate)
+    ):
         return False
     if (
         len(tokenize(answer)) < 20
@@ -800,6 +864,9 @@ def _apply_reranker_legal_guardrails(
             exact_phrase_matches = int(item.get("exact_phrase_matches") or 0)
         except (TypeError, ValueError, OverflowError):
             exact_phrase_matches = 0
+        controlled_phrase_bonus = min(4.0, 4.0 * exact_phrase_matches)
+        guardrail_bonus += controlled_phrase_bonus
+        exact_strength += controlled_phrase_bonus
         retrieval_exact = bool(
             exact_phrase_matches
             or form_bonus
@@ -820,6 +887,7 @@ def _apply_reranker_legal_guardrails(
             "exact_document_reference": round(document_reference_bonus, 6),
             "exact_document_name": round(document_name_bonus, 6),
             "exact_long_phrase": round(long_phrase_bonus, 6),
+            "exact_retrieval_phrase": round(controlled_phrase_bonus, 6),
             "rrf_prior": round(rrf_prior_bonus, 6),
             "authority": round(authority_bonus, 6),
         }
@@ -1194,7 +1262,9 @@ class LegalQABaseline:
         excluded_keys: set[tuple[str, int]],
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Run one controlled lexical re-query and retain only confident reranker hits."""
-        requery = " ".join(query_terms(question, max_terms=24)).strip()
+        requery = " ".join(
+            query_terms(expand_retrieval_query(question), max_terms=24)
+        ).strip()
         trace: dict[str, Any] = {
             "query": requery,
             "status": "skipped",
@@ -1745,6 +1815,7 @@ class LegalQABaseline:
             context: str,
             *,
             max_new_tokens: int | None = None,
+            question_override: str | None = None,
         ) -> tuple[str, str | None, dict[str, Any]]:
             nonlocal generation_attempts
             generation_attempts += 1
@@ -1752,7 +1823,7 @@ class LegalQABaseline:
             try:
                 raw_answer = self._call_generator(
                     context=context,
-                    question=question,
+                    question=question_override or question,
                     max_new_tokens=max_new_tokens,
                 )
             except GenerationTokenLimitReached as exc:
@@ -1807,17 +1878,31 @@ class LegalQABaseline:
                 elif initial_budget < 1024:
                     retry_budget = 1024
                 if retry_budget is not None:
+                    anchor_answer = str(refusal_anchor["raw_context_answer"] or "").strip()
+                    anchor_name = str(refusal_anchor["best"].get("name") or "").strip()
+                    retry_context = joined_context
+                    if anchor_answer:
+                        retry_context = (
+                            f"[1] Văn bản: {anchor_name}\n{anchor_answer}"
+                            if anchor_name
+                            else f"[1] {anchor_answer}"
+                        )
                     answer, invalid_reason, generation_stats = generate_once(
-                        joined_context,
+                        retry_context,
                         max_new_tokens=retry_budget,
+                        question_override=_recovery_generation_question(
+                            question,
+                            reason="token_limit",
+                        ),
                     )
                     if invalid_reason is None:
                         route = f"generated_retry_{retry_budget}"
                         recovery_strategy = "token_limit_retry"
 
-        refusal_recovery_requested = (
-            invalid_reason == "refusal" and generation_attempts == 1
-        )
+        # A token-limit retry can itself return a refusal. Classify the current
+        # result, not only the first attempt, so it transitions to refusal
+        # recovery without increasing the token budget again.
+        refusal_recovery_requested = invalid_reason == "refusal"
         if refusal_recovery_requested:
             guarded_knn = self._guarded_knn(question, exclude_id=exclude_id)
             if guarded_knn is not None:
@@ -1829,8 +1914,16 @@ class LegalQABaseline:
         if refusal_recovery_requested and invalid_reason == "refusal":
             anchor_best = refusal_anchor["best"]
             anchor_answer = str(refusal_anchor["raw_context_answer"] or "").strip()
+            anchor_raw_score = _audit_float(anchor_best.get("rerank_score"))
             focused_context_usable = bool(
-                _has_strong_legal_evidence(anchor_best)
+                (
+                    _has_decisive_legal_evidence(anchor_best)
+                    or (
+                        anchor_raw_score is not None
+                        and anchor_raw_score >= 2.0
+                        and _has_strong_legal_evidence(anchor_best)
+                    )
+                )
                 and len(tokenize(anchor_answer)) >= 20
                 and not is_heading_only_answer(anchor_answer)
                 and not possibly_cut(anchor_answer)
@@ -1850,7 +1943,13 @@ class LegalQABaseline:
                     if anchor_name
                     else f"[1] {anchor_answer}"
                 )
-                answer, invalid_reason, generation_stats = generate_once(joined_context)
+                answer, invalid_reason, generation_stats = generate_once(
+                    joined_context,
+                    question_override=_recovery_generation_question(
+                        question,
+                        reason="refusal",
+                    ),
+                )
                 recovery_strategy = "focused_context"
                 if invalid_reason is None:
                     route = "generated_refusal_recovery"
@@ -1903,7 +2002,13 @@ class LegalQABaseline:
                     if isinstance(chunk.get(key), str)
                     and str(chunk.get(key)).strip()
                 ]
-                answer, invalid_reason, generation_stats = generate_once(joined_context)
+                answer, invalid_reason, generation_stats = generate_once(
+                    joined_context,
+                    question_override=_recovery_generation_question(
+                        question,
+                        reason="refusal",
+                    ),
+                )
                 best = alternative_best
                 top_chunks = alternative_chunks[: self.context_top_k]
                 raw_reranker_score = _audit_float(best.get("rerank_score"))
@@ -1923,6 +2028,7 @@ class LegalQABaseline:
                 question,
                 anchor_best,
                 anchor_answer,
+                allow_low_raw_decisive=(failure_before_extractive == "refusal"),
             ):
                 best = anchor_best
                 top_chunks = list(refusal_anchor["top_chunks"])
@@ -1939,7 +2045,11 @@ class LegalQABaseline:
                 recovery_strategy = (
                     "token_limit_focused_extractive"
                     if failure_before_extractive == "token_limit"
-                    else "refusal_focused_extractive"
+                    else (
+                        "refusal_decisive_focused_extractive"
+                        if (_audit_float(anchor_best.get("rerank_score")) or 0.0) < 2.0
+                        else "refusal_focused_extractive"
+                    )
                 )
                 raw_reranker_score = _audit_float(best.get("rerank_score"))
                 focused_extractive_used = True

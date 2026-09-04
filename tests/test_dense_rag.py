@@ -457,9 +457,87 @@ class TestDenseRAG(unittest.TestCase):
         self.assertEqual(ranked[0]["context_id"], "230689")
         wrong = next(item for item in ranked if item["context_id"] == "wrong-heading")
         self.assertLessEqual(wrong["rerank_guardrail_components"]["heading"], 0.6)
+        self.assertLess(wrong["final_rerank_score"], ranked[0]["final_rerank_score"])
+        protected_by = wrong["rerank_guardrail_protected_by"]
+        if protected_by is not None:
+            self.assertEqual(protected_by["context_id"], "230689")
+
+    def test_3h_controlled_zone_phrase_can_rescue_the_traffic_chunk(self) -> None:
+        candidates = [
+            {
+                "context_id": "wrong-border-sign",
+                "chunk_no": 5,
+                "name": "Thông tư về khu vực biên giới",
+                "text": "Mẫu biển báo khu vực biên giới, vành đai biên giới và vùng cấm.",
+                "rerank_score": -1.48,
+                "rrf_rank_after_boost": 3,
+            },
+            {
+                "context_id": "174131",
+                "chunk_no": 158,
+                "name": "Quy chuẩn báo hiệu đường bộ",
+                "text": (
+                    "Để báo cấm, hạn chế hoặc chỉ dẫn có hiệu lực cho tất cả các tuyến "
+                    "đường trong một khu vực, đặt biển Bắt đầu vào khu vực. Từ ZONE được "
+                    "biểu thị ở phía trên."
+                ),
+                "rerank_score": -5.0,
+                "rrf_rank_after_boost": 1,
+                "exact_phrase_matches": 1,
+            },
+        ]
+
+        ranked = _apply_reranker_legal_guardrails(
+            "Biển báo ZONE hiện nay bao gồm những loại biển báo nào?",
+            candidates,
+        )
+
+        self.assertEqual(ranked[0]["context_id"], "174131")
         self.assertEqual(
-            wrong["rerank_guardrail_protected_by"]["context_id"],
-            "230689",
+            ranked[0]["rerank_guardrail_components"]["exact_retrieval_phrase"],
+            4.0,
+        )
+
+    def test_3i_covid_infection_focus_beats_generic_prevention_phrase(self) -> None:
+        question = (
+            "Các biện pháp dự phòng cho nhân viên y tế để tránh tình trạng "
+            "lây nhiễm COVID-19 như thế nào?"
+        )
+        candidates = [
+            {
+                "context_id": "violence",
+                "chunk_no": 19,
+                "name": "Hướng dẫn an toàn cho nhân viên y tế",
+                "text": (
+                    "Nhân viên lo lắng bị lây nhiễm. Bệnh nhân COVID-19 có thể gây "
+                    "bạo hành. Các biện pháp dự phòng bạo hành tại nơi làm việc."
+                ),
+                "rerank_score": 9.68,
+                "rrf_rank_after_boost": 13,
+            },
+            {
+                "context_id": "infection",
+                "chunk_no": 11,
+                "name": "Hướng dẫn an toàn cho nhân viên y tế",
+                "text": (
+                    "DỰ PHÒNG LÂY NHIỄM SARS-COV-2. Các biện pháp dự phòng gồm "
+                    "phương tiện bảo vệ cá nhân và kiểm soát nguồn lây."
+                ),
+                "rerank_score": 9.38,
+                "rrf_rank_after_boost": 3,
+            },
+        ]
+
+        ranked = _apply_reranker_legal_guardrails(question, candidates)
+
+        self.assertEqual(ranked[0]["context_id"], "infection")
+        self.assertEqual(
+            ranked[0]["rerank_guardrail_components"]["exact_focus"],
+            6.0,
+        )
+        self.assertEqual(
+            ranked[1]["rerank_guardrail_components"]["exact_focus"],
+            0.0,
         )
 
     def test_3h_exact_form_article_document_and_long_phrase_are_strong_signals(self) -> None:

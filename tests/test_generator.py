@@ -575,6 +575,8 @@ class RAGPipelineTests(unittest.TestCase):
 
             def __init__(self) -> None:
                 self.budgets: list[int | None] = []
+                self.contexts: list[str] = []
+                self.questions: list[str] = []
                 self.last_generation_stats: dict[str, Any] = {}
 
             def generate(
@@ -585,6 +587,8 @@ class RAGPipelineTests(unittest.TestCase):
                 max_new_tokens: int | None = None,
             ) -> str:
                 self.budgets.append(max_new_tokens)
+                self.contexts.append(context)
+                self.questions.append(question)
                 if len(self.budgets) == 1:
                     raise GenerationTokenLimitReached(509, 512)
                 self.last_generation_stats = {
@@ -610,6 +614,9 @@ class RAGPipelineTests(unittest.TestCase):
 
         self.assertEqual(pred.route, "generated_retry_768")
         self.assertEqual(generator.budgets, [None, 768])
+        self.assertNotEqual(generator.questions[0], generator.questions[1])
+        self.assertIn("không quá 520 từ", generator.questions[1])
+        self.assertLessEqual(len(generator.contexts[1]), len(generator.contexts[0]))
         self.assertEqual(pred.evidence["generation_attempts"], 2)
         self.assertTrue(pred.evidence["initial_hit_token_limit"])
         self.assertFalse(pred.evidence["hit_token_limit"])
@@ -690,6 +697,76 @@ class RAGPipelineTests(unittest.TestCase):
         )
         self.assertIn("Bước ba", pred.answer)
         self.assertFalse(pred.evidence["says_no_information"])
+
+    def test_token_retry_refusal_transitions_to_refusal_recovery_without_more_tokens(self) -> None:
+        class StrongListIndex:
+            def search_contexts(
+                self,
+                question: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [{
+                    "context_id": "article-5",
+                    "chunk_no": 0,
+                    "name": "Nghị định xử phạt đất đai",
+                    "link": "https://example.com/article-5",
+                    "text": (
+                        "Điều 5. Các hình thức xử phạt gồm cảnh cáo và phạt tiền. "
+                        "Hình thức xử phạt bổ sung gồm tịch thu tang vật, phương tiện "
+                        "vi phạm và đình chỉ hoạt động có thời hạn theo quy định."
+                    ),
+                    "bm25_score": -20.0,
+                }]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class TokenThenRefusalThenAnswer:
+            max_new_tokens = 512
+
+            def __init__(self) -> None:
+                self.budgets: list[int | None] = []
+                self.last_generation_stats: dict[str, Any] = {}
+
+            def generate(
+                self,
+                context: str,
+                question: str,
+                *,
+                max_new_tokens: int | None = None,
+            ) -> str:
+                self.budgets.append(max_new_tokens)
+                if len(self.budgets) == 1:
+                    raise GenerationTokenLimitReached(509, 512)
+                if len(self.budgets) == 2:
+                    return "Không đủ thông tin trong ngữ cảnh."
+                return (
+                    "Các hình thức xử phạt gồm cảnh cáo, phạt tiền, tịch thu tang vật "
+                    "và đình chỉ hoạt động có thời hạn theo quy định."
+                )
+
+        generator = TokenThenRefusalThenAnswer()
+        pipeline = LegalQABaseline(
+            index=StrongListIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(score=3.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(
+            "Theo Điều 5, các hình thức xử phạt gồm những gì?",
+            mode="rag",
+        )
+
+        self.assertEqual(pred.route, "generated_refusal_recovery")
+        self.assertEqual(generator.budgets, [None, 768, None])
+        self.assertEqual(pred.evidence["recovery_strategy"], "focused_context")
+        self.assertTrue(pred.evidence["initial_hit_token_limit"])
+        self.assertFalse(pred.evidence["hit_token_limit"])
 
     def test_refusal_retries_different_candidate_without_larger_budget(self) -> None:
         class RefusalThenAnswerGenerator:
@@ -803,6 +880,64 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertGreaterEqual(pred.evidence["raw_reranker_score"], 2.0)
         self.assertFalse(pred.evidence["says_no_information"])
         self.assertEqual(len(pred.evidence["generation_attempt_seconds"]), 3)
+
+    def test_low_raw_refusal_uses_only_decisive_exact_focused_evidence(self) -> None:
+        question = "Theo Điều 399, thời hiệu khiếu nại thông báo không kháng nghị là bao lâu?"
+
+        class ExactArticleIndex:
+            def search_contexts(
+                self,
+                query: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [{
+                    "context_id": "102434",
+                    "chunk_no": 306,
+                    "name": "Bộ luật Tố tụng hình sự",
+                    "link": "https://example.com/102434",
+                    "text": (
+                        "Điều 399. Thời hiệu khiếu nại thông báo không kháng nghị theo thủ tục "
+                        "tái thẩm là 15 ngày kể từ ngày nhận được thông báo. Người khiếu nại "
+                        "gửi đơn đến cơ quan có thẩm quyền để được xem xét theo quy định của "
+                        "pháp luật tố tụng hình sự."
+                    ),
+                    "bm25_score": -20.0,
+                }]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class AlwaysRefuses:
+            def __init__(self) -> None:
+                self.questions: list[str] = []
+
+            def generate(self, context: str, question: str) -> str:
+                self.questions.append(question)
+                return "Không đủ thông tin trong ngữ cảnh."
+
+        generator = AlwaysRefuses()
+        pipeline = LegalQABaseline(
+            index=ExactArticleIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(score=-1.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertIn("15 ngày", pred.answer)
+        self.assertEqual(
+            pred.evidence["recovery_strategy"],
+            "refusal_decisive_focused_extractive",
+        )
+        self.assertLess(pred.evidence["raw_reranker_score"], 2.0)
+        self.assertEqual(len(generator.questions), 2)
+        self.assertIn("Ngữ cảnh đã được thu gọn", generator.questions[1])
 
     def test_yes_no_refusal_moves_from_strong_focus_to_alternate_candidate(self) -> None:
         question = "Theo Điều 12, người đang trả nợ tiền sử dụng đất có bị cấm chia di sản không?"
@@ -967,6 +1102,77 @@ class RAGPipelineTests(unittest.TestCase):
         recovery = pred.evidence["retrieval_trace"]["recovery"]
         self.assertEqual(recovery["trigger"], "raw_reranker_score_below_2")
         self.assertEqual(recovery["status"], "ok")
+
+    def test_controlled_requery_preserves_prrs_alias(self) -> None:
+        question = (
+            "Phương pháp ELISA dùng để chẩn đoán hội chứng rối loạn sinh sản và "
+            "hô hấp ở lợn có bao nhiêu bước thực hiện?"
+        )
+
+        class AliasRequeryIndex:
+            def __init__(self) -> None:
+                self.queries: list[str] = []
+
+            def search_contexts(self, query: str, top_k: int = 50) -> list[dict[str, Any]]:
+                self.queries.append(query)
+                if query == question:
+                    return [{
+                        "context_id": "low",
+                        "chunk_no": 0,
+                        "name": "Phương pháp xét nghiệm khác",
+                        "link": "https://example.com/low",
+                        "text": "Nội dung xét nghiệm không liên quan đến PRRS.",
+                        "bm25_score": -5.0,
+                    }]
+                self.assert_alias(query)
+                return [{
+                    "context_id": "prrs",
+                    "chunk_no": 11,
+                    "name": "Tiêu chuẩn chẩn đoán PRRS",
+                    "link": "https://example.com/prrs",
+                    "text": "Phụ lục D. Phương pháp ELISA phát hiện kháng thể PRRS gồm các bước.",
+                    "bm25_score": -20.0,
+                }]
+
+            @staticmethod
+            def assert_alias(query: str) -> None:
+                if "prrs" not in query.casefold():
+                    raise AssertionError(f"controlled alias missing from requery: {query}")
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class ScoreByContextReranker:
+            def rerank(
+                self,
+                question: str,
+                candidates: list[dict[str, Any]],
+                top_k: int = 3,
+                max_length: int = 1024,
+            ) -> list[dict[str, Any]]:
+                output = []
+                for candidate in candidates[:top_k]:
+                    item = dict(candidate)
+                    item["rerank_score"] = 3.0 if item["context_id"] == "prrs" else 1.0
+                    output.append(item)
+                return output
+
+        index = AliasRequeryIndex()
+        pipeline = LegalQABaseline(
+            index=index,  # type: ignore[arg-type]
+            generator=MockGenerator(),
+            reranker=ScoreByContextReranker(),
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(pred.evidence["top_contexts"][0]["context_id"], "prrs")
+        self.assertGreaterEqual(len(index.queries), 2)
+        self.assertIn("prrs", index.queries[1].casefold())
 
     def test_guarded_knn_rejects_different_intent(self) -> None:
         class IntentMismatchIndex(MockSearchIndex):

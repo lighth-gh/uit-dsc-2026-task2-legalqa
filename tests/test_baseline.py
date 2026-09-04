@@ -91,6 +91,23 @@ class TextTests(unittest.TestCase):
             retrieval_query_aliases("Mức lương cơ sở là 1.800.000 đồng"),
         )
 
+        prrs_question = (
+            "Phương pháp ELISA chẩn đoán hội chứng rối loạn sinh sản và hô hấp "
+            "ở lợn gồm bao nhiêu bước?"
+        )
+        self.assertIn("PRRS", retrieval_query_aliases(prrs_question))
+        self.assertIn("bệnh tai xanh", retrieval_query_aliases(prrs_question))
+
+        zone_question = "Biển báo ZONE hiện nay bao gồm những loại biển báo nào?"
+        self.assertIn("Bắt đầu vào khu vực", retrieval_query_aliases(zone_question))
+        self.assertIn("bắt đầu vào khu vực", retrieval_priority_phrases(zone_question))
+
+        form_question = "Mẫu kế hoạch giáo dục của giáo viên mới nhất?"
+        self.assertIn(
+            "kế hoạch giáo dục của giáo viên",
+            retrieval_priority_phrases(form_question),
+        )
+
         legal_number = "Điều 8 Nghị định 12/2024/NĐ-CP quy định thế nào?"
         self.assertEqual(expand_retrieval_query(legal_number), legal_number)
         self.assertNotIn("VIII", expand_retrieval_query(legal_number))
@@ -108,6 +125,21 @@ class TextTests(unittest.TestCase):
         self.assertEqual(matches["document_references"], ["nghị định 12/2024/nđ-cp"])
         self.assertEqual(matches["money_amounts_vnd"], [1_800_000])
         self.assertEqual(matches["years"], ["2024"])
+
+        covid_question = (
+            "Các biện pháp dự phòng cho nhân viên y tế để tránh tình trạng "
+            "lây nhiễm COVID-19 như thế nào?"
+        )
+        covid_match = legal_retrieval_signal_matches(
+            covid_question,
+            "DỰ PHÒNG LÂY NHIỄM SARS-COV-2. Các biện pháp dự phòng đối với cơ sở y tế.",
+        )
+        self.assertIn("lây nhiễm covid 19", covid_match["focus_phrases"])
+        unrelated_match = legal_retrieval_signal_matches(
+            covid_question,
+            "Nhân viên lo lắng bị lây nhiễm. Bệnh nhân COVID-19 có thể bị bạo hành.",
+        )
+        self.assertEqual(unrelated_match["focus_phrases"], [])
         self.assertGreaterEqual(matches["long_phrase_tokens"], 4)
 
         plan_matches = legal_retrieval_signal_matches(
