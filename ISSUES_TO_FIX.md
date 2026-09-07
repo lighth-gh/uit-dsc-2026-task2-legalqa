@@ -96,7 +96,8 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
 - Đã thêm route extractive hẹp cho câu hỏi đếm bước khi chunk kề chứa exact evidence.
 - Đã thêm exact retrieval priority cho Điều 42 (`42039`) và controlled alias cho
   trình tự/cơ quan nhận báo cáo phương tiện PCCC (`55463`).
-- Đã thêm notebook `legalqa-targeted-fixes-smoke.ipynb`: chạy 79 regression test,
+- Đã thêm notebook `legalqa-targeted-fixes-smoke.ipynb`: chạy bốn regression suite
+  (`114` test, dùng discovery tương thích Kaggle/Python 3.12),
   retrieval-only và generation đúng 12 ID lỗi; kết luận chỉ mở gate smoke 30,
   không tự cho phép chạy full 1.000.
 - Test mục tiêu: `79/79 PASS`.
