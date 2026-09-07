@@ -97,10 +97,65 @@ class TextTests(unittest.TestCase):
         )
         self.assertIn("PRRS", retrieval_query_aliases(prrs_question))
         self.assertIn("bệnh tai xanh", retrieval_query_aliases(prrs_question))
+        self.assertIn(
+            "Phương pháp ELISA phát hiện kháng thể PRRS",
+            retrieval_query_aliases(prrs_question),
+        )
+        self.assertIn("PRRS-HERDCHECK X3", retrieval_query_aliases(prrs_question))
+        self.assertIn(
+            "phương pháp elisa phát hiện kháng thể prrs",
+            retrieval_priority_phrases(prrs_question),
+        )
+        self.assertNotIn(
+            "Phương pháp ELISA phát hiện kháng thể PRRS",
+            retrieval_query_aliases(
+                "ELISA chẩn đoán hội chứng rối loạn sinh sản và hô hấp ở lợn là gì?"
+            ),
+        )
 
         zone_question = "Biển báo ZONE hiện nay bao gồm những loại biển báo nào?"
         self.assertIn("Bắt đầu vào khu vực", retrieval_query_aliases(zone_question))
         self.assertIn("bắt đầu vào khu vực", retrieval_priority_phrases(zone_question))
+
+        subway_question = "Các quy định đối với công trình tàu điện ngầm là gì?"
+        self.assertIn(
+            "công trình tàu điện ngầm",
+            retrieval_priority_phrases(subway_question),
+        )
+
+        covid_question = (
+            "Các biện pháp dự phòng cho nhân viên y tế để tránh tình trạng "
+            "lây nhiễm COVID-19 như thế nào?"
+        )
+        self.assertIn(
+            "Dự phòng lây nhiễm SARS-CoV-2",
+            retrieval_query_aliases(covid_question),
+        )
+        self.assertIn(
+            "Phụ lục 1. Dự phòng lây nhiễm SARS-CoV-2",
+            retrieval_query_aliases(covid_question),
+        )
+        self.assertIn(
+            "dự phòng lây nhiễm sars cov 2",
+            retrieval_priority_phrases(covid_question),
+        )
+        self.assertEqual(
+            retrieval_query_aliases("Các biện pháp dự phòng bạo hành cho NVYT?"),
+            [],
+        )
+
+        land_debt_question = (
+            "Người sử dụng đất có quyền phân chia di sản là quyền sử dụng đất khi "
+            "còn đang trong thời gian trả nợ tiền sử dụng đất hay không?"
+        )
+        self.assertIn(
+            "ghi nợ nghĩa vụ tài chính",
+            retrieval_query_aliases(land_debt_question),
+        )
+        self.assertIn(
+            "phải thực hiện xong nghĩa vụ tài chính trước khi thực hiện các quyền",
+            retrieval_priority_phrases(land_debt_question),
+        )
 
         pccc_report_question = (
             "Thực hiện báo cáo phương tiện phòng cháy chữa cháy như thế nào "

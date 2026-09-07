@@ -125,6 +125,11 @@ class TestLongAnswerPatterns(unittest.TestCase):
                 "Thực hiện báo cáo phương tiện phòng cháy chữa cháy như thế nào và tại đâu?"
             )
         )
+        self.assertTrue(
+            is_structured_extractive_question(
+                "Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp?"
+            )
+        )
 
     def test_smoke30_short_synthesis_questions_stay_on_llm_512(self) -> None:
         short_questions = {
@@ -429,6 +434,26 @@ class TestMergeAdjacentChunks(unittest.TestCase):
         self.assertNotIn("XUẤT KHẨU", answer)
         self.assertNotIn("Điều 43", answer)
 
+    def test_article_extract_keeps_inline_citations_but_stops_at_next_article(self) -> None:
+        chunks = [{
+            "chunk_no": 51,
+            "text": (
+                "Điều 42. Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp. "
+                "Quỹ trả phí giám định cho trường hợp quy định tại Điều 45 và Điều 46 "
+                "của Luật này; đồng thời chi trợ cấp theo Điều 47 của Luật này. "
+                "Điều 43. Đối tượng áp dụng chế độ bảo hiểm bắt đầu từ người lao động."
+            ),
+        }]
+        answer = build_focused_extractive_answer(
+            "Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp?",
+            chunks,
+            best_chunk_no=51,
+        )
+
+        self.assertIn("Điều 45 và Điều 46", answer)
+        self.assertIn("Điều 47", answer)
+        self.assertNotIn("Điều 43", answer)
+
     def test_id_129215_starts_at_method_heading_not_mid_procedure(self) -> None:
         chunks = [
             {
@@ -490,6 +515,39 @@ class TestMergeAdjacentChunks(unittest.TestCase):
         self.assertLessEqual(len(answer.split()), 620)
         self.assertTrue(answer.endswith("."))
         self.assertFalse(possibly_cut(answer))
+
+    def test_legal_list_without_sentence_period_uses_semicolon_boundary(self) -> None:
+        text = " ".join(
+            f"Mục {number} quy định nội dung hồ sơ cần nộp;"
+            for number in range(1, 30)
+        )
+        answer = build_focused_extractive_answer(
+            "Hồ sơ cần nộp bao gồm những mục nào?",
+            [{"chunk_no": 1, "text": text}],
+            best_chunk_no=1,
+            max_words=45,
+        )
+
+        self.assertTrue(answer)
+        self.assertLessEqual(len(answer.split()), 45)
+        self.assertTrue(answer.endswith("."))
+        self.assertFalse(possibly_cut(answer))
+
+    def test_truncation_drops_dangling_next_numeric_section_marker(self) -> None:
+        answer = build_focused_extractive_answer(
+            "Các quy định đối với công trình tàu điện ngầm gồm những gì?",
+            [{
+                "chunk_no": 6,
+                "text": (
+                    "2.7. Công trình tàu điện ngầm phải có lối thoát nạn và hệ thống "
+                    "thông gió. Thiết bị phải chống ăn mòn trong quá trình sử dụng. 3."
+                ),
+            }],
+            best_chunk_no=6,
+        )
+
+        self.assertTrue(answer.endswith("sử dụng."))
+        self.assertFalse(answer.endswith(" 3."))
 
     def test_clean_answer_only_removes_prefix(self) -> None:
         answer = "Dựa trên ngữ cảnh được cung cấp: Điều 1. Nội dung đầy đủ."
@@ -710,11 +768,12 @@ class TestPipelineLongAnswerRouting(unittest.TestCase):
                     "chunk_no": 8,
                     "name": "Tiêu chuẩn chẩn đoán thú y",
                     "text": (
-                        "Phần cuối của quy trình khác. E.1. Phương pháp ELISA chẩn đoán "
-                        "hội chứng rối loạn sinh sản và hô hấp ở lợn. Bước 1. Chuẩn bị "
+                        "Phần cuối của quy trình khác. PHỤ LỤC D. Phương pháp ELISA "
+                        "phát hiện kháng thể PRRS. Bước 1. Chuẩn bị "
                         "mẫu xét nghiệm. Bước 2. Pha loãng huyết thanh."
                     ),
                     "bm25_score": -12.0,
+                    "exact_phrase_matches": 1,
                 },
                 {
                     "context_id": "elisa",
@@ -729,7 +788,7 @@ class TestPipelineLongAnswerRouting(unittest.TestCase):
             ]
 
             def search_contexts(self, query: str, top_k: int = 50) -> list[dict]:
-                return [dict(self.chunks[1])]
+                return [dict(self.chunks[0])]
 
             def get_context_chunks(
                 self,
@@ -763,8 +822,116 @@ class TestPipelineLongAnswerRouting(unittest.TestCase):
 
         self.assertEqual(pred.route, "extractive_long")
         self.assertEqual(generator.called_count, 0)
-        self.assertIn("Bước 1", pred.answer)
-        self.assertIn("Bước 5", pred.answer)
+        self.assertIn("gồm 5 bước thực hiện", pred.answer)
+        self.assertNotIn("Bước 1", pred.answer)
+
+    def test_subway_question_can_bypass_generation_with_decisive_low_score(self) -> None:
+        question = (
+            "Các quy định khi đầu tư xây dựng công trình tàu điện ngầm gồm những gì?"
+        )
+
+        class SubwayIndex:
+            chunk = {
+                "context_id": "subway",
+                "chunk_no": 6,
+                "name": "Quy chuẩn đường sắt đô thị",
+                "text": (
+                    "Điều 12. Các quy định khi đầu tư xây dựng công trình tàu điện "
+                    "ngầm gồm yêu cầu về an toàn kết cấu, lối thoát nạn, thông gió "
+                    "và phòng cháy chữa cháy; chủ đầu tư phải tuân thủ quy chuẩn kỹ "
+                    "thuật và phương án cứu nạn được phê duyệt."
+                ),
+                "bm25_score": -9.0,
+                "exact_phrase_matches": 1,
+            }
+
+            def search_contexts(self, query: str, top_k: int = 50) -> list[dict]:
+                return [dict(self.chunk)]
+
+            def get_context_chunks(
+                self,
+                context_id: str,
+                chunk_nos: list[int] | None = None,
+            ) -> list[dict]:
+                return [dict(self.chunk)]
+
+            def search_train(
+                self,
+                query: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict]:
+                return []
+
+        generator = DummyGenerator()
+        pipeline = LegalQABaseline(
+            index=SubwayIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=DummyReranker(score=-4.4),
+            enable_long_answer_extractive=True,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(pred.route, "extractive_long")
+        self.assertEqual(generator.called_count, 0)
+        self.assertEqual(
+            pred.evidence["routing_decision"],
+            "focused_extractive_controlled_low_score",
+        )
+        self.assertIn("lối thoát nạn", pred.answer)
+
+    def test_covid_infection_question_does_not_extract_violence_section(self) -> None:
+        question = (
+            "Các biện pháp dự phòng cho nhân viên y tế để tránh tình trạng "
+            "lây nhiễm COVID-19 như thế nào?"
+        )
+
+        class CovidIndex:
+            chunk = {
+                "context_id": "covid-guide",
+                "chunk_no": 11,
+                "name": "Hướng dẫn an toàn cho nhân viên y tế",
+                "text": (
+                    "PHỤ LỤC 1. DỰ PHÒNG LÂY NHIỄM SARS-COV-2. Các biện pháp dự "
+                    "phòng: Nhân viên y tế phải sử dụng phương tiện bảo vệ cá nhân, "
+                    "vệ sinh tay và khử khuẩn bề mặt; cơ sở y tế tổ chức sàng lọc, "
+                    "phân luồng, cách ly và kiểm soát nguồn lây theo quy định."
+                ),
+                "bm25_score": -8.0,
+                "exact_phrase_matches": 1,
+            }
+
+            def search_contexts(self, query: str, top_k: int = 50) -> list[dict]:
+                return [dict(self.chunk)]
+
+            def get_context_chunks(
+                self,
+                context_id: str,
+                chunk_nos: list[int] | None = None,
+            ) -> list[dict]:
+                return [dict(self.chunk)]
+
+            def search_train(
+                self,
+                query: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict]:
+                return []
+
+        generator = DummyGenerator()
+        pipeline = LegalQABaseline(
+            index=CovidIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=DummyReranker(score=-3.0),
+            enable_long_answer_extractive=True,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(pred.route, "extractive_long")
+        self.assertEqual(generator.called_count, 0)
+        self.assertIn("vệ sinh tay", pred.answer)
+        self.assertNotIn("bạo hành", pred.answer.casefold())
 
     def test_raw_reranker_below_two_uses_generator(self) -> None:
         generator = DummyGenerator()

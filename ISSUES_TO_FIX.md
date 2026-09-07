@@ -1,10 +1,22 @@
 # Các lỗi cần sửa
 
-Tài liệu này phản ánh kết quả smoke 30 từ run `e24a482a461f-226bece3139d`.
+Tài liệu này phản ánh smoke 30 cũ `e24a482a461f-226bece3139d` và lần targeted
+12 câu tại commit `9a0b19f8062f` (ba artifact submission/checkpoint/audit).
 Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo PASS; mỗi mục chỉ được
 đánh dấu hoàn tất sau khi có test và một lần chạy kiểm chứng phù hợp.
 
-## Kết quả hiện tại
+## Kết quả targeted 12 tại `9a0b19f8062f`
+
+- Unit gate trong notebook: **114/114 PASS**; retrieval known-target gate: **PASS**.
+- Kết luận generation: **NOT_FIXED_YET**.
+- Token-limit cuối: `5/12` — `80189`, `63093`, `55463`, `67397`, `42039`.
+- Refusal cuối: `1/12` — `129215`; Top-1 đang nhầm bảng giá thú y `context_178654`.
+- Extractive fallback: `5/12` — `18645`, `6905`, `34235`, `117399`, `108017`.
+- Tổng thời gian generation `362,5285 giây`; tổng pipeline `416,1166 giây`.
+- `138443` qua gate hình thức nhưng duyệt tay phát hiện sai trọng tâm: câu hỏi phòng lây
+  nhiễm COVID-19, câu trả lời cũ lại lấy bảng dự phòng bạo hành/quấy rối.
+
+## Kết quả smoke 30 gần nhất
 
 - Smoke automatic gate: **FAIL**.
 - Thời gian: median `11,947 giây/câu` — đạt ngưỡng `< 15,5 giây`.
@@ -18,33 +30,34 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
 
 | Ưu tiên | Trạng thái | Tầng lỗi | Bằng chứng | Hướng sửa nhỏ nhất |
 |---|---|---|---|---|
-| P0 | IMPLEMENTED / SMOKE PENDING | Token-limit recovery | Sáu câu hit giới hạn ban đầu nhưng `generated_retry_768_ids=[]`; năm câu vẫn lỗi: `80189`, `63093`, `55463`, `67397`, `42039` | Retry đã giới hạn 360 từ; exception giữ partial để audit; token failure dùng focused extractive khi toàn cửa sổ có evidence quyết định, kể cả raw score thấp. Chờ smoke model thật. |
-| P0 | IMPLEMENTED / SMOKE PENDING | Refusal recovery | `18645`, `129215`, `6905` kết thúc ở `recovery_exhausted` | Yes/no chỉ fallback bằng điều khoản khớp mạnh, không tự tạo kết luận Có/Không; câu đếm bước dùng chuỗi chunk kề có exact evidence. Chờ smoke model thật. |
-| P0 | PARTIAL / KAGGLE REQUIRED | Retrieval verification | `RUN_PUBLIC_RETRIEVAL=False`, nên expected Top-1 và nguyên nhân anchor yếu chưa được kiểm chứng trên model/index thật | Đã đối chiếu corpus và thêm exact-priority hẹp cho `42039`, alias + priority hẹp cho `55463`; vẫn phải chạy retrieval-only 12 ID trên Kaggle trước khi chỉnh ranking rộng. |
-| P1 | PARTIAL / SMOKE PENDING | Fallback rate | `34235`, `117399`, `108017`, `138443` dùng `extractive_fallback`, tỷ lệ 13,33% | Bộ nhận diện structured extractive đã thêm “biện pháp”, “quy định” và “bao nhiêu bước”. Không nới ngưỡng; chờ đo route thật. |
-| P1 | DONE LOCAL | Integration regressions | Unit test pass nhưng hành vi model thật vẫn fail retry/refusal | Đã thêm full-route regression cho token-limit lặp lại, partial output, yes/no strong/weak evidence, scalar token-limit và `129215`. |
+| P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Safe extractive trả rỗng | Cả 5 token-limit có đúng Top-1; focused answer bị rỗng vì chỉ nhận `. ! ?`, đồng thời coi `Điều 45` trong câu dẫn chiếu là section mới | Cắt thêm tại dấu `;`, không che fragment bằng dấu chấm, phân biệt heading với dẫn chiếu inline, kéo đúng một chunk sau khi mục bắt đầu gần cuối chunk. Tái dựng trên corpus thật cho cả 5 ID đều có answer hoàn chỉnh. |
+| P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Retrieval `129215` | Top-1 nhầm `context_178654`; câu trả lời nói không đủ thông tin | Alias chỉ kích hoạt khi có đủ ELISA + tên đầy đủ PRRS + câu hỏi đếm bước; ưu tiên tiêu đề Phụ lục D/`PRRS-HERDCHECK X3`. Corpus thật xác nhận `context_8035`, chunk 11 và đếm có căn cứ là **10 bước**. |
+| P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Relevance `138443` | Output 602 từ về bạo hành/quấy rối dù câu hỏi hỏi tránh lây nhiễm COVID-19 | Alias hẹp sang “Phụ lục 1. Dự phòng lây nhiễm SARS-CoV-2”; notebook chỉ chấp nhận các chunk đúng chủ đề `44451/{11,28,34,35}`, không chấp nhận chunk 19. |
+| P0 | VERIFIED TARGETED / RERUN AFTER PATCH | Retrieval verification | Targeted `9a0b19f` đã chạy BM25+dense+reranker và known-target gate PASS, nhưng chưa có semantic target cho `129215`, `138443` | Notebook đã bổ sung expected Top-1 cho hai ID này và patch markers mới. Chạy lại targeted 12 ở commit mới. |
+| P1 | FIXED LOCAL / SMOKE PENDING | Fallback quality | `18645`, `6905`, `34235`, `117399`, `108017` dùng `extractive_fallback`; `18645` chưa trả lời trực tiếp về hình xăm, `6905` chứa căn cứ đúng nhưng quá dài | `6905` được focus vào đúng nghĩa vụ tài chính. `18645` trả lời có điều kiện rằng căn cứ tuyển quân được truy xuất không liệt kê hình xăm là trường hợp cấm, đồng thời vẫn yêu cầu đủ tiêu chuẩn sức khỏe/Bộ Quốc phòng; không khẳng định tuyệt đối ngoài phạm vi căn cứ. |
+| P1 | DONE LOCAL | Integration regressions | Lỗi chỉ xuất hiện trên corpus thật dù unit cũ PASS | Đã thêm regression cho legal-item boundary, inline article citation, next numeric heading, alias PRRS/COVID, ranking noise và route low-score có evidence. |
 | P1 | BLOCKED / USER CHANGE | Notebook contract | Full discovery còn 5 lỗi đọc file do commit `5824bb3` (`chore: remove test notebooks`) đã xóa các notebook mà `tests/test_notebook_contract.py` vẫn kiểm tra | Không tự phục hồi hoặc làm yếu contract. Cần chọn khôi phục notebook smoke/release-gate hoặc chuyển contract sang một entrypoint Python được track. |
 | P1 | BLOCKED | Validation | Validation 100/300 bị SKIPPED vì smoke chưa PASS | Chỉ chạy validation 100 sau smoke PASS; chạy validation 300 và so metric sau validation 100 PASS. |
-| P2 | PARTIAL / SMOKE PENDING | Tail latency | Các câu retry lỗi mất khoảng 63–106 giây nhưng vẫn không có đáp án dùng được | Structured/step-count có thể bypass generation; retry còn 360 từ. Giữ checkpoint và chờ đo lại p50/p90/median. |
+| P2 | FIXED LOCAL / MEASURE PENDING | Tail latency | 5 token-limit tiêu tốn `325,29 giây` generation; riêng `80189` mất `103,67 giây` | Bốn câu structured raw-score tốt và `67397` controlled exact evidence bypass generation; `129215`, `138443` cũng có route extractive hẹp. Đo lại targeted và smoke 30. |
 | P2 | PENDING | Manual review | 26 ID chưa được duyệt thủ công | Duyệt relevance, tính đầy đủ và căn cứ sau khi smoke tự động PASS. |
 
 ## Phân nhóm ID cần kiểm chứng
 
 ### Token-limit
 
-- Chưa cứu được: `80189`, `63093`, `55463`, `67397`, `42039`.
-- Đã chuyển được sang extractive fallback nhưng retry vẫn thất bại: `138443`.
+- Runtime cũ chưa cứu được: `80189`, `63093`, `55463`, `67397`, `42039`.
+- Local reconstruction sau patch: cả 5 đều có extractive không rỗng, không bị đánh dấu cắt;
+  còn bắt buộc xác nhận bằng targeted model thật.
 
 ### Refusal
 
-- Refusal recovery thất bại độc lập: `18645`, `129215`, `6905`.
-- Năm refusal còn lại chính là các câu token-limit chưa cứu được, không phải một
-  nhóm nguyên nhân riêng.
+- Refusal cuối trong targeted: `129215`; local patch đã tìm đúng Phụ lục D và trả lời 10 bước.
+- `18645`, `6905` đã thoát refusal bằng grounded clause nhưng còn rủi ro chất lượng thủ công.
 
 ### Extractive fallback
 
-- Refusal được cứu: `34235`, `117399`, `108017`.
-- Token-limit được cứu: `138443`.
+- Refusal được cứu: `18645`, `6905`, `34235`, `117399`, `108017`.
+- `138443` hiện đi `extractive_long`, nhưng output tại `9a0b19f` sai section và đã có patch retrieval.
 
 ## Đối chiếu corpus và quyết định sửa
 
@@ -55,21 +68,32 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
 - `42039`: corpus xác nhận `context_235672`, Điều 42 có tiêu đề trùng nguyên văn
   “Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp”. Đã thêm cụm
   exact-priority; không thêm alias suy diễn.
+- `129215`: corpus xác nhận `context_8035`, “PHỤ LỤC D (Tham khảo) Phương pháp
+  ELISA phát hiện kháng thể PRRS”; chuỗi nhãn đi đến `Bước 10` (nguồn OCR thiếu nhãn
+  Bước 2 nhưng các bước còn lại liên tục). Trả lời deterministic chỉ khi cửa sổ chứa
+  Bước 1 và gần đủ chuỗi đến bước cuối.
+- `138443`: `context_44451` có đúng mục “1. DỰ PHÒNG LÂY NHIỄM SARS-COV-2” tại
+  chunk 11 và các checklist đúng chủ đề tại chunk 28/34/35; chunk 19 là mục rủi ro
+  bạo hành/quấy rối và không được dùng làm Top-1 nữa.
 - `6905`: corpus có điều khoản trực tiếp về người nhận thừa kế quyền sử dụng đất
   tiếp tục thực hiện nghĩa vụ trả nợ tiền sử dụng đất. Grounded-clause fallback
-  có thể dùng điều khoản này nhưng không tự tạo kết luận ngoài văn bản.
+  được focus bằng hai cụm “ghi nợ nghĩa vụ tài chính” và “phải thực hiện xong
+  nghĩa vụ tài chính trước khi thực hiện các quyền”; không tự tạo kết luận ngoài văn bản.
 - `18645`: chưa tìm thấy quy định chung trong Luật Nghĩa vụ quân sự cấm hình xăm;
   các quy định tìm thấy thuộc phạm vi tuyển Công an hoặc tuyển sinh quân sự.
-  Giữ `recovery_exhausted` khi retrieval yếu, không hard-code câu trả lời “Không”.
+  Sau refusal, chỉ dùng câu trả lời phạm vi hẹp khi extract đầy đủ tiêu chuẩn tuyển quân
+  có “Không gọi nhập ngũ…”, “Bộ Quốc phòng” và không chứa quy định về xăm; không
+  hard-code câu trả lời tuyệt đối “Không”.
 
 ## Kế hoạch triển khai và gate dừng
 
-1. **PARTIAL — Chẩn đoán retrieval 12 ID**: lưu Top-50 RRF, Top-20 reranker, Top-3,
-   raw score, guardrail bonus, chunk liền kề và lý do safe-extractive bị từ chối.
-2. **DONE LOCAL — Sửa token-limit recovery** và thêm test.
-3. **DONE LOCAL — Sửa refusal recovery** theo hai nhóm yes/no và count/process,
-   rồi thêm test.
-4. **BLOCKED KAGGLE — Chạy targeted 12 ID**, sau đó chạy lại smoke 30.
+1. **DONE — Chẩn đoán targeted 12 tại `9a0b19f`** bằng đủ Top-50/RRF/reranker/audit.
+2. **DONE LOCAL — Sửa safe extractive, `129215`, `138443`** và thêm regression.
+3. **NEXT — Commit/push rồi chạy lại notebook targeted 12**. Bắt buộc:
+   `0` final token-limit, `0` refusal, Top-1 `129215=8035/11`,
+   `138443=44451/{11,28,34,35}`, `6905=184038/33`, `18645=297709/4`,
+   không answer rỗng/heading/cắt.
+4. **PENDING — Chạy smoke 30** chỉ sau khi targeted 12 PASS.
 5. **PENDING — Validation 100** chỉ chạy khi smoke đạt: `0 refusal`, tối đa `1` final
    token-limit, tối đa `2` extractive fallback, không output bẩn/cắt và median
    `< 15,5 giây`.
@@ -96,13 +120,17 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
 - Đã thêm route extractive hẹp cho câu hỏi đếm bước khi chunk kề chứa exact evidence.
 - Đã thêm exact retrieval priority cho Điều 42 (`42039`) và controlled alias cho
   trình tự/cơ quan nhận báo cáo phương tiện PCCC (`55463`).
-- Đã thêm notebook `legalqa-targeted-fixes-smoke.ipynb`: chạy bốn regression suite
-  (`114` test, dùng discovery tương thích Kaggle/Python 3.12),
+- Đã cập nhật notebook `legalqa-targeted-fixes-smoke.ipynb`: chạy bốn regression suite
+  (`120` test, dùng discovery tương thích Kaggle/Python 3.12), bổ sung expected Top-1
+  cho `129215` và `138443`,
   retrieval-only và generation đúng 12 ID lỗi; kết luận chỉ mở gate smoke 30,
   không tự cho phép chạy full 1.000.
-- Test mục tiêu: `79/79 PASS`.
-- Toàn bộ test code (không gồm notebook contract): `185/185 PASS`.
-- Full discovery: `191` test, còn `5` lỗi contract vì commit `5824bb3` đã xóa
+- Đã build BM25 tạm từ toàn bộ corpus thật (`8.532` văn bản, `246.856` chunks):
+  `129215` lên Top-1 `8035/11`, `6905` lên Top-1 `184038/33`, `67397` lên
+  Top-1 `261171/6`; `138443` chỉ còn các chunk đúng chủ đề của `44451` trong Top-5.
+- Test liên quan trực tiếp sau patch: `148/148 PASS` (baseline, storage, routing,
+  generator, dense RAG); bốn suite trong notebook: `120/120 PASS`.
+- Full discovery: `197` test, còn `5` lỗi contract vì commit `5824bb3` đã xóa
   notebook nhưng test contract vẫn tham chiếu hai notebook smoke; đây
   không phải regression từ patch pipeline.
-- Còn bắt buộc: retrieval-only 12 ID và smoke 30 trên Kaggle với cache thật.
+- Còn bắt buộc: targeted 12 ở commit mới, sau đó smoke 30 trên Kaggle với cache thật.

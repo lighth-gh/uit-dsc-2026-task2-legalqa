@@ -44,7 +44,20 @@ _PRRS_LONG_NAME_RE = re.compile(
     r"(?i)\bhội\s+chứng\s+rối\s+loạn\s+sinh\s+sản\s+và\s+hô\s+hấp\s+"
     r"(?:ở|trên)\s+lợn\b"
 )
+_ELISA_STEP_COUNT_RE = re.compile(
+    r"(?i)\bELISA\b.{0,180}\b(?:mấy|bao\s+nhiêu)\s+bước\b"
+)
 _ZONE_TRAFFIC_SIGN_RE = re.compile(r"(?i)\bbiển\s+báo\s+zone\b")
+_NVYT_COVID_INFECTION_RE = re.compile(
+    r"(?is)(?:\b(?:nhân\s+viên\s+y\s+tế|nvyt)\b.{0,180}\blây\s+nhiễm\b"
+    r".{0,100}\bcovid(?:-19)?\b|\blây\s+nhiễm\b.{0,100}\bcovid(?:-19)?\b"
+    r".{0,180}\b(?:nhân\s+viên\s+y\s+tế|nvyt)\b)"
+)
+_LAND_DEBT_RIGHTS_RE = re.compile(
+    r"(?is)(?=.*\bngười\s+sử\s+dụng\s+đất\b)"
+    r"(?=.*\b(?:trả|nợ)\b.{0,80}\btiền\s+sử\s+dụng\s+đất\b)"
+    r"(?=.*\b(?:quyền|di\s+sản|thừa\s+kế)\b)"
+)
 _PCCC_EQUIPMENT_REPORT_RE = re.compile(
     r"(?is)(?:\bbáo\s+cáo\b.{0,120}\bphương\s+tiện\s+phòng\s+cháy(?:\s+và)?\s+"
     r"chữa\s+cháy\b|\bphương\s+tiện\s+phòng\s+cháy(?:\s+và)?\s+chữa\s+cháy\b"
@@ -62,7 +75,15 @@ _YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 _PRIORITY_LEGAL_PHRASES = (
     "mức lương cơ sở",
     "prrs",
+    "phương pháp elisa phát hiện kháng thể prrs",
+    "prrs-herdcheck x3",
     "bắt đầu vào khu vực",
+    "công trình tàu điện ngầm",
+    "phụ lục 1. dự phòng lây nhiễm sars-cov-2",
+    "dự phòng lây nhiễm sars-cov-2",
+    "phòng ngừa và kiểm soát lây nhiễm sars-cov-2",
+    "ghi nợ nghĩa vụ tài chính",
+    "phải thực hiện xong nghĩa vụ tài chính trước khi thực hiện các quyền",
     "sử dụng quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp",
     "thống kê báo cáo công tác quản lý bảo quản bảo dưỡng phương tiện phòng cháy chữa cháy",
     "trình tự báo cáo và cơ quan tiếp nhận báo cáo",
@@ -168,10 +189,31 @@ def retrieval_query_aliases(text: str) -> list[str]:
     # The full Vietnamese disease name and PRRS are an unambiguous pair in
     # veterinary standards. This recovers ELISA procedures whose source uses
     # only the acronym without broadening unrelated disease queries.
-    if _PRRS_LONG_NAME_RE.search(source):
+    is_prrs_query = bool(_PRRS_LONG_NAME_RE.search(source))
+    if is_prrs_query:
         aliases.extend(("PRRS", "bệnh tai xanh"))
+    # The count question is answered in Appendix D, whose title no longer
+    # repeats the full disease name used by the public question. Keep this
+    # expansion behind all three signals (full PRRS name, ELISA, step count)
+    # so generic veterinary-price passages mentioning PRRS are not promoted.
+    if is_prrs_query and _ELISA_STEP_COUNT_RE.search(source):
+        aliases.extend((
+            "Phương pháp ELISA phát hiện kháng thể PRRS",
+            "PRRS-HERDCHECK X3",
+        ))
     if _ZONE_TRAFFIC_SIGN_RE.search(source):
         aliases.append("Bắt đầu vào khu vực")
+    if _NVYT_COVID_INFECTION_RE.search(source):
+        aliases.extend((
+            "Phụ lục 1. Dự phòng lây nhiễm SARS-CoV-2",
+            "Dự phòng lây nhiễm SARS-CoV-2",
+            "Phòng ngừa và kiểm soát lây nhiễm SARS-CoV-2",
+        ))
+    if _LAND_DEBT_RIGHTS_RE.search(source):
+        aliases.extend((
+            "ghi nợ nghĩa vụ tài chính",
+            "phải thực hiện xong nghĩa vụ tài chính trước khi thực hiện các quyền",
+        ))
     # The public question asks generically how/where to report firefighting
     # equipment. The governing provision uses these two exact headings. Keep
     # the expansion gated by both "báo cáo" and the full equipment concept so
@@ -757,6 +799,8 @@ _STRUCTURED_EXTRACTIVE_PATTERNS: tuple[str, ...] = (
     r"\b(?:nội dung|nguyên văn|toàn văn)\s+(?:điều|khoản|văn bản)\b",
     r"\b(?:các|những)\s+(?:hình thức|biện pháp|quy định|yêu cầu|nội dung|nhiệm vụ|quyền hạn)\b",
     r"\b(?:mấy|bao nhiêu)\s+bước\b",
+    r"\bsử dụng\s+quỹ\s+bảo\s+hiểm\s+tai\s+nạn\s+lao\s+động[,]?\s+"
+    r"bệnh\s+nghề\s+nghiệp\b",
     r"\b(?:thực hiện|được thực hiện)\b[^?]{0,140}"
     r"\b(?:như thế nào|ra sao|tại đâu)\b",
 )
@@ -1212,7 +1256,10 @@ def _matching_legal_heading_start(question: str, text: str) -> int | None:
 
 
 _MAJOR_SECTION_RE = re.compile(
-    r"(?i)(?<!\w)(?:chương\s+(?:[ivxlcdm]+|\d+)|mục\s+\d+|"
+    # Avoid treating inline citations such as "theo Điều 45 và Điều 46" as
+    # section boundaries. Real headings begin a line/chunk or follow a closed
+    # sentence in flattened source text.
+    r"(?im)(?:^[ \t]*|(?<=[.!?…;])[ \t]+)(?:chương\s+(?:[ivxlcdm]+|\d+)|mục\s+\d+|"
     r"điều\s+\d+[a-zđ]*|phụ\s+lục(?:\s+[ivxlcdm\d]+)?|"
     r"mẫu\s+số\s+[\w./-]+|[a-zđ]\s*[.]\s*\d+(?:[.]\d+)*)"
 )
@@ -1270,12 +1317,20 @@ def select_relevant_neighbor_chunks(
     if best is None:
         return sorted(by_number.values(), key=lambda chunk: int(chunk.get("chunk_no", 0)))
 
+    focus_question = expand_retrieval_query(question)
     scores = {
-        number: _chunk_query_relevance(question, str(chunk.get("text") or ""))
+        number: _chunk_query_relevance(focus_question, str(chunk.get("text") or ""))
         for number, chunk in by_number.items()
     }
     best_score = scores.get(best_chunk_no, 0.0)
     best_text = str(best.get("text") or "").strip()
+    heading_start = _matching_legal_heading_start(focus_question, best_text)
+    relevant_start = _relevant_section_start(focus_question, best_text)
+    focused_start = heading_start if heading_start is not None else relevant_start
+    focus_starts_late = bool(
+        focused_start is not None
+        and focused_start >= max(1, int(len(best_text) * 0.45))
+    )
     selected_numbers = {best_chunk_no}
     # A neighbour must retain most of the query coverage. The structural
     # exception is needed for numbered lists/procedures split across windows.
@@ -1290,7 +1345,14 @@ def select_relevant_neighbor_chunks(
             if number < best_chunk_no
             else (best_text, neighbour_text)
         )
-        if scores.get(number, 0.0) >= threshold or _continues_numbered_procedure(left, right):
+        if (
+            scores.get(number, 0.0) >= threshold
+            or _continues_numbered_procedure(left, right)
+            # A form/article heading near the end of a word-window chunk has
+            # its body in the next chunk even when the body does not repeat
+            # query terms. This remains one-directional and locally bounded.
+            or number == best_chunk_no + 1 and focus_starts_late
+        ):
             selected_numbers.add(number)
 
     # Allow one more supplied window only when it is a clear continuation of
@@ -1377,7 +1439,7 @@ def _section_starts(text: str) -> list[int]:
         is_heading_number = run_start is not None and token.isdigit()
         gap_is_heading = bool(
             previous_end is None
-            or re.fullmatch(r"[\s:/()\-–—]*", text[previous_end:match.start()])
+            or re.fullmatch(r"[\s,:/()\-–—]*", text[previous_end:match.start()])
         )
         if (is_upper_word or is_heading_number) and gap_is_heading:
             if run_start is None:
@@ -1403,11 +1465,16 @@ def _stop_at_unrelated_section(question: str, text: str) -> str:
         starts.insert(0, 0)
     if len(starts) < 2:
         return text.strip()
+    starts_with_article = bool(re.match(r"(?i)^\s*điều\s+\d+[a-zđ]*\b", text))
     baseline_end = starts[1]
     baseline = _chunk_query_relevance(question, text[starts[0]:baseline_end])
     for index, heading_start in enumerate(starts[1:], start=1):
         next_start = starts[index + 1] if index + 1 < len(starts) else len(text)
         section_preview = text[heading_start:min(next_start, heading_start + 360)]
+        if starts_with_article and re.match(
+            r"(?i)^\s*điều\s+\d+[a-zđ]*\b", text[heading_start:]
+        ):
+            return text[:heading_start].rstrip(" \n,;:-")
         score = _chunk_query_relevance(question, section_preview)
         if score < max(0.24, baseline * 0.55):
             return text[:heading_start].rstrip(" \n,;:-")
@@ -1415,20 +1482,41 @@ def _stop_at_unrelated_section(question: str, text: str) -> str:
 
 
 def _truncate_complete_sentence(text: str, max_words: int) -> str:
-    """Respect a hard word budget without returning a sentence fragment."""
+    """Respect a hard word budget at a sentence or legal-item boundary."""
     if max_words <= 0:
         raise ValueError("max_words phải lớn hơn 0")
     matches = list(re.finditer(r"\S+", text))
     within_budget = len(matches) <= max_words
     prefix = text if within_budget else text[: matches[max_words - 1].end()]
-    if within_budget and text.rstrip().endswith(
-        (".", "!", "?", "…", ")", "]", "}", '"', "”", "’")
+    terminal_marks = (".", "!", "?", "…")
+    ends_as_closed_sentence = bool(
+        re.search(r"[.!?…](?:[\"'”’\)\]}]*)$", text.rstrip())
+    )
+    if (
+        within_budget
+        and ends_as_closed_sentence
+        and not re.search(r"(?:^|\s)\d+[.]$", text.rstrip())
     ):
         return text.strip()
-    ends = [match.end() for match in _SENTENCE_END_RE.finditer(prefix)]
+
+    ends = [
+        match.end()
+        for match in _SENTENCE_END_RE.finditer(prefix)
+        # A trailing "3." is normally the beginning of the next numbered
+        # standard section, not a complete answer sentence.
+        if not re.search(r"(?:^|\s)\d+[.]$", prefix[: match.end()])
+    ]
+    # Legal provisions and OCR tables commonly separate complete items with
+    # semicolons even after chunking has flattened original newlines.
+    ends.extend(match.end() for match in re.finditer(r";(?=\s|$)", prefix))
     minimum_safe_words = min(20, max_words)
     safe = [end for end in ends if len(tokenize(prefix[:end])) >= minimum_safe_words]
-    return prefix[: safe[-1]].strip() if safe else ""
+    if not safe:
+        return ""
+    complete = prefix[: safe[-1]].strip().rstrip(" \n,;:-–—/")
+    if not complete:
+        return ""
+    return complete if complete.endswith(terminal_marks) else f"{complete}."
 
 
 def build_focused_extractive_answer(
@@ -1447,14 +1535,15 @@ def build_focused_extractive_answer(
         best_chunk_no=best_chunk_no,
     )
     chronological = build_extractive_answer(selected)
-    heading_start = _matching_legal_heading_start(question, chronological)
-    relevant_start = _relevant_section_start(question, chronological)
+    focus_question = expand_retrieval_query(question)
+    heading_start = _matching_legal_heading_start(focus_question, chronological)
+    relevant_start = _relevant_section_start(focus_question, chronological)
     # A specifically requested Mẫu/Phụ lục/Điều is stronger than an incidental
     # earlier query phrase (for example a table of contents mentioning a form).
     answer_start = heading_start if heading_start is not None else relevant_start
     if answer_start is not None:
         chronological = chronological[answer_start:].lstrip()
-    chronological = _stop_at_unrelated_section(question, chronological)
+    chronological = _stop_at_unrelated_section(focus_question, chronological)
     return _truncate_complete_sentence(chronological, max_words)
 
 

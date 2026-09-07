@@ -1144,6 +1144,60 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertNotIn("Có,", pred.answer)
         self.assertFalse(pred.evidence["says_no_information"])
 
+    def test_military_tattoo_refusal_returns_qualified_scope_answer(self) -> None:
+        question = "Trong độ tuổi đi nghĩa vụ quân sự mà đi xăm hình có bị cấm không?"
+
+        class MilitaryCriteriaIndex:
+            def search_contexts(
+                self,
+                query: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [{
+                    "context_id": "military-criteria",
+                    "chunk_no": 4,
+                    "name": "Thông tư tuyển chọn và gọi công dân nhập ngũ",
+                    "link": "https://example.com/military-criteria",
+                    "text": (
+                        "Tiêu chuẩn tuyển quân gồm tiêu chuẩn chính trị, sức khỏe và "
+                        "văn hóa. Tiêu chuẩn riêng thực hiện theo quy định của Bộ Quốc "
+                        "phòng. Không gọi nhập ngũ những công dân có sức khỏe loại 3 do "
+                        "tật khúc xạ về mắt, nghiện ma túy, nhiễm HIV hoặc AIDS. Các "
+                        "điều kiện còn lại được xem xét theo quy định tuyển quân."
+                    ),
+                    "bm25_score": -20.0,
+                }]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class AlwaysRefuses:
+            def generate(self, context: str, question: str) -> str:
+                return "Không đủ thông tin trong ngữ cảnh."
+
+        pipeline = LegalQABaseline(
+            index=MilitaryCriteriaIndex(),  # type: ignore[arg-type]
+            generator=AlwaysRefuses(),
+            reranker=FixedScoreReranker(score=3.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertEqual(
+            pred.evidence["recovery_strategy"],
+            "refusal_grounded_scope_absence",
+        )
+        self.assertIn("không liệt kê hình xăm là trường hợp bị cấm", pred.answer)
+        self.assertIn("tiêu chuẩn sức khỏe", pred.answer)
+        self.assertNotIn("cận thị", pred.answer)
+        self.assertFalse(pred.evidence["says_no_information"])
+
     def test_yes_no_refusal_does_not_dump_weak_clause(self) -> None:
         class WeakYesNoIndex:
             def search_contexts(

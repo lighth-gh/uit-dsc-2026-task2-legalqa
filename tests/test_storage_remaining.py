@@ -303,6 +303,65 @@ class StorageRemainingRegressionTests(unittest.TestCase):
                 "bảo hiểm tai nạn lao động và kinh phí hành chính theo dự toán. "
                 "Nội dung tập trung vào quyết toán chi phí quản lý hằng năm.",
             ),
+            (
+                "prrs-elisa-appendix",
+                "Tiêu chuẩn quốc gia về chẩn đoán PRRS",
+                "Phụ lục D. Phương pháp ELISA phát hiện kháng thể PRRS. Nếu sử dụng "
+                "bộ kit chẩn đoán PRRS-HERDCHECK X3 của IDEXX thì các bước tiến hành "
+                "gồm Bước 1 chuẩn bị mẫu, Bước 3 ủ phản ứng và tiếp tục đến Bước 10 "
+                "đọc kết quả theo hướng dẫn của nhà sản xuất.",
+            ),
+            (
+                "prrs-price-noise",
+                "Bảng giá dịch vụ thú y",
+                "Bảng giá xét nghiệm ELISA đối với PRRS, bệnh tai xanh và nhiều bệnh "
+                "truyền nhiễm ở lợn được niêm yết theo từng loại dịch vụ chẩn đoán. "
+                "Mục này chỉ quy định đơn giá, không mô tả quy trình xét nghiệm.",
+            ),
+            (
+                "subway-rules",
+                "Quy chuẩn công trình giao thông đô thị",
+                "Các quy định khi đầu tư xây dựng công trình tàu điện ngầm gồm yêu cầu "
+                "về an toàn kết cấu, lối thoát nạn, thông gió và phòng cháy chữa cháy. "
+                "Chủ đầu tư phải tuân thủ quy chuẩn kỹ thuật áp dụng cho công trình.",
+            ),
+            (
+                "subway-noise",
+                "Kế hoạch giao thông đô thị",
+                "Thành phố nghiên cứu phương tiện tàu điện và nhiều công trình ngầm "
+                "trong kế hoạch đầu tư xây dựng giao thông công cộng dài hạn. Nội dung "
+                "không quy định tiêu chuẩn riêng cho dự án đường sắt đô thị.",
+            ),
+            (
+                "covid-infection-prevention",
+                "Hướng dẫn an toàn cho nhân viên y tế",
+                "Phụ lục 1. Dự phòng lây nhiễm SARS-CoV-2. Nhân viên y tế phải "
+                "sử dụng phương tiện bảo vệ cá nhân, vệ sinh tay, khử khuẩn bề mặt "
+                "và thực hiện đầy đủ quy định phòng ngừa và kiểm soát lây nhiễm "
+                "SARS-CoV-2 tại cơ sở y tế.",
+            ),
+            (
+                "covid-violence-noise",
+                "Hướng dẫn an toàn cho nhân viên y tế",
+                "Các biện pháp dự phòng đối với cơ sở y tế nhằm phòng chống bạo hành, "
+                "quấy rối và giảm căng thẳng cho nhân viên y tế trong thời gian tham "
+                "gia phòng chống dịch COVID-19 tại cộng đồng.",
+            ),
+            (
+                "land-debt-rights",
+                "Luật Đất đai",
+                "Điều 29. Thời điểm được thực hiện các quyền của người sử dụng đất. "
+                "Trường hợp người sử dụng đất được chậm thực hiện nghĩa vụ tài chính "
+                "hoặc được ghi nợ nghĩa vụ tài chính thì phải thực hiện xong nghĩa vụ "
+                "tài chính trước khi thực hiện các quyền.",
+            ),
+            (
+                "land-debt-noise",
+                "Quy định thu tiền sử dụng đất",
+                "Người sử dụng đất thực hiện trả nợ tiền sử dụng đất theo thời hạn và "
+                "số tiền ghi trên giấy chứng nhận. Nội dung này hướng dẫn thủ tục nộp "
+                "tiền nhưng không quy định thời điểm thực hiện quyền về di sản.",
+            ),
         )
         for context_id, name, passage in fixtures:
             _write_json(
@@ -322,11 +381,41 @@ class StorageRemainingRegressionTests(unittest.TestCase):
                 "Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp?",
                 top_k=4,
             )
+            prrs_matches = index.search_contexts(
+                "Phương pháp ELISA dùng để chẩn đoán hội chứng rối loạn sinh sản "
+                "và hô hấp ở lợn có bao nhiêu bước thực hiện?",
+                top_k=4,
+            )
+            subway_matches = index.search_contexts(
+                "Các quy định khi đầu tư xây dựng công trình tàu điện ngầm gồm gì?",
+                top_k=4,
+            )
+            covid_matches = index.search_contexts(
+                "Các biện pháp dự phòng cho nhân viên y tế để tránh tình trạng "
+                "lây nhiễm COVID-19 như thế nào?",
+                top_k=4,
+            )
+            land_debt_matches = index.search_contexts(
+                "Người sử dụng đất có quyền phân chia di sản là quyền sử dụng đất khi "
+                "còn đang trong thời gian trả nợ tiền sử dụng đất hay không?",
+                top_k=4,
+            )
 
         self.assertEqual(pccc_matches[0]["context_id"], "pccc-report")
         self.assertGreater(int(pccc_matches[0]["exact_phrase_matches"]), 0)
         self.assertEqual(fund_matches[0]["context_id"], "fund-article-42")
         self.assertGreater(int(fund_matches[0]["exact_phrase_matches"]), 0)
+        self.assertEqual(prrs_matches[0]["context_id"], "prrs-elisa-appendix")
+        self.assertGreater(int(prrs_matches[0]["exact_phrase_matches"]), 0)
+        self.assertEqual(subway_matches[0]["context_id"], "subway-rules")
+        self.assertGreater(int(subway_matches[0]["exact_phrase_matches"]), 0)
+        self.assertEqual(
+            covid_matches[0]["context_id"],
+            "covid-infection-prevention",
+        )
+        self.assertGreater(int(covid_matches[0]["exact_phrase_matches"]), 0)
+        self.assertEqual(land_debt_matches[0]["context_id"], "land-debt-rights")
+        self.assertGreater(int(land_debt_matches[0]["exact_phrase_matches"]), 0)
 
     def test_hash_and_bm25_ties_are_independent_of_filename_order(self) -> None:
         databases: list[Path] = []
