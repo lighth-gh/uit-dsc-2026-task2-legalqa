@@ -23,7 +23,7 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
 | P0 | PARTIAL / KAGGLE REQUIRED | Retrieval verification | `RUN_PUBLIC_RETRIEVAL=False`, nên expected Top-1 và nguyên nhân anchor yếu chưa được kiểm chứng trên model/index thật | Đã đối chiếu corpus và thêm exact-priority hẹp cho `42039`, alias + priority hẹp cho `55463`; vẫn phải chạy retrieval-only 12 ID trên Kaggle trước khi chỉnh ranking rộng. |
 | P1 | PARTIAL / SMOKE PENDING | Fallback rate | `34235`, `117399`, `108017`, `138443` dùng `extractive_fallback`, tỷ lệ 13,33% | Bộ nhận diện structured extractive đã thêm “biện pháp”, “quy định” và “bao nhiêu bước”. Không nới ngưỡng; chờ đo route thật. |
 | P1 | DONE LOCAL | Integration regressions | Unit test pass nhưng hành vi model thật vẫn fail retry/refusal | Đã thêm full-route regression cho token-limit lặp lại, partial output, yes/no strong/weak evidence, scalar token-limit và `129215`. |
-| P1 | BLOCKED / USER CHANGE | Notebook contract | Full discovery còn 5 lỗi đọc file sau commit `5824bb3` (`chore: remove test notebooks`) xóa các notebook mà `tests/test_notebook_contract.py` vẫn kiểm tra | Không tự phục hồi hoặc làm yếu contract. Cần chọn khôi phục notebook smoke/release-gate hoặc chuyển contract sang một entrypoint Python được track. |
+| P1 | BLOCKED / USER CHANGE | Notebook contract | Full discovery còn 5 lỗi đọc file do commit `5824bb3` (`chore: remove test notebooks`) đã xóa các notebook mà `tests/test_notebook_contract.py` vẫn kiểm tra | Không tự phục hồi hoặc làm yếu contract. Cần chọn khôi phục notebook smoke/release-gate hoặc chuyển contract sang một entrypoint Python được track. |
 | P1 | BLOCKED | Validation | Validation 100/300 bị SKIPPED vì smoke chưa PASS | Chỉ chạy validation 100 sau smoke PASS; chạy validation 300 và so metric sau validation 100 PASS. |
 | P2 | PARTIAL / SMOKE PENDING | Tail latency | Các câu retry lỗi mất khoảng 63–106 giây nhưng vẫn không có đáp án dùng được | Structured/step-count có thể bypass generation; retry còn 360 từ. Giữ checkpoint và chờ đo lại p50/p90/median. |
 | P2 | PENDING | Manual review | 26 ID chưa được duyệt thủ công | Duyệt relevance, tính đầy đủ và căn cứ sau khi smoke tự động PASS. |
@@ -96,9 +96,12 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
 - Đã thêm route extractive hẹp cho câu hỏi đếm bước khi chunk kề chứa exact evidence.
 - Đã thêm exact retrieval priority cho Điều 42 (`42039`) và controlled alias cho
   trình tự/cơ quan nhận báo cáo phương tiện PCCC (`55463`).
+- Đã thêm notebook `legalqa-targeted-fixes-smoke.ipynb`: chạy 79 regression test,
+  retrieval-only và generation đúng 12 ID lỗi; kết luận chỉ mở gate smoke 30,
+  không tự cho phép chạy full 1.000.
 - Test mục tiêu: `79/79 PASS`.
 - Toàn bộ test code (không gồm notebook contract): `185/185 PASS`.
-- Full discovery: `191` test, còn `5` lỗi contract vì commit hiện tại `5824bb3`
-  đã xóa notebook nhưng test contract vẫn tham chiếu hai notebook smoke; đây
+- Full discovery: `191` test, còn `5` lỗi contract vì commit `5824bb3` đã xóa
+  notebook nhưng test contract vẫn tham chiếu hai notebook smoke; đây
   không phải regression từ patch pipeline.
 - Còn bắt buộc: retrieval-only 12 ID và smoke 30 trên Kaggle với cache thật.

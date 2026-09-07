@@ -268,6 +268,10 @@ Khi có nhiều GPU CUDA, dense encoder tự động dùng DataParallel trên t�
 
 Notebook `uit-dsc-2026-task2-legalqa.ipynb` ghi toàn bộ submission, checkpoint, BM25/Dense index và snapshot ba model vào `/kaggle/working`. Snapshot được khóa theo commit Hugging Face và bỏ các file ONNX không dùng để giảm dung lượng Output. Sau khi chạy, chọn **Save Version** để Kaggle lưu Output. Lần sau, chọn **Add Data** và thêm Output của version trước; notebook sẽ tự tìm lại model/index/checkpoint và resume. Các model ở đây là pretrained checkpoint được tải về, pipeline không có bước fine-tune nên không cần train lại.
 
+Để kiểm tra nhanh các bản sửa token-limit/refusal/retrieval trước khi chạy lại
+smoke 30, dùng `legalqa-targeted-fixes-smoke.ipynb`. Notebook này chỉ chạy 12 ID
+lỗi, không rebuild Dense và không chạy full public.
+
 Hoặc sử dụng script chạy RAG chuyên biệt:
 
 ```bash
