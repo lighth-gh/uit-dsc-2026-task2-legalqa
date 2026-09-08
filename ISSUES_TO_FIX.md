@@ -1,9 +1,24 @@
 # Các lỗi cần sửa
 
-Tài liệu này phản ánh smoke 30 cũ `e24a482a461f-226bece3139d` và lần targeted
-12 câu tại commit `9a0b19f8062f` (ba artifact submission/checkpoint/audit).
+Tài liệu này phản ánh smoke 30 cũ `e24a482a461f-226bece3139d`, lần targeted
+12 câu tại commit `9a0b19f8062f`, và lần targeted mới tại commit
+`3879a7c1ac6e` (submission/checkpoint/audit/log).
 Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo PASS; mỗi mục chỉ được
 đánh dấu hoàn tất sau khi có test và một lần chạy kiểm chứng phù hợp.
+
+## Kết quả targeted 12 tại `3879a7c1ac6e` (trước patch hiện tại)
+
+- Unit gate trong notebook: **120/120 PASS**.
+- Retrieval known-target gate: **FAIL**, chỉ còn `129215` sai Top-1.
+- Token-limit cuối: **0/12**; năm lỗi token-limit cũ đã được sửa.
+- Refusal/invalid cuối: **2/12** — `129215`, `6905`.
+- Route: `6 extractive_long`, `4 extractive_fallback`, `2 recovery_exhausted`.
+- Tổng thời gian predict: `116,82 giây`; chưa dùng tập targeted thiên lệch này để
+  ngoại suy runtime 1.000 câu.
+- `138443` đã lấy đúng phần dự phòng lây nhiễm SARS-CoV-2; `18645` đã trả lời có
+  điều kiện thay vì refusal.
+- Submission có đủ 12 ID; `checkpoint.predictions` khớp submission và audit có
+  12 ID duy nhất.
 
 ## Kết quả targeted 12 tại `9a0b19f8062f`
 
@@ -30,11 +45,11 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
 
 | Ưu tiên | Trạng thái | Tầng lỗi | Bằng chứng | Hướng sửa nhỏ nhất |
 |---|---|---|---|---|
-| P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Safe extractive trả rỗng | Cả 5 token-limit có đúng Top-1; focused answer bị rỗng vì chỉ nhận `. ! ?`, đồng thời coi `Điều 45` trong câu dẫn chiếu là section mới | Cắt thêm tại dấu `;`, không che fragment bằng dấu chấm, phân biệt heading với dẫn chiếu inline, kéo đúng một chunk sau khi mục bắt đầu gần cuối chunk. Tái dựng trên corpus thật cho cả 5 ID đều có answer hoàn chỉnh. |
-| P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Retrieval `129215` | Top-1 nhầm `context_178654`; câu trả lời nói không đủ thông tin | Alias chỉ kích hoạt khi có đủ ELISA + tên đầy đủ PRRS + câu hỏi đếm bước; ưu tiên tiêu đề Phụ lục D/`PRRS-HERDCHECK X3`. Corpus thật xác nhận `context_8035`, chunk 11 và đếm có căn cứ là **10 bước**. |
-| P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Relevance `138443` | Output 602 từ về bạo hành/quấy rối dù câu hỏi hỏi tránh lây nhiễm COVID-19 | Alias hẹp sang “Phụ lục 1. Dự phòng lây nhiễm SARS-CoV-2”; notebook chỉ chấp nhận các chunk đúng chủ đề `44451/{11,28,34,35}`, không chấp nhận chunk 19. |
-| P0 | VERIFIED TARGETED / RERUN AFTER PATCH | Retrieval verification | Targeted `9a0b19f` đã chạy BM25+dense+reranker và known-target gate PASS, nhưng chưa có semantic target cho `129215`, `138443` | Notebook đã bổ sung expected Top-1 cho hai ID này và patch markers mới. Chạy lại targeted 12 ở commit mới. |
-| P1 | FIXED LOCAL / SMOKE PENDING | Fallback quality | `18645`, `6905`, `34235`, `117399`, `108017` dùng `extractive_fallback`; `18645` chưa trả lời trực tiếp về hình xăm, `6905` chứa căn cứ đúng nhưng quá dài | `6905` được focus vào đúng nghĩa vụ tài chính. `18645` trả lời có điều kiện rằng căn cứ tuyển quân được truy xuất không liệt kê hình xăm là trường hợp cấm, đồng thời vẫn yêu cầu đủ tiêu chuẩn sức khỏe/Bộ Quốc phòng; không khẳng định tuyệt đối ngoài phạm vi căn cứ. |
+| P0 | VERIFIED TARGETED | Safe extractive trả rỗng | Targeted `3879a7c` không còn final token-limit ở cả 5 ID cũ | Giữ regression hiện có; không mở lại nếu smoke 30 không phát hiện regression. |
+| P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Retrieval `129215` | BM25, dense và RRF đều xếp `8035/11` hạng 1, nhưng guardrail cho 1 từ chung `PRRS` cùng bonus `4.0` như 3 cụm exact nên reranker lật sang bảng giá `178654/14` | Giữ `PRRS` làm query alias nhưng bỏ khỏi exact-priority; bonus nhiều cụm exact tăng có giới hạn `4..6`. Mô phỏng lại 20 candidate thật đưa `8035/11` lên Top-1 (`-0,2266` so với `-2,3296`). |
+| P0 | VERIFIED TARGETED | Relevance `138443` | Targeted `3879a7c` lấy đúng `44451/11` và nội dung dự phòng lây nhiễm SARS-CoV-2 | Giữ semantic expected target trong notebook. |
+| P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Grounded fallback `6905` | Top-1 đúng `184038/33`, nhưng original-query coverage chỉ `0,40`; alias coverage `0,80` không được dùng nên hai lần generation refusal kết thúc bằng “Không đủ thông tin” | Chỉ cho alias-aware fallback khi alias có ít nhất 4 term, coverage `>=0,75` và candidate có exact evidence; trả nguyên câu điều kiện hoàn chỉnh, không tự thêm Có/Không. |
+| P1 | FIXED LOCAL / SMOKE PENDING | Fallback quality | `18645`, `34235`, `117399`, `108017` dùng `extractive_fallback` nhưng đều hợp lệ; `6905` đã được sửa local | Không coi fallback là lỗi chỉ vì route; duyệt relevance và đo rate trên smoke 30. |
 | P1 | DONE LOCAL | Integration regressions | Lỗi chỉ xuất hiện trên corpus thật dù unit cũ PASS | Đã thêm regression cho legal-item boundary, inline article citation, next numeric heading, alias PRRS/COVID, ranking noise và route low-score có evidence. |
 | P1 | BLOCKED / USER CHANGE | Notebook contract | Full discovery còn 5 lỗi đọc file do commit `5824bb3` (`chore: remove test notebooks`) đã xóa các notebook mà `tests/test_notebook_contract.py` vẫn kiểm tra | Không tự phục hồi hoặc làm yếu contract. Cần chọn khôi phục notebook smoke/release-gate hoặc chuyển contract sang một entrypoint Python được track. |
 | P1 | BLOCKED | Validation | Validation 100/300 bị SKIPPED vì smoke chưa PASS | Chỉ chạy validation 100 sau smoke PASS; chạy validation 300 và so metric sau validation 100 PASS. |
@@ -88,16 +103,18 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
 ## Kế hoạch triển khai và gate dừng
 
 1. **DONE — Chẩn đoán targeted 12 tại `9a0b19f`** bằng đủ Top-50/RRF/reranker/audit.
-2. **DONE LOCAL — Sửa safe extractive, `129215`, `138443`** và thêm regression.
-3. **NEXT — Commit/push rồi chạy lại notebook targeted 12**. Bắt buộc:
+2. **DONE TARGETED — Sửa safe extractive và `138443`** tại `3879a7c`.
+3. **DONE LOCAL — Sửa post-rerank `129215` và grounded fallback `6905`**, thêm
+   regression và đối chiếu lại trên candidate/chunk thật.
+4. **NEXT — Commit/push rồi chạy lại notebook targeted 12**. Bắt buộc:
    `0` final token-limit, `0` refusal, Top-1 `129215=8035/11`,
    `138443=44451/{11,28,34,35}`, `6905=184038/33`, `18645=297709/4`,
    không answer rỗng/heading/cắt.
-4. **PENDING — Chạy smoke 30** chỉ sau khi targeted 12 PASS.
-5. **PENDING — Validation 100** chỉ chạy khi smoke đạt: `0 refusal`, tối đa `1` final
+5. **PENDING — Chạy smoke 30** chỉ sau khi targeted 12 PASS.
+6. **PENDING — Validation 100** chỉ chạy khi smoke đạt: `0 refusal`, tối đa `1` final
    token-limit, tối đa `2` extractive fallback, không output bẩn/cắt và median
    `< 15,5 giây`.
-6. **PENDING — Validation 300/full 1.000**: chỉ sang validation 300 khi
+7. **PENDING — Validation 300/full 1.000**: chỉ sang validation 300 khi
    validation 100 PASS; chỉ chạy full 1.000 khi
    validation 300 không giảm METEOR và ROUGE-L so với baseline tương thích.
 
@@ -130,7 +147,14 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
   Top-1 `261171/6`; `138443` chỉ còn các chunk đúng chủ đề của `44451` trong Top-5.
 - Test liên quan trực tiếp sau patch: `148/148 PASS` (baseline, storage, routing,
   generator, dense RAG); bốn suite trong notebook: `120/120 PASS`.
-- Full discovery: `197` test, còn `5` lỗi contract vì commit `5824bb3` đã xóa
+- Full discovery hiện tại: `199` test, `194` pass và còn `5` lỗi contract vì
+  commit `5824bb3` đã xóa
   notebook nhưng test contract vẫn tham chiếu hai notebook smoke; đây
   không phải regression từ patch pipeline.
+- Patch sau targeted `3879a7c`: bỏ `PRRS` đơn lẻ khỏi exact-priority, tính bonus
+  bounded theo số cụm đặc hiệu, và thêm alias-aware grounded clause cho `6905`.
+  Năm suite targeted chạy local **150/150 PASS**; đối chiếu corpus thật
+  cho kết quả `129215=8035/11` và câu `6905` còn đúng một điều khoản 37 từ.
+- Notebook targeted đã thêm suite `test_dense_rag.py`, patch markers cho hai sửa
+  mới và in trực tiếp danh sách retrieval mismatch ID.
 - Còn bắt buộc: targeted 12 ở commit mới, sau đó smoke 30 trên Kaggle với cache thật.

@@ -406,7 +406,11 @@ class StorageRemainingRegressionTests(unittest.TestCase):
         self.assertEqual(fund_matches[0]["context_id"], "fund-article-42")
         self.assertGreater(int(fund_matches[0]["exact_phrase_matches"]), 0)
         self.assertEqual(prrs_matches[0]["context_id"], "prrs-elisa-appendix")
-        self.assertGreater(int(prrs_matches[0]["exact_phrase_matches"]), 0)
+        self.assertGreaterEqual(int(prrs_matches[0]["exact_phrase_matches"]), 2)
+        prrs_price_noise = next(
+            item for item in prrs_matches if item["context_id"] == "prrs-price-noise"
+        )
+        self.assertEqual(int(prrs_price_noise["exact_phrase_matches"]), 0)
         self.assertEqual(subway_matches[0]["context_id"], "subway-rules")
         self.assertGreater(int(subway_matches[0]["exact_phrase_matches"]), 0)
         self.assertEqual(

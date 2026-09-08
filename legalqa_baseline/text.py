@@ -74,7 +74,6 @@ _ARTICLE_REFERENCE_RE = re.compile(
 _YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 _PRIORITY_LEGAL_PHRASES = (
     "mức lương cơ sở",
-    "prrs",
     "phương pháp elisa phát hiện kháng thể prrs",
     "prrs-herdcheck x3",
     "bắt đầu vào khu vực",

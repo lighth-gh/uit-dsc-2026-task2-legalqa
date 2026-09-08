@@ -498,6 +498,44 @@ class TestDenseRAG(unittest.TestCase):
             4.0,
         )
 
+    def test_3i_specific_prrs_phrases_beat_generic_price_noise(self) -> None:
+        question = (
+            "Phương pháp ELISA dùng để chẩn đoán hội chứng rối loạn sinh sản "
+            "và hô hấp ở lợn có bao nhiêu bước thực hiện?"
+        )
+        candidates = [
+            {
+                "context_id": "178654",
+                "chunk_no": 14,
+                "name": "Bảng giá dịch vụ thú y",
+                "text": "Bảng giá xét nghiệm ELISA đối với PRRS và bệnh tai xanh.",
+                "rerank_score": -3.31640625,
+                "rrf_rank_after_boost": 18,
+                "exact_phrase_matches": 0,
+            },
+            {
+                "context_id": "8035",
+                "chunk_no": 11,
+                "name": "Tiêu chuẩn quốc gia về chẩn đoán PRRS",
+                "text": (
+                    "PHỤ LỤC D. Phương pháp ELISA phát hiện kháng thể PRRS. "
+                    "Sử dụng bộ kit PRRS-HERDCHECK X3; quy trình bắt đầu tại "
+                    "Bước 1 và kết thúc tại Bước 10."
+                ),
+                "rerank_score": -5.9765625,
+                "rrf_rank_after_boost": 1,
+                "exact_phrase_matches": 2,
+            },
+        ]
+
+        ranked = _apply_reranker_legal_guardrails(question, candidates)
+
+        self.assertEqual(ranked[0]["context_id"], "8035")
+        self.assertEqual(
+            ranked[0]["rerank_guardrail_components"]["exact_retrieval_phrase"],
+            5.0,
+        )
+
     def test_3i_covid_infection_focus_beats_generic_prevention_phrase(self) -> None:
         question = (
             "Các biện pháp dự phòng cho nhân viên y tế để tránh tình trạng "

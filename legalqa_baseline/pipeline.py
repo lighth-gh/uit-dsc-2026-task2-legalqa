@@ -684,6 +684,27 @@ def _safe_grounded_yes_no_extractive(
     if not question_terms:
         return False
     coverage = len(question_terms & answer_terms) / len(question_terms)
+    aliases = retrieval_query_aliases(question)
+    alias_terms = set(query_terms(" ".join(aliases), max_terms=60))
+    try:
+        exact_phrase_matches = int(candidate.get("exact_phrase_matches") or 0)
+    except (TypeError, ValueError, OverflowError):
+        exact_phrase_matches = 0
+    alias_coverage = (
+        len(alias_terms & answer_terms) / len(alias_terms)
+        if alias_terms
+        else 0.0
+    )
+    # Some public questions use a lay expression while the governing clause
+    # uses a controlled legal synonym. In that case the original token
+    # coverage can be low even though retrieval matched the exact alias. Keep
+    # this escape hatch narrow: the alias must be multi-token, strongly
+    # covered by the answer, and confirmed by exact retrieval evidence.
+    controlled_alias_grounded = bool(
+        exact_phrase_matches > 0
+        and len(alias_terms) >= 4
+        and alias_coverage >= 0.75
+    )
     normative_terms = {
         "không",
         "cấm",
@@ -705,10 +726,46 @@ def _safe_grounded_yes_no_extractive(
     )
     strong_scored = raw_score >= 2.0 and _has_strong_legal_evidence(candidate)
     return bool(
-        coverage >= 0.5
+        (coverage >= 0.5 or controlled_alias_grounded)
         and normative_terms.intersection(answer_terms)
         and (decisive or strong_scored)
     )
+
+
+def _grounded_yes_no_clause_answer(
+    question: str,
+    candidate: dict[str, Any],
+    fallback_answer: str,
+) -> str | None:
+    """Return the complete source sentence containing a controlled legal alias."""
+    evidence = str(candidate.get("text") or fallback_answer or "").strip()
+    evidence_folded = unicodedata.normalize("NFC", evidence.casefold())
+    aliases = sorted(
+        retrieval_query_aliases(question),
+        key=lambda value: len(tokenize(value)),
+        reverse=True,
+    )
+    for alias in aliases:
+        alias_folded = unicodedata.normalize("NFC", alias.casefold())
+        match_start = evidence_folded.find(alias_folded)
+        if match_start < 0:
+            continue
+        sentence_start = max(
+            evidence.rfind(mark, 0, match_start)
+            for mark in (".", "!", "?", "…", "\n")
+        ) + 1
+        following = [
+            position
+            for mark in (".", "!", "?", "…", "\n")
+            if (position := evidence.find(mark, match_start + len(alias))) >= 0
+        ]
+        sentence_end = min(following) + 1 if following else len(evidence)
+        clause = evidence[sentence_start:sentence_end].strip(" \t\r\n;:-–—")
+        if _safe_grounded_yes_no_extractive(question, candidate, clause):
+            return clause
+    if _safe_grounded_yes_no_extractive(question, candidate, fallback_answer):
+        return str(fallback_answer or "").strip()
+    return None
 
 
 def _grounded_military_tattoo_scope_answer(
@@ -1031,7 +1088,11 @@ def _apply_reranker_legal_guardrails(
             exact_phrase_matches = int(item.get("exact_phrase_matches") or 0)
         except (TypeError, ValueError, OverflowError):
             exact_phrase_matches = 0
-        controlled_phrase_bonus = min(4.0, 4.0 * exact_phrase_matches)
+        controlled_phrase_bonus = (
+            min(6.0, 3.0 + exact_phrase_matches)
+            if exact_phrase_matches > 0
+            else 0.0
+        )
         guardrail_bonus += controlled_phrase_bonus
         exact_strength += controlled_phrase_bonus
         retrieval_exact = bool(
@@ -2317,13 +2378,14 @@ class LegalQABaseline:
                     grounded_yes_no_answer = scoped_answer
                     grounded_yes_no_strategy = "refusal_grounded_scope_absence"
                     break
-                if _safe_grounded_yes_no_extractive(
+                grounded_clause = _grounded_yes_no_clause_answer(
                     question,
                     source["best"],
                     source_answer,
-                ):
+                )
+                if grounded_clause:
                     grounded_yes_no_source = source
-                    grounded_yes_no_answer = source_answer
+                    grounded_yes_no_answer = grounded_clause
                     break
         if grounded_yes_no_source is not None:
             best = grounded_yes_no_source["best"]

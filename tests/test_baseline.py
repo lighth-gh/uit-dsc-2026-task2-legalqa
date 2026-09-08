@@ -106,6 +106,7 @@ class TextTests(unittest.TestCase):
             "phương pháp elisa phát hiện kháng thể prrs",
             retrieval_priority_phrases(prrs_question),
         )
+        self.assertNotIn("prrs", retrieval_priority_phrases(prrs_question))
         self.assertNotIn(
             "Phương pháp ELISA phát hiện kháng thể PRRS",
             retrieval_query_aliases(

@@ -1144,6 +1144,76 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertNotIn("Có,", pred.answer)
         self.assertFalse(pred.evidence["says_no_information"])
 
+    def test_land_debt_refusal_uses_controlled_alias_clause(self) -> None:
+        question = (
+            "Người sử dụng đất có quyền phân chia di sản là quyền sử dụng đất khi "
+            "còn đang trong thời gian trả nợ tiền sử dụng đất hay không?"
+        )
+
+        class LandDebtIndex:
+            chunk = {
+                "context_id": "184038",
+                "chunk_no": 33,
+                "name": "Luật Đất đai",
+                "link": "https://example.com/land-law",
+                "text": (
+                    "Điều 29. Thời điểm được thực hiện các quyền của người sử dụng đất. "
+                    "Trường hợp người sử dụng đất được chậm thực hiện nghĩa vụ tài "
+                    "chính hoặc được ghi nợ nghĩa vụ tài chính thì phải thực hiện "
+                    "xong nghĩa vụ tài chính trước khi thực hiện các quyền. "
+                    "2. Thời điểm chuyển nhượng dự án được thực hiện sau khi có "
+                    "Giấy chứng nhận và đủ điều kiện theo Luật này."
+                ),
+                "bm25_score": -24.54,
+                "exact_phrase_matches": 2,
+            }
+
+            def search_contexts(
+                self,
+                query: str,
+                top_k: int = 50,
+            ) -> list[dict[str, Any]]:
+                return [dict(self.chunk)]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class AlwaysRefuses:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def generate(self, context: str, question: str) -> str:
+                self.calls += 1
+                return "Không đủ thông tin trong ngữ cảnh."
+
+        generator = AlwaysRefuses()
+        pipeline = LegalQABaseline(
+            index=LandDebtIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(score=-0.5302734375),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(generator.calls, 2)
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertEqual(
+            pred.evidence["recovery_strategy"],
+            "refusal_grounded_yes_no_clause",
+        )
+        self.assertTrue(pred.answer.startswith("Trường hợp người sử dụng đất"))
+        self.assertIn(
+            "phải thực hiện xong nghĩa vụ tài chính trước khi thực hiện các quyền",
+            pred.answer,
+        )
+        self.assertNotIn("Thời điểm chuyển nhượng dự án", pred.answer)
+        self.assertFalse(pred.evidence["says_no_information"])
+
     def test_military_tattoo_refusal_returns_qualified_scope_answer(self) -> None:
         question = "Trong độ tuổi đi nghĩa vụ quân sự mà đi xăm hình có bị cấm không?"
 
