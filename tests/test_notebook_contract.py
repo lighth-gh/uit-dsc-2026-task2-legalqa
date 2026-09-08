@@ -59,6 +59,18 @@ class NotebookCacheContractTests(unittest.TestCase):
         self.assertIn("RERANKER_CANDIDATE_K = 20", full_code)
         self.assertIn("MAX_INPUT_TOKENS = 7168", full_code)
         self.assertIn("MAX_NEW_TOKENS = 512", full_code)
+        self.assertIn("FORCE_FRESH_PREDICTION = True", full_code)
+        self.assertIn("if FORCE_FRESH_PREDICTION:", full_code)
+        self.assertIn(
+            'if not FORCE_FRESH_PREDICTION and '
+            'SUBMISSION_CHECKPOINT_PATH.is_file():',
+            full_code,
+        )
+        self.assertIn('predict_cmd.append("--resume")', full_code)
+        self.assertNotIn(
+            '"--generation-seed", str(GENERATION_SEED),\n    "--resume",',
+            full_code,
+        )
         self.assertIn("RERANKER_CANDIDATE_K, RERANK_TOP_K = 20, 3", smoke_code)
         self.assertIn("DENSE_QUERY_MAX_LENGTH, RERANKER_MAX_LENGTH = 256, 1024", smoke_code)
         self.assertIn("MAX_NEW_TOKENS, MAX_INPUT_TOKENS = 512, 7168", smoke_code)
