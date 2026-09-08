@@ -1,10 +1,47 @@
 # Các lỗi cần sửa
 
-Tài liệu này phản ánh smoke 30 cũ `e24a482a461f-226bece3139d`, lần targeted
-12 câu tại commit `9a0b19f8062f`, và lần targeted mới tại commit
-`3879a7c1ac6e` (submission/checkpoint/audit/log).
+Tài liệu này phản ánh smoke 30 cũ `e24a482a461f-226bece3139d`, hai lần targeted
+12 câu tại commit `9a0b19f8062f`/`3879a7c1ac6e`, và pipeline smoke train10
+tại commit `ab7cd6893c3a`.
 Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo PASS; mỗi mục chỉ được
 đánh dấu hoàn tất sau khi có test và một lần chạy kiểm chứng phù hợp.
+
+## Kết quả full 1.000 tại `ab7cd68` (trước patch recovery hiện tại)
+
+- Run là prediction mới (`fresh_prediction_run=true`); submission, checkpoint và
+  audit khớp đủ 1.000 ID. Không có lỗi dùng lại prediction cũ.
+- So với submission cũ, 909/1.000 đáp án đổi và độ dài trung bình giảm từ khoảng
+  573 xuống 230 từ. METEOR giảm `0,4195 -> 0,378779`, trong khi ROUGE tăng
+  `0,426 -> 0,456981`.
+- Có `53 recovery_exhausted`; 23 câu chạm token limit cuối cùng. Trong 23 câu này,
+  14 câu có raw reranker score `>= 2`, 11 câu `>= 5`, nhưng output cuối vẫn là
+  câu không đủ thông tin 7/13 từ.
+- `74175` lấy đúng document `160381/115`, raw reranker `8,3125`, nhưng focused
+  extractive cũ chỉ trả riêng `a.5)` thay vì nhóm hồ sơ `b.1.1` đến `b.1.4`.
+- Patch local hiện tại giữ prefix generation kết thúc trọn câu, cho phép focused
+  extractive khi raw score `>= 5` và coverage `>= 0,5`, đồng thời hiểu quan hệ
+  cha/con của mục pháp lý để giữ đủ danh sách và dừng trước mục anh em. Retry của
+  câu hỏi danh sách/biểu mẫu rõ ràng dùng 1.024 token; câu tổng hợp vẫn giữ 768.
+- Replay chỉ đọc trên 53 audit/corpus thật cho thấy high-score gate mới cứu chắc
+  thêm 5 câu (`112505`, `90117`, `110053`, `9749`, `144053`); phần cứu partial
+  phải đo bằng model thật vì audit cũ không lưu nội dung partial.
+- Kiểm chứng local: corpus thật `74175` trả đúng 167 từ từ `b.1)` đến `b.1.4)`;
+  full discovery **207/207 PASS**. Còn phải chạy validation 100/300 với model thật.
+
+## Kết quả pipeline smoke train10 tại `ab7cd6893c3a` (trước patch hiện tại)
+
+- Hạ tầng retrieval/generation chạy đủ 10 câu và đủ bốn mode; Dense/reranker active.
+- `108971`: extractive cũ dừng ở nhãn `b) ... tố tụng dân sự.`; RAG chạm 512 token
+  rồi fallback vào cùng đoạn chưa nối hết dẫn chiếu `khoản 1 Điều 5`.
+- `121585`: nguồn TCVN đúng là document `103155`, nhưng chỉ xuất hiện thấp trong
+  Dense và bị loại trước pool reranker; kết quả cuối là `recovery_exhausted`.
+- `82051` và `132757`: generation làm giảm mạnh cả METEOR lẫn ROUGE-L so với
+  extractive có căn cứ đầy đủ.
+- Patch local hiện tại đã: nối tối đa hai chunk sau khi ranh giới dở câu/dẫn chiếu;
+  rescue candidate bằng cụm chủ thể dài trong title/URL; thêm output-selection gate
+  hẹp cho câu mức phạt/số lượng.
+- Gate local: full discovery **203/203 PASS**. Còn bắt buộc chạy lại train10 trên
+  Kaggle để xác nhận model/reranker thật.
 
 ## Kết quả targeted 12 tại `3879a7c1ac6e` (trước patch hiện tại)
 
@@ -46,12 +83,18 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
 | Ưu tiên | Trạng thái | Tầng lỗi | Bằng chứng | Hướng sửa nhỏ nhất |
 |---|---|---|---|---|
 | P0 | VERIFIED TARGETED | Safe extractive trả rỗng | Targeted `3879a7c` không còn final token-limit ở cả 5 ID cũ | Giữ regression hiện có; không mở lại nếu smoke 30 không phát hiện regression. |
+| P0 | FIXED LOCAL / TRAIN10 RERUN REQUIRED | Nối chunk `108971` | Fallback cũ dừng tại nhãn `b)` vì `khoản 1` và `Điều 5` nằm ở hai chunk | Ghép ranh giới chưa kết thúc bằng khoảng trắng, lấy tối đa hai chunk tiếp theo và phát hiện nhãn liệt kê không có mệnh đề. |
+| P0 | FIXED LOCAL / TRAIN10 RERUN REQUIRED | Metadata rescue TCVN `121585` | Dense có document đúng `103155` nhưng nằm dưới cutoff; `name` rỗng còn URL giữ `San-pham-nhan-sam` | Giữ candidate có cụm metadata đặc trưng ít nhất 4 token và đưa vào pool reranker, không cần rebuild index. |
 | P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Retrieval `129215` | BM25, dense và RRF đều xếp `8035/11` hạng 1, nhưng guardrail cho 1 từ chung `PRRS` cùng bonus `4.0` như 3 cụm exact nên reranker lật sang bảng giá `178654/14` | Giữ `PRRS` làm query alias nhưng bỏ khỏi exact-priority; bonus nhiều cụm exact tăng có giới hạn `4..6`. Mô phỏng lại 20 candidate thật đưa `8035/11` lên Top-1 (`-0,2266` so với `-2,3296`). |
 | P0 | VERIFIED TARGETED | Relevance `138443` | Targeted `3879a7c` lấy đúng `44451/11` và nội dung dự phòng lây nhiễm SARS-CoV-2 | Giữ semantic expected target trong notebook. |
 | P0 | FIXED LOCAL / TARGETED RERUN REQUIRED | Grounded fallback `6905` | Top-1 đúng `184038/33`, nhưng original-query coverage chỉ `0,40`; alias coverage `0,80` không được dùng nên hai lần generation refusal kết thúc bằng “Không đủ thông tin” | Chỉ cho alias-aware fallback khi alias có ít nhất 4 term, coverage `>=0,75` và candidate có exact evidence; trả nguyên câu điều kiện hoàn chỉnh, không tự thêm Có/Không. |
 | P1 | FIXED LOCAL / SMOKE PENDING | Fallback quality | `18645`, `34235`, `117399`, `108017` dùng `extractive_fallback` nhưng đều hợp lệ; `6905` đã được sửa local | Không coi fallback là lỗi chỉ vì route; duyệt relevance và đo rate trên smoke 30. |
+| P1 | FIXED LOCAL / TRAIN10 RERUN REQUIRED | Output selection | Generation làm giảm `82051` và `132757`, trong khi extractive chứa đủ mức phạt/số lượng và ngoại lệ | Với câu mức phạt/số lượng, chỉ chọn extractive khi raw score/evidence mạnh, output hoàn chỉnh và generation ngắn hơn đáng kể; không áp dụng cho câu tổng hợp mở. |
+| P1 | FIXED LOCAL / VALIDATION REQUIRED | Token-limit bỏ toàn bộ partial | Full 1.000 có 23 `recovery_exhausted` chạm giới hạn cuối; output 512/768 token bị thay bằng refusal 7/13 từ | Làm sạch partial, cắt về câu hoàn chỉnh cuối cùng và dùng route `generated_partial` khi không có extractive an toàn hơn. |
+| P1 | FIXED LOCAL / VALIDATION REQUIRED | Strong retrieval vẫn `recovery_exhausted` | 11/23 token-limit cuối có raw reranker `>=5` | Sau các gate exact hiện có, cho phép focused extractive hoàn chỉnh khi score `>=5`, coverage query `>=0,5`; vẫn chặn câu phân tích/suy luận và giữ guard riêng cho yes/no. |
+| P1 | FIXED LOCAL / VALIDATION REQUIRED | Cắt thiếu danh sách `74175` | Top document đúng nhưng output chỉ có `a.5)` dài 26 từ | Với câu hỏi hồ sơ/danh sách, chọn occurrence thuộc mục con cụ thể hơn, giữ toàn bộ descendants (`b.1.x`) và dừng trước sibling (`b.2`). |
 | P1 | DONE LOCAL | Integration regressions | Lỗi chỉ xuất hiện trên corpus thật dù unit cũ PASS | Đã thêm regression cho legal-item boundary, inline article citation, next numeric heading, alias PRRS/COVID, ranking noise và route low-score có evidence. |
-| P1 | BLOCKED / USER CHANGE | Notebook contract | Full discovery còn 5 lỗi đọc file do commit `5824bb3` (`chore: remove test notebooks`) đã xóa các notebook mà `tests/test_notebook_contract.py` vẫn kiểm tra | Không tự phục hồi hoặc làm yếu contract. Cần chọn khôi phục notebook smoke/release-gate hoặc chuyển contract sang một entrypoint Python được track. |
+| P1 | VERIFIED LOCAL | Notebook contract | Các notebook contract hiện có trong repo; full discovery `207/207 PASS` | Giữ contract hiện tại và chạy lại trên Kaggle sau commit. |
 | P1 | BLOCKED | Validation | Validation 100/300 bị SKIPPED vì smoke chưa PASS | Chỉ chạy validation 100 sau smoke PASS; chạy validation 300 và so metric sau validation 100 PASS. |
 | P2 | FIXED LOCAL / MEASURE PENDING | Tail latency | 5 token-limit tiêu tốn `325,29 giây` generation; riêng `80189` mất `103,67 giây` | Bốn câu structured raw-score tốt và `67397` controlled exact evidence bypass generation; `129215`, `138443` cũng có route extractive hẹp. Đo lại targeted và smoke 30. |
 | P2 | PENDING | Manual review | 26 ID chưa được duyệt thủ công | Duyệt relevance, tính đầy đủ và căn cứ sau khi smoke tự động PASS. |
@@ -147,10 +190,8 @@ Không hạ ngưỡng gate hoặc đổi tên route chỉ để làm báo cáo P
   Top-1 `261171/6`; `138443` chỉ còn các chunk đúng chủ đề của `44451` trong Top-5.
 - Test liên quan trực tiếp sau patch: `148/148 PASS` (baseline, storage, routing,
   generator, dense RAG); bốn suite trong notebook: `120/120 PASS`.
-- Full discovery hiện tại: `199` test, `194` pass và còn `5` lỗi contract vì
-  commit `5824bb3` đã xóa
-  notebook nhưng test contract vẫn tham chiếu hai notebook smoke; đây
-  không phải regression từ patch pipeline.
+- Full discovery hiện tại: **203/203 PASS**, gồm notebook contract và các regression
+  mới cho nối chunk, metadata rescue và output selection.
 - Patch sau targeted `3879a7c`: bỏ `PRRS` đơn lẻ khỏi exact-priority, tính bonus
   bounded theo số cụm đặc hiệu, và thêm alias-aware grounded clause cho `6905`.
   Năm suite targeted chạy local **150/150 PASS**; đối chiếu corpus thật

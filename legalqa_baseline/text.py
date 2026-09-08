@@ -1102,8 +1102,33 @@ def is_refusal_answer(answer: Any, max_sentences: int = 2) -> bool:
 def possibly_cut(text: str) -> bool:
     """Phát hiện đáp án có vẻ dừng giữa câu hoặc giữa một mục liệt kê."""
     answer = str(text or "").strip()
-    if not answer or len(answer.split()) < 8:
+    if not answer:
         return False
+    if re.search(r"(?:^|[.!?…;:]\s+)\d{1,2}[.]$", answer):
+        return True
+    if len(answer.split()) < 8:
+        return False
+    # A legal list label can look grammatically closed because the extractor
+    # stopped at the last full stop before a chunk boundary.  For example,
+    # ``b) Đối với vụ việc tham gia tố tụng dân sự.`` is only a heading for the
+    # rule that starts in the following chunk.  Check this before accepting a
+    # terminal full stop as proof that the answer is complete.
+    trailing_item = re.search(
+        r"(?is)(?:^|[.!?…]\s+)(?:[a-zđ]|\d{1,2})[.)]\s+"
+        r"((?:đối\s+với|trường\s+hợp|về)\b[^.!?…]{0,180})[.]$",
+        answer,
+    )
+    if trailing_item:
+        item_body = trailing_item.group(1).casefold()
+        has_rule_verb = bool(
+            re.search(
+                r"\b(?:thực\s+hiện|áp\s+dụng|được|phải|bao\s+gồm|gồm|"
+                r"có|không|tính|mức|phạt|buộc)\b",
+                item_body,
+            )
+        )
+        if not has_rule_verb:
+            return True
     if answer.endswith((".", "!", "?", "…", ")", "]", "}", '"', "”", "’")):
         return False
     if answer.endswith((",", ";", ":", "-", "–", "—", "/")):
@@ -1158,7 +1183,13 @@ def deduplicate_overlaps(texts: Iterable[str]) -> str:
         suffix = words[overlap:]
         if not suffix:
             continue
-        merged = f"{merged}\n\n{' '.join(suffix)}"
+        suffix_text = " ".join(suffix)
+        separator = (
+            " "
+            if _continues_incomplete_chunk_boundary(merged, suffix_text)
+            else "\n\n"
+        )
+        merged = f"{merged}{separator}{suffix_text}"
         merged_words.extend(suffix)
     return merged.strip()
 
@@ -1300,6 +1331,43 @@ def _continues_numbered_procedure(left: str, right: str) -> bool:
     )
 
 
+def _continues_incomplete_chunk_boundary(left: str, right: str) -> bool:
+    """Recognise prose/legal references split by the word-window chunker."""
+    left_text = str(left or "").strip()
+    right_text = str(right or "").strip()
+    if not left_text or not right_text:
+        return False
+    if re.search(r"[.!?…](?:[\"'”’\)\]}]*)$", left_text):
+        return False
+    if left_text.endswith((",", ";", ":", "-", "–", "—", "/")):
+        return True
+    normalized = " ".join(left_text.casefold().split())
+    if normalized.endswith(
+        (
+            " và",
+            " hoặc",
+            " theo",
+            " tại",
+            " của",
+            " gồm",
+            " bao gồm",
+            " các",
+            " một",
+        )
+    ):
+        return True
+    # Legal citations are commonly split exactly between ``khoản 1`` and
+    # ``Điều 5``.  The right side is deliberately not inspected semantically:
+    # both chunks belong to the same document and expansion remains bounded.
+    return bool(
+        re.search(
+            r"(?i)\b(?:khoản|điểm|điều|mục|tiểu\s+mục|phụ\s+lục)"
+            r"(?:\s+số)?(?:\s+[\w./-]+)?$",
+            left_text,
+        )
+    )
+
+
 def select_relevant_neighbor_chunks(
     question: str,
     chunks: list[dict[str, Any]],
@@ -1331,12 +1399,15 @@ def select_relevant_neighbor_chunks(
         and focused_start >= max(1, int(len(best_text) * 0.45))
     )
     selected_numbers = {best_chunk_no}
+    best_starts_new_section = bool(_MAJOR_SECTION_RE.match(best_text))
     # A neighbour must retain most of the query coverage. The structural
     # exception is needed for numbered lists/procedures split across windows.
     threshold = max(0.28, 0.60 * best_score)
     for number in (best_chunk_no - 1, best_chunk_no + 1):
         neighbour = by_number.get(number)
         if neighbour is None:
+            continue
+        if number < best_chunk_no and best_starts_new_section:
             continue
         neighbour_text = str(neighbour.get("text") or "").strip()
         left, right = (
@@ -1347,6 +1418,7 @@ def select_relevant_neighbor_chunks(
         if (
             scores.get(number, 0.0) >= threshold
             or _continues_numbered_procedure(left, right)
+            or _continues_incomplete_chunk_boundary(left, right)
             # A form/article heading near the end of a word-window chunk has
             # its body in the next chunk even when the body does not repeat
             # query terms. This remains one-directional and locally bounded.
@@ -1362,7 +1434,10 @@ def select_relevant_neighbor_chunks(
             continue
         left = str(by_number[number - 1].get("text") or "")
         right = str(by_number[number].get("text") or "")
-        if _continues_numbered_procedure(left, right):
+        if (
+            _continues_numbered_procedure(left, right)
+            or _continues_incomplete_chunk_boundary(left, right)
+        ):
             selected_numbers.add(number)
 
     return [by_number[number] for number in sorted(selected_numbers)]
@@ -1403,7 +1478,64 @@ def _relevant_section_start(question: str, text: str) -> int | None:
     if best_phrase is None:
         return None
 
+    # Questions asking for a complete dossier/list often repeat their subject
+    # once in the parent heading and again in the exact child item that owns
+    # the requested enumeration.  The old first-match rule selected the parent
+    # and `_stop_at_unrelated_section` could then stop after only one child.
+    # Prefer the later occurrence for this narrow intent so the answer starts
+    # at e.g. ``b.1)`` and can retain all ``b.1.x`` descendants.
+    normalized_question = unicodedata.normalize("NFC", str(question).casefold())
+    asks_complete_list = bool(
+        re.search(
+            r"\b(?:hồ\s+sơ|tài\s+liệu|giấy\s+tờ|thành\s+phần|danh\s+sách)\b"
+            r"[^?]{0,180}\b(?:gồm|bao\s+gồm|như\s+thế\s+nào|những\s+gì)\b",
+            normalized_question,
+        )
+        or re.search(
+            r"\b(?:gồm|bao\s+gồm)\b[^?]{0,100}\b(?:những\s+gì|gì)\b",
+            normalized_question,
+        )
+    )
+    if asks_complete_list:
+        matched_size = best_phrase[0]
+        scoped_matches: list[tuple[int, int]] = []
+        item_marker_re = re.compile(
+            r"(?i)(?:^|[.;:]\s+)(?P<label>[a-zđ](?:[.]\d+)*|\d{1,2})[.)]\s+"
+        )
+        for query_start in range(len(question_tokens) - matched_size + 1):
+            phrase = question_tokens[query_start : query_start + matched_size]
+            informative = [token for token in phrase if token not in STOPWORDS]
+            if len(informative) < 2:
+                continue
+            for text_start in range(len(text_tokens) - matched_size + 1):
+                if text_tokens[text_start : text_start + matched_size] == phrase:
+                    raw_start = token_matches[text_start].start()
+                    nearby_markers = list(
+                        item_marker_re.finditer(text[max(0, raw_start - 320):raw_start])
+                    )
+                    depth = 0
+                    if nearby_markers:
+                        label = nearby_markers[-1].group("label")
+                        depth = 1 + label.count(".")
+                    scoped_matches.append((depth, raw_start))
+        if scoped_matches:
+            # Prefer the most specific owning item, but keep the first match
+            # when all repetitions have the same/no legal-list scope.
+            _, scoped_start = max(scoped_matches, key=lambda item: (item[0], -item[1]))
+            best_phrase = (matched_size, scoped_start)
+
     phrase_start = best_phrase[1]
+    local_items = list(
+        re.finditer(
+            r"(?i)(?:^|[.;:]\s+)(?:[a-zđ](?:[.]\d+)+|[a-zđ]|\d{1,2})[.)]\s+",
+            text[: phrase_start + 1],
+        )
+    )
+    if local_items and phrase_start - local_items[-1].start() <= 360:
+        marker = local_items[-1]
+        marker_text = marker.group(0)
+        leading_boundary = len(marker_text) - len(marker_text.lstrip(".;: "))
+        return marker.start() + leading_boundary
     preceding = [match for match in _MAJOR_SECTION_RE.finditer(text, 0, phrase_start + 1)]
     if preceding and phrase_start - preceding[-1].start() <= 320:
         return preceding[-1].start()
@@ -1465,6 +1597,16 @@ def _stop_at_unrelated_section(question: str, text: str) -> str:
     if len(starts) < 2:
         return text.strip()
     starts_with_article = bool(re.match(r"(?i)^\s*điều\s+\d+[a-zđ]*\b", text))
+    base_item_match = re.match(
+        r"(?i)^\s*([a-zđ])[.]\s*(\d+(?:[.]\d+)*)[.)]?\s+",
+        text,
+    )
+    base_item_path = (
+        (base_item_match.group(1).casefold(),)
+        + tuple(int(value) for value in base_item_match.group(2).split("."))
+        if base_item_match
+        else None
+    )
     baseline_end = starts[1]
     baseline = _chunk_query_relevance(question, text[starts[0]:baseline_end])
     for index, heading_start in enumerate(starts[1:], start=1):
@@ -1474,6 +1616,26 @@ def _stop_at_unrelated_section(question: str, text: str) -> str:
             r"(?i)^\s*điều\s+\d+[a-zđ]*\b", text[heading_start:]
         ):
             return text[:heading_start].rstrip(" \n,;:-")
+        item_match = re.match(
+            r"(?i)^\s*([a-zđ])[.]\s*(\d+(?:[.]\d+)*)[.)]?\s+",
+            text[heading_start:],
+        )
+        if base_item_path is not None and item_match is not None:
+            item_path = (
+                item_match.group(1).casefold(),
+                *(int(value) for value in item_match.group(2).split(".")),
+            )
+            if (
+                len(item_path) > len(base_item_path)
+                and item_path[: len(base_item_path)] == base_item_path
+            ):
+                # A child such as b.1.2 is part of the requested b.1 list even
+                # when that individual item repeats few query words.
+                continue
+            if item_path[0] == base_item_path[0]:
+                # A sibling such as b.2 starts a different case and must not be
+                # appended merely because it shares generic legal vocabulary.
+                return text[:heading_start].rstrip(" \n,;:-")
         score = _chunk_query_relevance(question, section_preview)
         if score < max(0.24, baseline * 0.55):
             return text[:heading_start].rstrip(" \n,;:-")

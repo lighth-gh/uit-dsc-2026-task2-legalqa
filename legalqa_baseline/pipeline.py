@@ -49,6 +49,7 @@ class Prediction:
 _RETRIEVAL_SCORE_FIELDS = (
     "bm25_score",
     "dense_score",
+    "metadata_rescue_score",
     "rrf_score",
     "legal_signal_boost",
     "boosted_rrf_score",
@@ -127,6 +128,12 @@ def _retrieval_candidate_record(
     components = candidate.get("rerank_guardrail_components")
     record["rerank_guardrail_components"] = (
         components if isinstance(components, dict) else {}
+    )
+    record["metadata_rescue_phrase"] = (
+        str(candidate.get("metadata_rescue_phrase") or "").strip() or None
+    )
+    record["metadata_rescue_tokens"] = int(
+        candidate.get("metadata_rescue_tokens") or 0
     )
     protection = candidate.get("rerank_guardrail_protected_by")
     record["rerank_guardrail_protected_by"] = (
@@ -530,6 +537,7 @@ def _has_decisive_legal_evidence(candidate: dict[str, Any]) -> bool:
             "exact_article",
             "exact_document_reference",
             "exact_document_name",
+            "exact_metadata_subject",
         )
     )
     exact_focus = _audit_float(components.get("exact_focus")) or 0.0
@@ -829,8 +837,164 @@ def _safe_generation_failure_extractive(
         return False
     return bool(
         _has_strong_legal_evidence(candidate)
+        or _has_decisive_legal_evidence(candidate)
         or _has_decisive_answer_evidence(question, answer)
     )
+
+
+def _safe_complete_generation_prefix(answer: str, *, min_tokens: int) -> str:
+    """Keep only the complete prefix of a token-limited model response."""
+    cleaned = str(answer or "").strip()
+    if not cleaned or is_refusal_answer(cleaned):
+        return ""
+    if (
+        cleaned.endswith((".", "!", "?", "…", ")", "]", "}", '"', "”", "’"))
+        and not possibly_cut(cleaned)
+        and len(tokenize(cleaned)) >= min_tokens
+    ):
+        return cleaned
+
+    sentence_ends = [
+        match.end()
+        for match in re.finditer(
+            r"[.!?…](?=(?:[\"'”’\)\]]*)?(?:\s|$))",
+            cleaned,
+        )
+    ]
+    for end in reversed(sentence_ends):
+        prefix = cleaned[:end].strip()
+        if (
+            len(tokenize(prefix)) >= min_tokens
+            and not is_refusal_answer(prefix)
+            and not possibly_cut(prefix)
+        ):
+            return prefix
+    return ""
+
+
+def _safe_high_score_failure_extractive(
+    question: str,
+    candidate: dict[str, Any],
+    answer: str,
+) -> bool:
+    """Recover a complete focused extract when generation fails on a strong hit."""
+    raw_score = _audit_float(candidate.get("rerank_score"))
+    raw_answer = str(answer or "").strip()
+    if (
+        raw_score is None
+        or raw_score < 5.0
+        or len(tokenize(raw_answer)) < 30
+        or is_heading_only_answer(raw_answer)
+        or possibly_cut(raw_answer)
+    ):
+        return False
+    normalized_question = unicodedata.normalize("NFC", str(question).casefold())
+    if re.search(
+        r"\b(?:phân\s+tích|so\s+sánh|đánh\s+giá|giải\s+thích|suy\s+luận|"
+        r"tại\s+sao|vì\s+sao)\b",
+        normalized_question,
+    ):
+        return False
+    question_terms = set(_similarity_terms(question))
+    answer_terms = set(_similarity_terms(raw_answer))
+    coverage = (
+        len(question_terms & answer_terms) / len(question_terms)
+        if question_terms
+        else 0.0
+    )
+    if coverage < 0.5:
+        return False
+    if _is_yes_no_question(question):
+        return _safe_grounded_yes_no_extractive(question, candidate, raw_answer)
+    return True
+
+
+def _needs_1024_list_retry(question: str) -> bool:
+    """Use the larger retry budget only for explicit list/form requests."""
+    normalized = unicodedata.normalize("NFC", str(question or "").casefold())
+    if re.search(
+        r"\b(?:phân\s+tích|so\s+sánh|đánh\s+giá|giải\s+thích|tổng\s+hợp|"
+        r"suy\s+luận|tại\s+sao|vì\s+sao)\b",
+        normalized,
+    ):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:danh\s+sách|liệt\s+kê|biểu\s+mẫu|mẫu(?:\s+số)?|phụ\s+lục|"
+            r"hồ\s+sơ|các\s+bước|bao\s+nhiêu\s+bước|mấy\s+bước|"
+            r"(?:các|những)\s+(?:hành\s+vi|công\s+việc|nhiệm\s+vụ|"
+            r"quyền\s+hạn|giấy\s+tờ|tài\s+liệu))\b",
+            normalized,
+        )
+    )
+
+
+def _prefer_grounded_extractive_over_generation(
+    question: str,
+    candidate: dict[str, Any],
+    extractive_answer: str,
+    generated_answer: str,
+) -> bool:
+    """Reject a materially shortened generation for decisive factual queries.
+
+    This gate is intentionally narrow.  It only covers penalty and numeric
+    quantity questions where the focused source extract is complete, strongly
+    retrieved, and directly contains the requested fact.  Open-ended synthesis
+    questions continue to use generation even when their raw context is longer.
+    """
+    raw_score = _audit_float(candidate.get("rerank_score"))
+    if raw_score is None or raw_score < 2.0:
+        return False
+    raw_answer = str(extractive_answer or "").strip()
+    generated = str(generated_answer or "").strip()
+    if (
+        len(tokenize(raw_answer)) < 30
+        or not generated
+        or is_heading_only_answer(raw_answer)
+        or possibly_cut(raw_answer)
+    ):
+        return False
+
+    normalized_question = unicodedata.normalize("NFC", str(question).casefold())
+    penalty_question = bool(
+        re.search(r"\b(?:mức\s+phạt|xử\s+phạt|phạt\s+bao\s+nhiêu)\b", normalized_question)
+    )
+    quantity_question = bool(
+        re.search(
+            r"\b(?:số\s+lượng|bao\s+nhiêu\s+(?:người|đối\s+tượng|"
+            r"trường\s+hợp|ngày|tháng|năm)|mấy\s+(?:người|đối\s+tượng))\b",
+            normalized_question,
+        )
+    )
+    if not (penalty_question or quantity_question):
+        return False
+    if penalty_question and not (
+        re.search(r"(?i)\bphạt\s+tiền\b", raw_answer)
+        and re.search(r"\d", raw_answer)
+    ):
+        return False
+    if quantity_question and not re.search(r"\d", raw_answer):
+        return False
+
+    question_terms = set(_similarity_terms(question))
+    raw_terms = set(_similarity_terms(raw_answer))
+    coverage = (
+        len(question_terms & raw_terms) / len(question_terms)
+        if question_terms
+        else 0.0
+    )
+    strong_source = bool(
+        raw_score >= 5.0
+        or _has_strong_legal_evidence(candidate)
+        or _has_decisive_answer_evidence(question, raw_answer)
+    )
+    if coverage < 0.5 or not strong_source:
+        return False
+
+    # A much shorter answer frequently drops an exception, remedial measure,
+    # or alternative threshold.  Keep generation when it preserves most of
+    # the focused evidence; otherwise prefer the verbatim grounded extract.
+    return len(tokenize(generated)) < 0.82 * len(tokenize(raw_answer))
 
 
 def reciprocal_rank_fusion(
@@ -891,6 +1055,145 @@ def reciprocal_rank_fusion(
         item["rrf_score"] = float(scores[key])
         fused_results.append(item)
     return fused_results
+
+
+def _metadata_rescue_candidates(
+    question: str,
+    candidates: list[dict[str, Any]],
+    *,
+    max_candidates: int = 3,
+) -> list[dict[str, Any]]:
+    """Keep low-ranked candidates whose title/URL names the queried subject.
+
+    Some TCVN contexts have an empty ``name`` and a passage that starts after
+    the standard's title.  Dense retrieval can still find such a document, but
+    it may sit below the 20-item reranker cutoff.  Its URL slug is retrieval
+    metadata owned by the corpus and often retains a precise subject phrase
+    such as ``san-pham-nhan-sam``.  Matching a contiguous phrase of at least
+    four informative query tokens is narrow enough to rescue that candidate
+    without promoting generic metadata matches.
+    """
+    if max_candidates <= 0:
+        return []
+    query_tokens = _similarity_terms(question)
+    if len(query_tokens) < 4:
+        return []
+    generic_metadata_tokens = {
+        "yeu",
+        "cau",
+        "quy",
+        "dinh",
+        "chi",
+        "tieu",
+        "chat",
+        "luong",
+        "san",
+        "pham",
+        "doi",
+        "đoi",
+        "the",
+        "nao",
+    }
+
+    matches: list[dict[str, Any]] = []
+    for rank, candidate in enumerate(candidates, start=1):
+        metadata = " ".join(
+            str(candidate.get(field) or "").strip()
+            for field in ("title", "name", "link")
+        ).strip()
+        # Keep duplicate tokens and their order: URL paths may contain
+        # ``Cong-nghe-Thuc-pham/.../San-pham-nhan-sam`` and deduplicating the
+        # first ``pham`` would destroy the subject phrase in the final slug.
+        metadata_tokens = [
+            _normalize_similarity_token(token) for token in tokenize(metadata)
+        ]
+        if not metadata_tokens:
+            continue
+        metadata_text = f" {' '.join(metadata_tokens)} "
+        matched_phrase: list[str] = []
+        for size in range(min(10, len(query_tokens)), 3, -1):
+            for start in range(0, len(query_tokens) - size + 1):
+                phrase = query_tokens[start : start + size]
+                if sum(
+                    token not in generic_metadata_tokens for token in phrase
+                ) < 2:
+                    continue
+                if f" {' '.join(phrase)} " in metadata_text:
+                    matched_phrase = phrase
+                    break
+            if matched_phrase:
+                break
+        if not matched_phrase:
+            continue
+        item = dict(candidate)
+        item["metadata_rescue_phrase"] = " ".join(matched_phrase)
+        item["metadata_rescue_tokens"] = len(matched_phrase)
+        item["metadata_rescue_rank"] = rank
+        item["metadata_rescue_score"] = len(matched_phrase) / len(query_tokens)
+        matches.append(item)
+
+    matches.sort(
+        key=lambda item: (
+            -int(item.get("metadata_rescue_tokens") or 0),
+            -float(item.get("metadata_rescue_score") or 0.0),
+            int(item.get("metadata_rescue_rank") or 10**9),
+        )
+    )
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for item in matches:
+        key = (
+            str(item.get("context_id") or "").strip(),
+            int(item.get("chunk_no", 0)),
+        )
+        if not key[0] or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+        if len(unique) >= max_candidates:
+            break
+    return unique
+
+
+def _retain_required_candidates(
+    ranked: list[dict[str, Any]],
+    required: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Fit required audit-safe candidates into a bounded ranked pool."""
+    if limit <= 0:
+        return []
+    output = [dict(item) for item in ranked[:limit]]
+    positions = {
+        (str(item.get("context_id") or "").strip(), int(item.get("chunk_no", 0))): index
+        for index, item in enumerate(output)
+    }
+    for candidate in required:
+        key = (
+            str(candidate.get("context_id") or "").strip(),
+            int(candidate.get("chunk_no", 0)),
+        )
+        if not key[0]:
+            continue
+        if key in positions:
+            output[positions[key]] = {**output[positions[key]], **candidate}
+            continue
+        if len(output) < limit:
+            positions[key] = len(output)
+            output.append(dict(candidate))
+            continue
+        removed = output[-1]
+        positions.pop(
+            (
+                str(removed.get("context_id") or "").strip(),
+                int(removed.get("chunk_no", 0)),
+            ),
+            None,
+        )
+        output[-1] = dict(candidate)
+        positions[key] = len(output) - 1
+    return output
 
 
 def _apply_legal_signal_boost(
@@ -1093,10 +1396,21 @@ def _apply_reranker_legal_guardrails(
             if exact_phrase_matches > 0
             else 0.0
         )
+        try:
+            metadata_rescue_tokens = int(item.get("metadata_rescue_tokens") or 0)
+        except (TypeError, ValueError, OverflowError):
+            metadata_rescue_tokens = 0
+        metadata_subject_bonus = (
+            min(5.0, 1.0 + 0.8 * metadata_rescue_tokens)
+            if metadata_rescue_tokens >= 4
+            else 0.0
+        )
         guardrail_bonus += controlled_phrase_bonus
-        exact_strength += controlled_phrase_bonus
+        guardrail_bonus += metadata_subject_bonus
+        exact_strength += controlled_phrase_bonus + metadata_subject_bonus
         retrieval_exact = bool(
             exact_phrase_matches
+            or metadata_subject_bonus
             or form_bonus
             or article_bonus
             or document_reference_bonus
@@ -1116,6 +1430,7 @@ def _apply_reranker_legal_guardrails(
             "exact_document_name": round(document_name_bonus, 6),
             "exact_long_phrase": round(long_phrase_bonus, 6),
             "exact_retrieval_phrase": round(controlled_phrase_bonus, 6),
+            "exact_metadata_subject": round(metadata_subject_bonus, 6),
             "rrf_prior": round(rrf_prior_bonus, 6),
             "authority": round(authority_bonus, 6),
         }
@@ -1282,9 +1597,13 @@ class LegalQABaseline:
         """Return only relevant/continuous local chunks around the best hit."""
         context_id = str(best.get("context_id") or "").strip()
         chunk_no = int(best.get("chunk_no", 0))
+        # Fetch two forward windows so a sentence that crosses ``best + 1``
+        # can still reach its closing clause.  ``select_relevant_neighbor_chunks``
+        # keeps the expansion bounded and only retains the second window when
+        # the preceding one is structurally continuous/incomplete.
         adjacent_nos = [
             number
-            for number in (chunk_no - 1, chunk_no, chunk_no + 1)
+            for number in (chunk_no - 1, chunk_no, chunk_no + 1, chunk_no + 2)
             if number >= 0
         ]
         get_context_chunks = getattr(self.index, "get_context_chunks", None)
@@ -1727,6 +2046,12 @@ class LegalQABaseline:
                 dense_status = "fallback_bm25"
         stage_seconds["dense"] = round(time.perf_counter() - stage_started, 4)
 
+        metadata_rescue_candidates = _metadata_rescue_candidates(
+            question,
+            [*dense_candidates, *bm25_candidates],
+            max_candidates=min(3, self.context_top_k),
+        )
+
         # 3. Hợp nhất RRF (Reciprocal Rank Fusion k=60 -> Top-50) hoặc fallback Heuristic BM25
         stage_started = time.perf_counter()
         fusion_status = "rrf"
@@ -1754,6 +2079,11 @@ class LegalQABaseline:
                 reverse=True,
             )[: self.rrf_top_k]
         if fusion_status == "rrf":
+            fused_candidates = _retain_required_candidates(
+                fused_candidates,
+                metadata_rescue_candidates,
+                limit=self.rrf_top_k,
+            )
             fused_candidates = _apply_legal_signal_boost(question, fused_candidates)
         stage_seconds["fusion"] = round(time.perf_counter() - stage_started, 4)
 
@@ -1762,7 +2092,11 @@ class LegalQABaseline:
 
         # 4. Tái xếp hạng bằng Vietnamese_Reranker (Top-3 chunks)
         stage_started = time.perf_counter()
-        rerank_candidates = fused_candidates[: self.reranker_candidate_k]
+        rerank_candidates = _retain_required_candidates(
+            fused_candidates,
+            metadata_rescue_candidates,
+            limit=self.reranker_candidate_k,
+        )
         reranked_pool: list[dict[str, Any]] = []
         reranker_status = "disabled"
         if self.reranker is not None:
@@ -1821,6 +2155,12 @@ class LegalQABaseline:
                 requested_top_k=self.dense_top_k,
                 score_field="dense_score",
                 status=dense_status,
+            ),
+            "metadata_rescue": _retrieval_stage_record(
+                metadata_rescue_candidates,
+                requested_top_k=min(3, self.context_top_k),
+                score_field="metadata_rescue_score",
+                status="ok" if metadata_rescue_candidates else "empty",
             ),
             "rrf": _retrieval_stage_record(
                 fused_candidates,
@@ -2082,6 +2422,8 @@ class LegalQABaseline:
         retry_budget: int | None = None
         recovery_strategy: str | None = None
         route: str | None = None
+        best_partial_answer = ""
+        saw_partial_answer = False
 
         def generate_once(
             context: str,
@@ -2089,7 +2431,7 @@ class LegalQABaseline:
             max_new_tokens: int | None = None,
             question_override: str | None = None,
         ) -> tuple[str, str | None, dict[str, Any]]:
-            nonlocal generation_attempts
+            nonlocal best_partial_answer, generation_attempts, saw_partial_answer
             generation_attempts += 1
             attempt_started = time.perf_counter()
             try:
@@ -2114,15 +2456,14 @@ class LegalQABaseline:
                         )
                     except ValueError:
                         cleaned_partial = ""
-                partial_answer_usable = bool(
-                    cleaned_partial
-                    and len(tokenize(cleaned_partial)) >= self.min_llm_answer_tokens
-                    and not is_refusal_answer(cleaned_partial)
-                    and not possibly_cut(cleaned_partial)
-                    and cleaned_partial.endswith(
-                        (".", "!", "?", "…", ")", "]", "}", '"', "”", "’")
-                    )
+                safe_partial = _safe_complete_generation_prefix(
+                    cleaned_partial,
+                    min_tokens=self.min_llm_answer_tokens,
                 )
+                if len(tokenize(safe_partial)) > len(tokenize(best_partial_answer)):
+                    best_partial_answer = safe_partial
+                saw_partial_answer = bool(saw_partial_answer or cleaned_partial)
+                partial_answer_usable = bool(best_partial_answer)
                 generation_attempt_seconds.append(
                     round(time.perf_counter() - attempt_started, 4)
                 )
@@ -2131,9 +2472,9 @@ class LegalQABaseline:
                     "generated_tokens": stats.get("generated_tokens", exc.generated_tokens),
                     "max_new_tokens": stats.get("max_new_tokens", exc.max_new_tokens),
                     "hit_token_limit": True,
-                    "partial_answer_available": bool(cleaned_partial),
+                    "partial_answer_available": bool(cleaned_partial or best_partial_answer),
                     "partial_answer_usable": partial_answer_usable,
-                    "partial_answer_words": len(tokenize(cleaned_partial)),
+                    "partial_answer_words": len(tokenize(best_partial_answer)),
                 }
             generation_attempt_seconds.append(
                 round(time.perf_counter() - attempt_started, 4)
@@ -2169,8 +2510,11 @@ class LegalQABaseline:
         if invalid_reason == "token_limit":
             initial_hit_token_limit = True
             if needs_extended_generation_retry(question):
-                if initial_budget < self.token_limit_retry_tokens:
-                    retry_budget = self.token_limit_retry_tokens
+                desired_retry_budget = self.token_limit_retry_tokens
+                if _needs_1024_list_retry(question):
+                    desired_retry_budget = 1024
+                if initial_budget < desired_retry_budget:
+                    retry_budget = desired_retry_budget
                 elif initial_budget < 1024:
                     retry_budget = 1024
                 if retry_budget is not None:
@@ -2313,6 +2657,29 @@ class LegalQABaseline:
                     route = "generated_refusal_recovery"
 
         focused_extractive_used = False
+        if invalid_reason is None and route is None:
+            anchor_best = refusal_anchor["best"]
+            anchor_answer = str(refusal_anchor["raw_context_answer"] or "").strip()
+            if _prefer_grounded_extractive_over_generation(
+                question,
+                anchor_best,
+                anchor_answer,
+                answer,
+            ):
+                best = anchor_best
+                top_chunks = list(refusal_anchor["top_chunks"])
+                adjacent_chunks = list(refusal_anchor["adjacent_chunks"])
+                prompt_chunks = list(refusal_anchor["prompt_chunks"])
+                joined_context = str(refusal_anchor["joined_context"])
+                raw_context_answer = anchor_answer
+                generation_trusted_metadata = list(
+                    refusal_anchor["trusted_metadata"]
+                )
+                answer = anchor_answer
+                route = "extractive_selected"
+                recovery_strategy = "output_selection_grounded_extractive"
+                raw_reranker_score = _audit_float(best.get("rerank_score"))
+                focused_extractive_used = True
         failure_before_extractive = invalid_reason
         if (
             invalid_reason is not None
@@ -2349,6 +2716,52 @@ class LegalQABaseline:
                 )
                 raw_reranker_score = _audit_float(best.get("rerank_score"))
                 focused_extractive_used = True
+
+        # A high reranker score plus direct query coverage is enough to rescue
+        # a bounded, complete source extract after generation failure.  This is
+        # intentionally stricter than normal extractive routing and prevents a
+        # strong source from becoming a generic no-information answer merely
+        # because the generator exhausted its token budget.
+        if (
+            invalid_reason is not None
+            and (refusal_recovery_requested or initial_hit_token_limit)
+        ):
+            anchor_best = refusal_anchor["best"]
+            anchor_answer = str(refusal_anchor["raw_context_answer"] or "").strip()
+            if _safe_high_score_failure_extractive(
+                question,
+                anchor_best,
+                anchor_answer,
+            ):
+                best = anchor_best
+                top_chunks = list(refusal_anchor["top_chunks"])
+                adjacent_chunks = list(refusal_anchor["adjacent_chunks"])
+                prompt_chunks = list(refusal_anchor["prompt_chunks"])
+                joined_context = str(refusal_anchor["joined_context"])
+                raw_context_answer = anchor_answer
+                generation_trusted_metadata = list(
+                    refusal_anchor["trusted_metadata"]
+                )
+                answer = anchor_answer
+                invalid_reason = None
+                route = "extractive_fallback"
+                recovery_strategy = (
+                    "token_limit_high_score_extractive"
+                    if failure_before_extractive == "token_limit"
+                    else "refusal_high_score_extractive"
+                )
+                raw_reranker_score = _audit_float(best.get("rerank_score"))
+                focused_extractive_used = True
+
+        # If neither grounded extractive gate is safe, retain the longest
+        # complete sentence prefix emitted by the model.  The unfinished tail
+        # is removed, so this route is preferable to discarding hundreds of
+        # generated tokens and returning a 7/13-word refusal.
+        if invalid_reason is not None and best_partial_answer:
+            answer = best_partial_answer
+            invalid_reason = None
+            route = "generated_partial"
+            recovery_strategy = "token_limit_complete_partial"
 
         # Yes/no questions must not receive an inferred Có/Không from weak
         # evidence. After all generation recovery attempts refuse, a highly
@@ -2431,10 +2844,15 @@ class LegalQABaseline:
         if invalid_reason is None:
             if route is None:
                 route = f"generated_{initial_budget}"
+            partial_available = bool(
+                saw_partial_answer
+                or generation_stats.get("partial_answer_available", False)
+            )
+            partial_usable = bool(best_partial_answer)
             generation_evidence = {
                 "generated_tokens": generation_stats.get("generated_tokens"),
                 "max_new_tokens": generation_stats.get("max_new_tokens", initial_budget),
-                "hit_token_limit": False,
+                "hit_token_limit": route == "generated_partial",
                 "initial_hit_token_limit": initial_hit_token_limit,
                 "generation_attempts": generation_attempts,
                 **generation_timing,
@@ -2442,22 +2860,24 @@ class LegalQABaseline:
                 "recovery_strategy": recovery_strategy,
                 "raw_reranker_score": raw_reranker_score,
                 "raw_fallback_allowed": raw_fallback_allowed,
-                "partial_answer_available": bool(
-                    generation_stats.get("partial_answer_available", False)
-                ),
-                "partial_answer_usable": bool(
-                    generation_stats.get("partial_answer_usable", False)
-                ),
-                "partial_answer_words": int(
-                    generation_stats.get("partial_answer_words") or 0
-                ),
+                "partial_answer_available": partial_available,
+                "partial_answer_usable": partial_usable,
+                "partial_answer_words": len(tokenize(best_partial_answer)),
                 "routing_decision": (
                     "guarded_knn_after_refusal"
                     if route == "knn_guarded_refusal"
                     else (
-                        "guarded_focused_extractive_after_generation_failure"
-                        if focused_extractive_used
-                        else "generator_success"
+                        "complete_partial_selected_after_token_limit"
+                        if route == "generated_partial"
+                        else (
+                            "grounded_extractive_selected_over_generation"
+                            if route == "extractive_selected"
+                            else (
+                                "guarded_focused_extractive_after_generation_failure"
+                                if focused_extractive_used
+                                else "generator_success"
+                            )
+                        )
                     )
                 ),
                 "says_no_information": False,

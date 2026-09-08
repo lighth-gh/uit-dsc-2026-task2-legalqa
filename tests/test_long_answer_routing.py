@@ -20,6 +20,7 @@ from legalqa_baseline.text import (
     needs_extended_generation_retry,
     output_artifact_flags,
     possibly_cut,
+    select_relevant_neighbor_chunks,
 )
 
 
@@ -599,7 +600,82 @@ class TestMergeAdjacentChunks(unittest.TestCase):
     def test_possibly_cut_detects_dangling_generation(self) -> None:
         self.assertTrue(possibly_cut("Hồ sơ bao gồm các giấy tờ sau:"))
         self.assertTrue(possibly_cut("Người nộp chuẩn bị đơn đề nghị và"))
+        self.assertTrue(
+            possibly_cut("b) Đối với vụ việc tham gia tố tụng dân sự.")
+        )
+        self.assertTrue(possibly_cut("Nội dung đầy đủ trước đó. 4."))
+        self.assertFalse(possibly_cut("Nội dung được quy định tại khoản 4."))
         self.assertFalse(possibly_cut("Hồ sơ được nộp trong 03 ngày."))
+
+    def test_neighbor_selection_joins_dangling_legal_reference_twice(self) -> None:
+        chunks = [
+            {
+                "chunk_no": 12,
+                "text": (
+                    "Điều 9. Khoán chi vụ việc. b) Đối với vụ việc tham gia "
+                    "tố tụng dân sự: thực hiện các công việc quy định tại khoản 1"
+                ),
+            },
+            {
+                "chunk_no": 13,
+                "text": (
+                    "Điều 5 Thông tư này. Chi tiết được thể hiện tại Phụ lục số 02 "
+                    "ban hành kèm theo Thông tư này và áp dụng tại các"
+                ),
+            },
+            {
+                "chunk_no": 14,
+                "text": "giai đoạn tố tụng, tối đa không quá 10 mức lương cơ sở.",
+            },
+        ]
+
+        selected = select_relevant_neighbor_chunks(
+            "Hướng dẫn khoán chi vụ việc tham gia tố tụng dân sự?",
+            chunks,
+            best_chunk_no=12,
+        )
+
+        self.assertEqual([item["chunk_no"] for item in selected], [12, 13, 14])
+
+    def test_complete_dossier_question_keeps_all_child_items_and_stops_at_sibling(self) -> None:
+        question = (
+            "Trường hợp cá nhân đã chết thì hồ sơ xóa nợ tiền thuế "
+            "gồm những gì?"
+        )
+        chunks = [
+            {
+                "chunk_no": 114,
+                "text": (
+                    "a.4) Quyết định đình chỉ thi hành án; "
+                    "a.5) Thông báo tiền thuế nợ tại thời điểm đề nghị xóa nợ."
+                ),
+            },
+            {
+                "chunk_no": 115,
+                "text": (
+                    "b) Đối với cá nhân đã chết, hồ sơ được lập như sau: "
+                    "b.1) Trường hợp cá nhân đã chết: "
+                    "b.1.1) Văn bản đề nghị theo mẫu; "
+                    "b.1.2) Giấy chứng tử hoặc quyết định của Tòa án; "
+                    "b.1.3) Văn bản xác nhận người chết không có tài sản; "
+                    "b.1.4) Thông báo tiền thuế nợ tại thời điểm đề nghị xóa nợ. "
+                    "b.2) Trường hợp cá nhân mất năng lực hành vi dân sự: "
+                    "b.2.1) Văn bản đề nghị theo mẫu."
+                ),
+            },
+        ]
+
+        answer = build_focused_extractive_answer(
+            question,
+            chunks,
+            best_chunk_no=115,
+            max_words=640,
+        )
+
+        self.assertTrue(answer.startswith("b.1) Trường hợp cá nhân đã chết"))
+        self.assertIn("b.1.1)", answer)
+        self.assertIn("b.1.4)", answer)
+        self.assertNotIn("b.2)", answer)
 
     def test_merge_empty_and_invalid(self) -> None:
         self.assertEqual(merge_adjacent_chunks([]), "")

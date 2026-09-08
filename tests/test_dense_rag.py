@@ -24,6 +24,8 @@ from legalqa_baseline.pipeline import (
     LegalQABaseline,
     _apply_legal_signal_boost,
     _apply_reranker_legal_guardrails,
+    _metadata_rescue_candidates,
+    _retain_required_candidates,
     prediction_audit_record,
     reciprocal_rank_fusion,
 )
@@ -100,6 +102,54 @@ class MockSearchIndex:
 
 
 class TestDenseRAG(unittest.TestCase):
+    def test_metadata_rescue_keeps_low_rank_tcvn_subject_candidate(self) -> None:
+        candidates = [
+            {
+                "context_id": f"wrong-{rank}",
+                "chunk_no": 0,
+                "name": "Quy định chất lượng sản phẩm",
+                "link": f"https://example.com/quy-dinh-{rank}",
+                "text": "Nội dung không liên quan.",
+                "dense_rank": rank,
+            }
+            for rank in range(1, 47)
+        ]
+        candidates.append(
+            {
+                "context_id": "103155",
+                "chunk_no": 2,
+                "name": "",
+                "link": (
+                    "https://thuvienphapluat.vn/tcvn/Cong-nghe-Thuc-pham/"
+                    "TCVN-11936-2017-San-pham-nhan-sam.aspx"
+                ),
+                "text": "Phương pháp thử các chỉ tiêu của nhân sâm.",
+                "dense_rank": 47,
+            }
+        )
+
+        rescued = _metadata_rescue_candidates(
+            "Yêu cầu đối với chỉ tiêu chất lượng của sản phẩm nhân sâm thế nào?",
+            candidates,
+        )
+        retained = _retain_required_candidates(candidates, rescued, limit=20)
+
+        self.assertEqual([item["context_id"] for item in rescued], ["103155"])
+        self.assertEqual(rescued[0]["metadata_rescue_phrase"], "san pham nhan sam")
+        self.assertIn("103155", [item["context_id"] for item in retained])
+
+        wrong = dict(candidates[0], rerank_score=-4.0, rrf_rank_after_boost=1)
+        correct = dict(rescued[0], rerank_score=-6.0, rrf_rank_after_boost=20)
+        reranked = _apply_reranker_legal_guardrails(
+            "Yêu cầu đối với chỉ tiêu chất lượng của sản phẩm nhân sâm thế nào?",
+            [wrong, correct],
+        )
+        self.assertEqual(reranked[0]["context_id"], "103155")
+        self.assertGreater(
+            reranked[0]["rerank_guardrail_components"]["exact_metadata_subject"],
+            0.0,
+        )
+
     def test_0_bfloat_tensor_is_cast_before_numpy(self) -> None:
         class FakeTensor:
             def __init__(self) -> None:

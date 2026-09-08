@@ -16,7 +16,12 @@ from legalqa_baseline.generator import (
     build_user_prompt,
     format_raw_qwen_prompt,
 )
-from legalqa_baseline.pipeline import LegalQABaseline, Prediction, prediction_audit_record
+from legalqa_baseline.pipeline import (
+    LegalQABaseline,
+    Prediction,
+    _prefer_grounded_extractive_over_generation,
+    prediction_audit_record,
+)
 from legalqa_baseline.text import is_refusal_answer
 
 
@@ -480,6 +485,91 @@ class RAGPipelineTests(unittest.TestCase):
     def _raw_answer() -> str:
         return MockSearchIndex().search_contexts("", top_k=1)[0]["text"]
 
+    def test_output_gate_prefers_complete_grounded_penalty_extract(self) -> None:
+        raw_answer = (
+            "Điều 17. Phạt tiền từ 6.000.000 đồng đến 8.000.000 đồng đối với "
+            "hành vi không có Giấy chứng nhận kiểm dịch động vật. Biện pháp "
+            "khắc phục hậu quả là buộc kiểm dịch lại động vật, sản phẩm động vật. "
+            "Trường hợp phát hiện mầm bệnh truyền nhiễm nguy hiểm thì buộc tiêu "
+            "hủy động vật, sản phẩm động vật theo quy định."
+        )
+        generated = "Hành vi này bị phạt tiền từ 6.000.000 đồng đến 8.000.000 đồng."
+        candidate = {
+            "rerank_score": 8.0,
+            "text": raw_answer,
+            "name": "Nghị định xử phạt vi phạm trong lĩnh vực thú y",
+        }
+
+        self.assertTrue(
+            _prefer_grounded_extractive_over_generation(
+                "Không có giấy chứng nhận kiểm dịch thì bị xử phạt thế nào?",
+                candidate,
+                raw_answer,
+                generated,
+            )
+        )
+        self.assertFalse(
+            _prefer_grounded_extractive_over_generation(
+                "Nguồn nhân lực phòng chống thiên tai gồm những gì?",
+                candidate,
+                raw_answer,
+                generated,
+            )
+        )
+
+    def test_pipeline_output_gate_returns_grounded_extract_route(self) -> None:
+        class PenaltyIndex:
+            def search_contexts(
+                self, question: str, top_k: int = 12
+            ) -> list[dict[str, Any]]:
+                return [
+                    {
+                        "context_id": "penalty-law",
+                        "chunk_no": 0,
+                        "name": "Nghị định xử phạt vi phạm trong lĩnh vực thú y",
+                        "link": "https://example.com/penalty-law",
+                        "text": (
+                            "Điều 17. Phạt tiền từ 6.000.000 đồng đến 8.000.000 "
+                            "đồng đối với hành vi không có Giấy chứng nhận kiểm "
+                            "dịch động vật. Biện pháp khắc phục hậu quả là buộc "
+                            "kiểm dịch lại động vật, sản phẩm động vật. Trường hợp "
+                            "phát hiện mầm bệnh truyền nhiễm nguy hiểm thì buộc "
+                            "tiêu hủy động vật, sản phẩm động vật theo quy định."
+                        ),
+                        "bm25_score": -20.0,
+                    }
+                ]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class ShortGenerator:
+            def generate(self, context: str, question: str) -> str:
+                return "Hành vi này bị phạt tiền từ 6.000.000 đến 8.000.000 đồng."
+
+        pipeline = LegalQABaseline(
+            index=PenaltyIndex(),  # type: ignore[arg-type]
+            generator=ShortGenerator(),
+            reranker=FixedScoreReranker(score=8.0),
+        )
+
+        pred = pipeline.predict_one(
+            "Không có giấy chứng nhận kiểm dịch thì bị xử phạt thế nào?",
+            mode="rag",
+        )
+
+        self.assertEqual(pred.route, "extractive_selected")
+        self.assertIn("buộc kiểm dịch lại", pred.answer)
+        self.assertEqual(
+            pred.evidence["routing_decision"],
+            "grounded_extractive_selected_over_generation",
+        )
+
     def test_pipeline_rag_mode(self) -> None:
         mock_index = MockSearchIndex()
         mock_gen = MockGenerator()
@@ -627,6 +717,95 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertIn("Quỹ bảo hiểm tai nạn lao động", pred.answer)
         self.assertFalse(pred.evidence["says_no_information"])
 
+    def test_token_limit_keeps_longest_complete_generated_prefix(self) -> None:
+        complete_prefix = (
+            "Hành vi vi phạm bị phạt tiền từ hai triệu đồng đến năm triệu đồng."
+        )
+
+        class TokenLimitedWithPartial:
+            max_new_tokens = 512
+
+            def generate(self, context: str, question: str) -> str:
+                raise GenerationTokenLimitReached(
+                    509,
+                    512,
+                    partial_answer=(
+                        complete_prefix
+                        + " Biện pháp khắc phục hậu quả tiếp theo đang được"
+                    ),
+                )
+
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=TokenLimitedWithPartial(),
+        )
+        pred = pipeline.predict_one("Mức phạt là bao nhiêu?", mode="rag")
+
+        self.assertEqual(pred.route, "generated_partial")
+        self.assertEqual(pred.answer, complete_prefix)
+        self.assertTrue(pred.evidence["hit_token_limit"])
+        self.assertTrue(pred.evidence["partial_answer_available"])
+        self.assertTrue(pred.evidence["partial_answer_usable"])
+        self.assertEqual(
+            pred.evidence["recovery_strategy"],
+            "token_limit_complete_partial",
+        )
+        self.assertEqual(
+            pred.evidence["routing_decision"],
+            "complete_partial_selected_after_token_limit",
+        )
+
+    def test_token_limit_uses_complete_high_score_extract_without_exact_signal(self) -> None:
+        question = "Doanh nghiệp cần nộp giấy tờ nào để được cấp phép?"
+        source = (
+            "Cơ sở kinh doanh đề nghị cấp giấy phép phải chuẩn bị đơn, bản sao "
+            "đăng ký doanh nghiệp và tài liệu chứng minh năng lực tài chính. "
+            "Người nộp gửi toàn bộ hồ sơ đến cơ quan có thẩm quyền để được kiểm "
+            "tra và thông báo kết quả theo thời hạn pháp luật quy định."
+        )
+
+        class HighScoreIndex:
+            def search_contexts(
+                self, query: str, top_k: int = 50
+            ) -> list[dict[str, Any]]:
+                return [{
+                    "context_id": "permit-file",
+                    "chunk_no": 0,
+                    "name": "Quy định cấp giấy phép kinh doanh",
+                    "text": source,
+                    "bm25_score": -10.0,
+                }]
+
+            def search_train(
+                self,
+                question: str,
+                top_k: int = 5,
+                exclude_id: str | None = None,
+            ) -> list[dict[str, Any]]:
+                return []
+
+        class TokenLimitedWithoutPartial:
+            max_new_tokens = 512
+
+            def generate(self, context: str, question: str) -> str:
+                raise GenerationTokenLimitReached(509, 512)
+
+        pipeline = LegalQABaseline(
+            index=HighScoreIndex(),  # type: ignore[arg-type]
+            generator=TokenLimitedWithoutPartial(),
+            reranker=FixedScoreReranker(score=6.0),
+            enable_long_answer_extractive=False,
+        )
+        pred = pipeline.predict_one(question, mode="rag")
+
+        self.assertEqual(pred.route, "extractive_fallback")
+        self.assertIn("tài liệu chứng minh năng lực tài chính", pred.answer)
+        self.assertEqual(
+            pred.evidence["recovery_strategy"],
+            "token_limit_high_score_extractive",
+        )
+        self.assertFalse(pred.evidence["says_no_information"])
+
     def test_list_token_limit_retries_once_with_768_and_keeps_generation(self) -> None:
         class RetryGenerator:
             max_new_tokens = 512
@@ -686,6 +865,49 @@ class RAGPipelineTests(unittest.TestCase):
         self.assertIsNotNone(audit["initial_generation_seconds"])
         self.assertIsNotNone(audit["retry_generation_seconds"])
         self.assertIn("Danh sách hồ sơ", pred.answer)
+
+    def test_explicit_form_token_limit_retries_once_with_1024(self) -> None:
+        class FormRetryGenerator:
+            max_new_tokens = 512
+
+            def __init__(self) -> None:
+                self.budgets: list[int | None] = []
+                self.last_generation_stats: dict[str, Any] = {}
+
+            def generate(
+                self,
+                context: str,
+                question: str,
+                *,
+                max_new_tokens: int | None = None,
+            ) -> str:
+                self.budgets.append(max_new_tokens)
+                if len(self.budgets) == 1:
+                    raise GenerationTokenLimitReached(509, 512)
+                self.last_generation_stats = {
+                    "generated_tokens": 700,
+                    "max_new_tokens": max_new_tokens,
+                    "hit_token_limit": False,
+                }
+                return (
+                    "Mẫu quyết định gồm phần căn cứ, nội dung quyết định, trách nhiệm "
+                    "thi hành và chữ ký của người có thẩm quyền."
+                )
+
+        generator = FormRetryGenerator()
+        pipeline = LegalQABaseline(
+            index=MockSearchIndex(),  # type: ignore[arg-type]
+            generator=generator,
+            reranker=FixedScoreReranker(),
+        )
+        pred = pipeline.predict_one(
+            "Mẫu quyết định phân công được quy định như thế nào?",
+            mode="rag",
+        )
+
+        self.assertEqual(generator.budgets, [None, 1024])
+        self.assertEqual(pred.route, "generated_retry_1024")
+        self.assertEqual(pred.evidence["retry_max_new_tokens"], 1024)
 
     def test_token_limit_retry_uses_strong_focused_extractive_if_retry_fails(self) -> None:
         class StrongArticleIndex:
@@ -753,7 +975,7 @@ class RAGPipelineTests(unittest.TestCase):
             mode="rag",
         )
 
-        self.assertEqual(generator.budgets, [None, 768])
+        self.assertEqual(generator.budgets, [None, 1024])
         self.assertEqual(pred.route, "extractive_fallback")
         self.assertLess(pred.evidence["raw_reranker_score"], 2.0)
         self.assertEqual(pred.evidence["generation_attempts"], 2)
