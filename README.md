@@ -23,6 +23,8 @@ Ba mô hình nằm trong Excel được duyệt, theo các đường dẫn ở d
 
 Import `legalqa_main_run.ipynb` vào Kaggle và bật GPU + Internet. Notebook clone nhánh `main` từ `https://github.com/lighth-gh/uit-dsc-2026-task2-legalqa.git` vào `/kaggle/working/uit-dsc-2026-task2-legalqa`, sau đó cài thư viện, tải trọng số và chạy toàn bộ pipeline trong Kaggle runtime; notebook chủ động dừng nếu chạy ngoài Kaggle.
 
+Để kiểm tra tích hợp trước khi chạy pipeline đầy đủ, dùng `legalqa_smoke_pipeline.ipynb`. Notebook smoke mặc định index 250 file context và chạy 3 câu dev qua toàn bộ chuỗi retrieve → generate → evaluate; điểm smoke chỉ dùng để phát hiện lỗi chạy, không dùng để so sánh chất lượng.
+
 Mặc định notebook dùng `train.json`, `public-official.json` và `selected-contexts.zip` trong repo vừa clone (`USE_REPO_DATA = True`). Với dữ liệu private hoặc Kaggle Dataset riêng, đặt `USE_REPO_DATA = False`, sửa `KAGGLE_DATASET_ROOT` tại cell cấu hình và chọn đúng tên file test.
 
 | Cell có tiêu đề | Làm gì | Kết quả cần kiểm tra |
