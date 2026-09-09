@@ -1,0 +1,28 @@
+{
+  "seed": 2026,
+  "parameter_limit": 4000000000,
+  "models": {
+    "embedding": "intfloat/multilingual-e5-small",
+    "reranker": "AITeamVN/Vietnamese_Reranker",
+    "generator": "AITeamVN/Vi-Qwen2-3B-RAG"
+  },
+  "chunking": {"child_tokens": 320, "overlap_tokens": 64, "header_tokens": 48},
+  "retrieval": {
+    "bm25_k": 100, "dense_k": 100, "rrf_constant": 60,
+    "pool_k": 24, "max_children_per_parent": 2, "parents_k": 4,
+    "embedding_batch": 32, "reranker_batch": 8, "reranker_max_tokens": 768
+  },
+  "generation": {
+    "max_input_tokens": 4096, "max_new_tokens": 2048,
+    "parent_max_tokens": 1400, "min_context_tokens": 256,
+    "load_in_4bit": true
+  },
+  "training": {
+    "lora_rank": 16, "lora_alpha": 32, "lora_dropout": 0.05,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    "epochs": 2, "learning_rate": 0.00005,
+    "batch_size": 1, "gradient_accumulation": 16,
+    "max_sequence_tokens": 8192, "warmup_ratio": 0.05
+  },
+  "submission_filename": "submission.json"
+}

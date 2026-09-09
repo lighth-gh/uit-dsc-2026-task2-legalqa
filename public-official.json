@@ -1,0 +1,4002 @@
+{
+    "80189": {
+        "question": "Mẫu thông báo thay đổi người đại diện theo pháp luật",
+        "answer": null
+    },
+    "31221": {
+        "question": "Thủ tục hội viên tổ chức của Hội Y học khẩn cấp và thảm họa Việt Nam ra khỏi Hội được quy định thế nào?",
+        "answer": null
+    },
+    "57711": {
+        "question": "Kiểm soát chiếu xạ công chúng trong tình huống sự cố bức xạ, hạt nhân phải đảm bảo những vấn đề gì?",
+        "answer": null
+    },
+    "150931": {
+        "question": "Bảo đảm quyền sở hữu của bên mua tài sản đối với tài sản mua bán trong hợp đồng trao đổi tài sản?",
+        "answer": null
+    },
+    "5177": {
+        "question": "Ai có quyền quyết định thành lập Ban Chỉ đạo phòng không nhân dân Trung ương?",
+        "answer": null
+    },
+    "120127": {
+        "question": "Thời gian hưởng chế độ ốm đau theo quy định pháp luật",
+        "answer": null
+    },
+    "16731": {
+        "question": "Điều kiện để một địa điểm được công nhận là địa điểm du lịch là gì?",
+        "answer": null
+    },
+    "61335": {
+        "question": "Nguyên tắc cung ứng sản phẩm phái sinh giá cả hàng hóa như thế nào?",
+        "answer": null
+    },
+    "104595": {
+        "question": "Hồ sơ cần chuẩn bị khi yêu cầu đổi mới khi bị hỏng thẻ bảo hiểm y tế",
+        "answer": null
+    },
+    "64675": {
+        "question": "Giám đốc sở y tế có thẩm quyền cấp thẻ thanh tra chuyên ngành y tế cho công chức hay không?",
+        "answer": null
+    },
+    "66679": {
+        "question": "Doanh nghiệp cần nộp hồ sơ khai thuế nếu chưa thực hiện xong trước khi chấm dứt hiệu lực mã số thuế không?",
+        "answer": null
+    },
+    "18781": {
+        "question": "Trường hợp nào Tòa án phải chỉ định người đại diện?",
+        "answer": null
+    },
+    "150397": {
+        "question": "Ban Chấp hành Trung ương Hội có quyền xem xét kỷ luật thành viên của Hội không?",
+        "answer": null
+    },
+    "94161": {
+        "question": "Đơn yêu cầu mở thủ tục phá sản của doanh nghiệp có bị tòa án trả lại trong trường hợp quên tạm ứng chi phí phá sản không?",
+        "answer": null
+    },
+    "61695": {
+        "question": "Người làm chứng cho người yêu cầu công chứng không biết đọc chữ bắt buộc phải từ bao nhiêu tuổi trở lên?",
+        "answer": null
+    },
+    "13409": {
+        "question": "Mục tiêu chung của Chương trình “Hỗ trợ phát triển giáo dục mầm non vùng khó khăn giai đoạn 2022 - 2030” là gì?",
+        "answer": null
+    },
+    "134019": {
+        "question": "Doanh nghiệp có được giao quản lý tài sản kết cấu hạ tầng thủy lợi hay không?",
+        "answer": null
+    },
+    "166333": {
+        "question": "Trưởng đoàn thanh tra chuyên ngành của Tổng cục Giáo dục nghề nghiệp có quyền xử phạt cơ sở gian lận hồ sơ để được cơ quan có thẩm quyền giao thực hiện bồi dưỡng nghiệp vụ sư phạm giáo dục nghề nghiệp không?",
+        "answer": null
+    },
+    "75101": {
+        "question": "Vạt trong phẫu thuật chuyển vạt che phủ phần mềm cuống mạch rời là gì?",
+        "answer": null
+    },
+    "68837": {
+        "question": "Thời hạn để hoàn thiện dự kiến kế hoạch kiểm toán năm của Kiểm toán nhà nước trình Tổng Kiểm toán là khi nào?",
+        "answer": null
+    },
+    "75321": {
+        "question": "Học sinh trung học cơ sở có còn được hỗ trợ chi phí học tập khi bị lưu ban hay không?",
+        "answer": null
+    },
+    "42039": {
+        "question": "Sử dụng Quỹ bảo hiểm tai nạn lao động, bệnh nghề nghiệp?",
+        "answer": null
+    },
+    "59607": {
+        "question": "Tổ chức tiếp khách nước ngoài của Bộ Xây dựng có nguyên tắc như thế nào?",
+        "answer": null
+    },
+    "99819": {
+        "question": "Thiết kế chi tiết của dự án đầu tư ứng dụng công nghệ thông tin sử dụng nguồn vốn ngân sách nhà nước được lập dựa trên những tài liệu nào?",
+        "answer": null
+    },
+    "140571": {
+        "question": "Quyền được pháp luật bảo hộ về danh dự và nhân phẩm được quy định như thế nào?",
+        "answer": null
+    },
+    "129859": {
+        "question": "Cơ quan chủ trì soạn thảo văn bản quy phạm pháp luật có những trách nhiệm gì trong việc lồng ghép vấn đề bình đẳng giới vào văn bản?",
+        "answer": null
+    },
+    "81499": {
+        "question": "Nghiên cứu việc bỏ phiếu bầu cử của công dân Việt Nam ở nước ngoài, đổi mới cơ chế bầu cử để lựa chọ ra người xứng đáng đại diện Nhân dân?",
+        "answer": null
+    },
+    "129533": {
+        "question": "Trường hợp nào Nhà nước quyết định thu hồi đất?",
+        "answer": null
+    },
+    "5575": {
+        "question": "Chi phí xuất, cấp hàng dự trữ quốc gia để cứu trợ, hỗ trợ và viện trợ",
+        "answer": null
+    },
+    "88253": {
+        "question": "Có được phép cho thuê quyền khai thác tài sản kết cấu hạ tầng đường sắt quốc gia hay không?",
+        "answer": null
+    },
+    "88529": {
+        "question": "Việc tố cáo được thực hiện như thế nào? Tiếp nhận tố cáo trong những trường hợp nào?",
+        "answer": null
+    },
+    "21043": {
+        "question": "Viện kiểm sát cấp huyện báo cáo ban đầu với Viện kiểm sát cấp tỉnh những vụ phạm tội gây bức xúc dư luận xã hội tại địa phương có thể báo cáo bằng điện thoại không?",
+        "answer": null
+    },
+    "97355": {
+        "question": "Thủ tục ủy thác tư pháp về bắt giữ tàu biển được thực hiện như thế nào?",
+        "answer": null
+    },
+    "40435": {
+        "question": "Ủy ban nhân dân có được cho người khác thuê sân chung cư để làm bãi giữ xe hay không?",
+        "answer": null
+    },
+    "74175": {
+        "question": "Trường hợp cá nhân đã chết hoặc bị Tòa án tuyên bố là đã chết thì hồ sơ xóa nợ tiền thuế, tiền chậm nộp, tiền phạt như thế nào?",
+        "answer": null
+    },
+    "149129": {
+        "question": "Đã có Quyết định 1521/QĐ-TCT ban hành quy trình quản lý hành nghề dịch vụ làm thủ tục về thuế?",
+        "answer": null
+    },
+    "65357": {
+        "question": "Ngoài thiết bị X quang di động thì thiết bị X-quang chẩn đoán trong y tế còn những loại nào?",
+        "answer": null
+    },
+    "141573": {
+        "question": "Hồ sơ điều chỉnh giấy phép xây dựng bao gồm những gì?",
+        "answer": null
+    },
+    "975": {
+        "question": "Các hành vi nào bị nghiêm cấm đối với giáo viên các cấp ?",
+        "answer": null
+    },
+    "162669": {
+        "question": "05 mục tiêu cụ thể nào của Dự án phòng ngừa tội phạm và phòng, chống vi phạm pháp luật cho học sinh, sinh viên?",
+        "answer": null
+    },
+    "133691": {
+        "question": "Quy định về bổ nhiệm chức danh nghề nghiệp chuyên viên lưu trữ và xếp lương khi trúng tuyển kỳ thi hoặc xét thăng hạng như thế nào?",
+        "answer": null
+    },
+    "91263": {
+        "question": "Thời điểm có giá trị sử dụng của thẻ bảo hiểm y tế tự nguyện là khi nào?",
+        "answer": null
+    },
+    "93551": {
+        "question": "Dữ liệu ảnh viễn thám được thu nhận từ những nguồn nào?",
+        "answer": null
+    },
+    "51947": {
+        "question": "Tụ tập tại chợ tự phát, gây mất trật tự công cộng có thể bị xử phạt như thế nào?",
+        "answer": null
+    },
+    "112505": {
+        "question": "Tham nhũng là gì? Những hành vi nào được xem là tham nhũng?",
+        "answer": null
+    },
+    "134377": {
+        "question": "Hồ sơ xin đánh giá mức độ khuyết tật đối với trẻ em dưới 6 tuổi bị tim bẩm sinh phức tạp (đảo gốc động mạch), mổ hở sửa toàn bộ gồm những gì?",
+        "answer": null
+    },
+    "37669": {
+        "question": "Các biện pháp chung để chủ động ứng phó với những thách thức trong công tác điều hành giá trong Quý 2 và các tháng còn lại của năm 2023 ra sao?",
+        "answer": null
+    },
+    "113581": {
+        "question": "Người cao tuổi được hưởng những chế độ gì từ chính sách bảo trợ xã hội?",
+        "answer": null
+    },
+    "102339": {
+        "question": "Khi thiết kế nhà cao tầng phải đáp ứng những yêu cầu gì về ngăn cháy?",
+        "answer": null
+    },
+    "86293": {
+        "question": "Thủ tướng chính thức phê duyệt Quy hoạch điện 8? ",
+        "answer": null
+    },
+    "35853": {
+        "question": "Điều kiện buôn bán phân bón",
+        "answer": null
+    },
+    "96859": {
+        "question": "Thời hạn giải quyết thủ tục tiếp nhận lưu học sinh tốt nghiệp về nước là bao lâu?",
+        "answer": null
+    },
+    "44147": {
+        "question": "Cơ cấu tổ chức của Cục Viễn thông như thế nào?",
+        "answer": null
+    },
+    "8775": {
+        "question": "Hồ sơ đề nghị giải thể quỹ đóng cần chuẩn bị những loại giấy tờ nào?",
+        "answer": null
+    },
+    "129525": {
+        "question": "Hiệp hội Gas Việt Nam có tư cách pháp nhân không? Trụ sở chính của Hiệp hội đặt tại đâu?",
+        "answer": null
+    },
+    "151429": {
+        "question": "Việc chi của Quỹ phát triển khoa học và công nghệ của doanh nghiệp để thực hiện hoạt động chuyển giao công nghệ như thế nào?",
+        "answer": null
+    },
+    "19109": {
+        "question": "Chương trình đào tạo sát hạch lái xe dành cho các thí sinh được quy định như thế nào?",
+        "answer": null
+    },
+    "41447": {
+        "question": "Nhiệm vụ của đoàn thanh tra kỳ thi tốt nghiệp THPT là gì?",
+        "answer": null
+    },
+    "10039": {
+        "question": "Một số chỉ định xét nghiệm và thăm dò chức năng dựa trên các triệu chứng lâm sàng?",
+        "answer": null
+    },
+    "99277": {
+        "question": "Thành viên tổ hợp tác có quyền, nghĩa vụ như thế nào?",
+        "answer": null
+    },
+    "168055": {
+        "question": "Hoạt động kiểm tra của Đảng và giám sát của Đảng được thực hiện bởi các tổ chức đảng được phân biệt như thế nào?",
+        "answer": null
+    },
+    "71729": {
+        "question": "Thời hạn nộp lưu hồ sơ kiểm toán vào bộ phận lưu trữ của Kiểm toán Nhà nước là bao lâu?",
+        "answer": null
+    },
+    "39439": {
+        "question": "Hiệu trưởng trường cao đẳng là người thế nào?",
+        "answer": null
+    },
+    "39407": {
+        "question": "Thời hạn giải quyết chế độ tử tuất là bao lâu?",
+        "answer": null
+    },
+    "80125": {
+        "question": "Nhiệm vụ của thống kê viên trung cấp được quy định như thế nào?",
+        "answer": null
+    },
+    "23869": {
+        "question": "Đương sự có quyền yêu cầu trưng cầu giám định không?",
+        "answer": null
+    },
+    "85371": {
+        "question": "Để công bố hợp quy sản phẩm thì đối tượng nào thuộc diện được công bố và cần thực hiện theo những nguyên tắc nào?",
+        "answer": null
+    },
+    "40691": {
+        "question": "Người thân thích của đương sự được làm người làm chứng trong vụ án hình sự hay không?",
+        "answer": null
+    },
+    "135899": {
+        "question": "Có được hủy bỏ hợp đồng mua bán nhà đã được công chứng hay không?",
+        "answer": null
+    },
+    "86741": {
+        "question": "Dấu hiệu trẻ em nhiễm vi rút Adeno ở mức độ nguy kịch là gì?",
+        "answer": null
+    },
+    "3055": {
+        "question": "Đội trưởng Đội Quản lý thị trường có thẩm quyền xử phạt cơ sở khảo nghiệm giống thủy sản công bố không đúng kết quả khảo nghiệm không?",
+        "answer": null
+    },
+    "61955": {
+        "question": "Doanh nghiệp đầu tư xây dựng và quản lý khai thác công trình đường bộ tự thực hiện công việc quản lý như thế nào? ",
+        "answer": null
+    },
+    "107143": {
+        "question": "Tổ chức kinh tế có quyền gì khi được Nhà nước giao đất để trồng rừng phòng hộ bằng vốn tự đầu tư?",
+        "answer": null
+    },
+    "67925": {
+        "question": "Thông báo về thi hành án",
+        "answer": null
+    },
+    "71275": {
+        "question": "Khi phát hiện những biểu hiện suy thoái đạo đức, lối sống của cán bộ, đảng viên thì chủ thể giám sát có thể báo cáo, phản ảnh với ai?",
+        "answer": null
+    },
+    "19329": {
+        "question": "Kiểm soát viên Công ty TNHH một thành viên Nhà xuất bản Nông nghiệp cần đáp ứng những tiêu chuẩn và điều kiện gì?",
+        "answer": null
+    },
+    "97651": {
+        "question": "Điều kiện thực hiện hoạt động ngoại hối khác trên thị trường trong nước và quốc tế là gì?",
+        "answer": null
+    },
+    "4575": {
+        "question": "Giá tính thuế tài nguyên đối với doanh nghiệp khai thác tài nguyên khoáng sản là kim loại được quy định như thế nào?",
+        "answer": null
+    },
+    "6857": {
+        "question": "Trong việc quản lý công chức, viên chức của Bộ Tài nguyên và Môi trường thì Tổng cục trưởng được quyền quyết định bổ nhiệm đối với những vị trí nào?",
+        "answer": null
+    },
+    "8173": {
+        "question": "Khi có tai nạn lao động hàng hải làm chết người thì phải làm sao?",
+        "answer": null
+    },
+    "49975": {
+        "question": "Tự ý thôi việc có được bảo lưu bảo hiểm thất nghiệp không?",
+        "answer": null
+    },
+    "124543": {
+        "question": "Giá đất ở, đất thương mại, dịch vụ và đất sản xuất kinh doanh phi nông nghiệp không phải là đất thương mại, dịch vụ tại đô thị trên địa bàn TP Hà Nội được xác định ra sao?",
+        "answer": null
+    },
+    "69649": {
+        "question": "Thời điểm tổ chức kinh doanh dịch vụ đại diện sở hữu công nghiệp có quyền đại diện nộp đơn đăng ký?",
+        "answer": null
+    },
+    "33505": {
+        "question": "Thời hạn giấy phép lao động là bao lâu?",
+        "answer": null
+    },
+    "79103": {
+        "question": "Khi phẫu thuật điều trị tật cận thị bằng kỹ thuật phẫu thuật Lasik cần theo dõi bệnh nhân như thế nào?",
+        "answer": null
+    },
+    "4637": {
+        "question": "Mẫu quyết định phân công Phó Thủ trưởng Cơ quan điều tra giải quyết nguồn tin về tội phạm được sử dụng và quản lý theo nguyên tắc nào?",
+        "answer": null
+    },
+    "76417": {
+        "question": "Người có uy tín trong đồng bào dân tộc thiểu số bị đưa ra khỏi danh sách người có uy tín trong trường hợp nào?",
+        "answer": null
+    },
+    "113931": {
+        "question": "Chủ tịch Ủy ban nhân dân cấp tỉnh có quyền xử phạt cơ sở khảo nghiệm không lưu hồ sơ về quá trình khảo nghiệm thức ăn chăn nuôi không?",
+        "answer": null
+    },
+    "64783": {
+        "question": "Các tổ chức tín dụng được phép giao dịch ngoại tệ với nhau thông qua thỏa thuận giao dịch như thế nào?",
+        "answer": null
+    },
+    "23469": {
+        "question": "Những việc đã giao cho Phó Tổng cục trưởng thì có thuộc phạm vi giải quyết của Tổng cục trưởng Tổng cục Thủy lợi hay không?",
+        "answer": null
+    },
+    "37955": {
+        "question": "Trách nhiệm của Kiểm soát viên trong Công ty TNHH hai thành viên là gì?",
+        "answer": null
+    },
+    "163315": {
+        "question": "Thế nào là hao hụt xăng dầu?",
+        "answer": null
+    },
+    "739": {
+        "question": "Có cần phải thẩm định hồ sơ chuyển nhượng toàn bộ hoặc một phần dự án bất động sản không?",
+        "answer": null
+    },
+    "154891": {
+        "question": "Cơ cấu tổ chức Phòng Dự toán Quản lý thu ngân sách thuộc Cục Thuế xuất nhập khẩu như thế nào?",
+        "answer": null
+    },
+    "35257": {
+        "question": "Một số lưu ý về đề án tuyển sinh",
+        "answer": null
+    },
+    "124851": {
+        "question": "Đề nghị cấp lại Giấy kiểm tra điều lệnh Công an nhân dân bao gồm những giấy tờ gì?",
+        "answer": null
+    },
+    "58173": {
+        "question": "Hội viên của Hội Khoa học và Công nghệ Mỏ Việt Nam có những nhiệm vụ thế nào?",
+        "answer": null
+    },
+    "11611": {
+        "question": "Chính sách hỗ trợ bảo vệ rừng tại cơ sở được quy định như thế nào?",
+        "answer": null
+    },
+    "8457": {
+        "question": "Mục đích hoạt động của Hiệp hội Cao đẳng cộng đồng Việt Nam là gì?",
+        "answer": null
+    },
+    "102885": {
+        "question": "Đối tượng nào được tham gia bảo hiểm y tế? ",
+        "answer": null
+    },
+    "152505": {
+        "question": "Thủ tục cấp giấy xác nhận thân nhân người có công tại UBND cấp xã mới nhất 2023 thực hiện ra sao?",
+        "answer": null
+    },
+    "28851": {
+        "question": "Sau khi hết thời gian tập sự thì có phải mức lương sẽ tăng từ bậc 1 lên bậc 2 không?",
+        "answer": null
+    },
+    "63093": {
+        "question": "Khi vi phạm pháp luật về đất đai sẽ bị xử phạt hành chính bằng các hình thức nào?",
+        "answer": null
+    },
+    "73195": {
+        "question": "Tổ chức và phát triển thị trường các-bon tại Việt Nam được quy định như thế nào?",
+        "answer": null
+    },
+    "17727": {
+        "question": "Người nào được làm Giám đốc Quỹ Hỗ trợ và Phát triển sinh viên Việt Nam?",
+        "answer": null
+    },
+    "138571": {
+        "question": "Tiêu chí công nhận thuộc Mạng lưới tư vấn viên hỗ trợ doanh nghiệp chuyển đổi số đối với cá nhân tư vấn là công dân Việt Nam gồm những gì?",
+        "answer": null
+    },
+    "149023": {
+        "question": "Thời gian hưởng chế độ ốm đau khi 02 con dưới 07 tuổi bị ốm đau cùng lúc được pháp luật quy định như thế nào?",
+        "answer": null
+    },
+    "31969": {
+        "question": "Điều kiện hoàn thuế thu nhập cá nhân đối với người lao động chưa đến mức phải nộp thuế là gì?",
+        "answer": null
+    },
+    "89273": {
+        "question": "Thẩm quyền quyết định tăng danh hiệu Chiến sĩ thi đua thuộc về ai?",
+        "answer": null
+    },
+    "104979": {
+        "question": "Chứng thư giám định dây chuyền công nghệ đã qua sử dụng phải có những nội dung gì?",
+        "answer": null
+    },
+    "17601": {
+        "question": "Sau phẫu thuật điều trị phục hồi khuyết hổng xương hàm dưới sau chấn thương có ghép xương tự thân cần theo dõi bệnh nhân như thế nào?",
+        "answer": null
+    },
+    "72801": {
+        "question": "Trước khi hết thời hạn hợp đồng lao động xác định thời hạn dưới 12 tháng bao nhiêu ngày đơn vị công an nhân dân phải ký hợp đồng gia hạn?",
+        "answer": null
+    },
+    "15029": {
+        "question": "Người thực hiện chứng thực tại cơ quan đại diện ngoại giao bao gồm những ai?",
+        "answer": null
+    },
+    "949": {
+        "question": "Đề xuất hệ số lương ngạch công chức chuyên ngành thống kê?",
+        "answer": null
+    },
+    "55149": {
+        "question": "Thời hiệu xử phạt vi phạm hành chính đối với người gửi hàng hóa nguy hiểm để vận chuyển hàng không mà không khai báo là bao lâu?",
+        "answer": null
+    },
+    "94045": {
+        "question": "Việc thu hẹp kho ngoại quan được thực hiện theo quy trình như thế nào?",
+        "answer": null
+    },
+    "83877": {
+        "question": "Việc trả nhuận bút cho biên kịch và đạo diễn phim phóng sự theo tỷ lệ phần trăm của chi phí sản xuất là bao nhiêu?",
+        "answer": null
+    },
+    "82269": {
+        "question": "Về mức cho vay hiện nay là bao nhiêu?",
+        "answer": null
+    },
+    "15491": {
+        "question": "Yêu cầu như thế nào về nguyên vẹn dữ liệu trong hệ thống thông tin cấp độ 5 để đúng với Tiêu chuẩn?",
+        "answer": null
+    },
+    "123443": {
+        "question": "Cơ quan điều tra tiến hành xem xét cam kết của nhà sản xuất dựa trên những căn cứ nào?",
+        "answer": null
+    },
+    "75131": {
+        "question": "Những việc mà đảng viên bị cấm tham gia trong thời gian bị kỷ luật khiển trách là những việc gì?",
+        "answer": null
+    },
+    "147237": {
+        "question": "Nội dung, hình thức, thời gian tuyển dụng công chức Bộ Công thương 2023 ra sao?",
+        "answer": null
+    },
+    "167037": {
+        "question": "Có thể yêu cầu Tòa án phân chia tài sản chung trong thời kỳ hôn nhân sau khi ly hôn hay không?",
+        "answer": null
+    },
+    "66059": {
+        "question": "Thẻ an toàn điện bị thu hồi trong trường hợp nào?",
+        "answer": null
+    },
+    "143433": {
+        "question": "Chứng chỉ hành nghề hoạt động đấu thầu là gì? Chứng chỉ hành nghề hoạt động đấu thầu có giá trị sử dụng trong bao lâu? ",
+        "answer": null
+    },
+    "165959": {
+        "question": "Các phương án tổ chức và hoạt động của văn phòng công chứng theo dự thảo sửa đổi luật công chứng là gì?",
+        "answer": null
+    },
+    "127467": {
+        "question": "Mức hưởng trợ cấp thất nghiệp khi làm qua nhiều công ty là bao nhiêu?",
+        "answer": null
+    },
+    "65771": {
+        "question": "Cục An toàn thông tin có những đơn vị sự nghiệp trực thuộc nào?",
+        "answer": null
+    },
+    "74191": {
+        "question": "Cơ quan có trách nhiệm tổ chức huấn luyện, bồi dưỡng chuyên môn về thuốc bảo vệ thực vật?",
+        "answer": null
+    },
+    "56121": {
+        "question": "Đơn đề nghị cấp Giấy phép thành lập Quỹ tín dụng nhân dân quy định như thế nào?",
+        "answer": null
+    },
+    "32665": {
+        "question": "Mẫu kế hoạch xây dựng tiêu chuẩn quốc gia trong lĩnh vực quân sự, quốc phòng năm năm được quy định như thế nào?",
+        "answer": null
+    },
+    "35499": {
+        "question": "Khi khám sức khỏe nghĩa vụ quân sự thì cần mang theo những giấy tờ gì?",
+        "answer": null
+    },
+    "29833": {
+        "question": "Căn cứ vào kết quả đánh giá, cán bộ đoàn thanh tra ngành Tài chính được đánh giá, xếp loại như thế nào?",
+        "answer": null
+    },
+    "26173": {
+        "question": "Cơ quan nào có trách nhiệm hướng dẫn, theo dõi, đôn đốc, kiểm tra việc công khai thủ tục hành chính tại trụ sở cơ quan, đơn vị trực tiếp tiếp nhận, giải quyết?",
+        "answer": null
+    },
+    "165273": {
+        "question": "Quy định pháp luật về xe trung chuyển hành khách như thế nào?",
+        "answer": null
+    },
+    "72539": {
+        "question": "Trạm y tế xã có những chức năng gì theo quy định của pháp luật?",
+        "answer": null
+    },
+    "10013": {
+        "question": "Bộ quy tắc chuẩn mực đạo đức của doanh nghiệp xếp hạng tín nhiệm được áp dụng cho các đối tượng nào?",
+        "answer": null
+    },
+    "58563": {
+        "question": "Các giấy tờ, tài liệu nào được miễn chứng nhận hợp pháp hóa lãnh sự được quy định như thế nào?",
+        "answer": null
+    },
+    "34421": {
+        "question": "Máy trưởng tàu tuần tra TT200 có trách nhiệm gì trong phạm vi nhiệm vụ?",
+        "answer": null
+    },
+    "123257": {
+        "question": "Điều kiện để học sinh THPT được xếp loại trung bình",
+        "answer": null
+    },
+    "69783": {
+        "question": "Cơ sở đào tạo bổ sung phải báo cáo kết quả kiểm tra, đánh giá đầu vào và kết quả xét cấp giấy chứng nhận đào tạo bổ sung khi nào?",
+        "answer": null
+    },
+    "128715": {
+        "question": "Người học có thể xin thay đổi cơ sở đào tạo sơ cấp hay không?",
+        "answer": null
+    },
+    "104497": {
+        "question": "Có bắt buộc phải lắp thiết bị giám sát hành trình tàu cá khi khai thác thủy sản?",
+        "answer": null
+    },
+    "38583": {
+        "question": "Hồ sơ đề nghị xét nâng bậc lương trước thời hạn như thế nào?",
+        "answer": null
+    },
+    "156629": {
+        "question": "Kiểm toán và kế toán là gì? ",
+        "answer": null
+    },
+    "104787": {
+        "question": "Không điều tra khu vực đất ô nhiễm khi khai thác khoáng sản sẽ bị phạt bao nhiêu tiền?",
+        "answer": null
+    },
+    "132449": {
+        "question": "Nộp hồ sơ bao lâu thì được cấp Giấy chứng nhận đủ điều kiện sản xuất thuốc thú y?",
+        "answer": null
+    },
+    "144427": {
+        "question": "Cơ sở dữ liệu quốc gia về Bảo hiểm được xây dựng, quản lý như thế nào?",
+        "answer": null
+    },
+    "21245": {
+        "question": "Quỹ Dịch vụ viễn thông công ích Việt Nam công khai tài chính dựa theo nguyên tắc nào?",
+        "answer": null
+    },
+    "119213": {
+        "question": "Thủ tục khai báo tạm trú đối với người nước ngoài đến du lịch tại Việt Nam ra sao?",
+        "answer": null
+    },
+    "78403": {
+        "question": "Thẩm quyền đánh giá, xếp loại chất lượng viên chức như thế nào?",
+        "answer": null
+    },
+    "11675": {
+        "question": "Người biểu diễn nghệ thuật có nội dung xuyên tạc lịch sử thì bị xử phạt vi phạm hành chính bao nhiêu tiền?",
+        "answer": null
+    },
+    "45049": {
+        "question": "Hồ sơ nhận nuôi con nuôi và hồ sơ của người được nhận làm con nuôi phải bao gồm những giấy tờ nào?",
+        "answer": null
+    },
+    "15567": {
+        "question": "Cục trưởng thuộc Bộ, cơ quan ngang Bộ là ai?",
+        "answer": null
+    },
+    "151961": {
+        "question": "Có bắt buộc sinh viên ngành sư phạm mầm non phải nộp bản sao bằng tốt nghiệp trung học phổ thông khi làm thủ tục nhập học trường đại học hay không?",
+        "answer": null
+    },
+    "145601": {
+        "question": "Điều kiện đối với cơ sở sản xuất thuốc bảo vệ thực vật được quy định như thế nào?",
+        "answer": null
+    },
+    "50395": {
+        "question": "Người lao động có thể yêu cầu về phụ cấp thâm niên đối với người sử dụng lao động hay không?",
+        "answer": null
+    },
+    "37681": {
+        "question": "Quy định chung về kiểm soát chất lượng an ninh hàng không là gì?",
+        "answer": null
+    },
+    "81855": {
+        "question": "Những hành vi nào bị nghiêm cấm trong điều tra cơ bản về dầu khí và hoạt động dầu khí?",
+        "answer": null
+    },
+    "103853": {
+        "question": "Quản lý biểu mẫu xử phạt hành chính trong ngành giao thông vận tải được quy định như thế nào?",
+        "answer": null
+    },
+    "34513": {
+        "question": "Các hành vi cạnh tranh không lành mạnh bị cấm",
+        "answer": null
+    },
+    "136121": {
+        "question": "Nghi lễ đón, tiếp Nguyên thủ quốc gia thăm cấp nhà nước là gì?",
+        "answer": null
+    },
+    "71975": {
+        "question": "Hành vi nào bị cấm trong tiếp công dân?",
+        "answer": null
+    },
+    "107561": {
+        "question": "Nghĩa vụ của người giám định tư pháp là gì?",
+        "answer": null
+    },
+    "149097": {
+        "question": "Bảo hiểm y tế tự nguyện có giá trị sử dụng kể từ khi nào?",
+        "answer": null
+    },
+    "54735": {
+        "question": "Trong những trường hợp nào thì việc đưa tin buồn đối với Lễ tang cán bộ, công chức, viên chức được thực hiện trên báo Nhân dân?",
+        "answer": null
+    },
+    "93637": {
+        "question": "Hồ sơ xin gia hạn thực hiện hoạt động ngoại hối khác trên thị trường trong nước và quốc tế gồm những tài liệu nào?",
+        "answer": null
+    },
+    "141873": {
+        "question": "Tổng hợp 120 đối tượng kê khai tài sản, thu nhập hằng năm? ",
+        "answer": null
+    },
+    "125281": {
+        "question": "Tham gia giao thông nhưng không mang bảo hiểm xe máy thì bị xử phạt như thế nào? ",
+        "answer": null
+    },
+    "60813": {
+        "question": "Tổ chức cung cấp dịch vụ chứng thực chữ ký số công cộng phải thực hiện những nghĩa vụ nào?",
+        "answer": null
+    },
+    "99933": {
+        "question": "Cướp tài sản rồi ra đầu thú thì có được giảm nhẹ hình phạt?",
+        "answer": null
+    },
+    "141629": {
+        "question": "Yêu cầu chung đối với cửa hàng xăng dầu trên mặt đất được quy định như thế nào?",
+        "answer": null
+    },
+    "99917": {
+        "question": "Người khuyết tật có được nhà nước hỗ trợ chi phí bảo hiểm y tế không?",
+        "answer": null
+    },
+    "66243": {
+        "question": "Tiêu chuẩn để trở thành luật sư bao gồm những gì?",
+        "answer": null
+    },
+    "21039": {
+        "question": "Căn cứ cấp giấy chứng nhận hy sinh trong trường hợp đặc biệt dũng cảm cứu người gồm những gì?",
+        "answer": null
+    },
+    "47": {
+        "question": "Người thực tập nghiệp vụ đăng kiểm viên xe cơ giới được tập huấn các nội dung gì về lý thuyết nghiệp vụ?",
+        "answer": null
+    },
+    "108921": {
+        "question": "Bảo hiểm y tế có chi trả chi phí chữa cận thị bẩm sinh không?",
+        "answer": null
+    },
+    "65201": {
+        "question": "Người nước ngoài có giấy phép lái xe tạm thời có được đổi giấy phép lái xe ở Việt Nam không?",
+        "answer": null
+    },
+    "142963": {
+        "question": "Điều kiện để đăng ký dự tuyển công chức ra sao?",
+        "answer": null
+    },
+    "163989": {
+        "question": "Công chức, viên chức từng giữ chức vụ quản lý thuộc lĩnh vực quản lý của Bộ Giáo dục và Đào tạo được giữ chức vụ điều hành hợp tác xã sau thời hạn bao lâu?",
+        "answer": null
+    },
+    "135593": {
+        "question": "Là tổ chức đại diện quyền sở hữu của Học viện Dân tộc trực thuộc Ủy ban Dân tộc, Hội đồng Học viện có những nhiệm vụ và quyền hạn như thế nào?",
+        "answer": null
+    },
+    "132251": {
+        "question": "Thang máy căn hộ lưu trú được kiểm định an toàn trong những trường hợp nào?",
+        "answer": null
+    },
+    "122407": {
+        "question": "Nhiệm vụ và quyền hạn của Thủ tướng Chính phủ được quy định như thế nào?",
+        "answer": null
+    },
+    "129761": {
+        "question": "Trường hợp không có nhu cầu chuyển nơi nhận trợ cấp thất nghiệp nữa thì người lao động phải làm gì?",
+        "answer": null
+    },
+    "89187": {
+        "question": "Thời điểm đánh giá xếp loại chất lượng cán bộ, công chức, viên chức",
+        "answer": null
+    },
+    "133739": {
+        "question": "Tài sản nào hình thành từ Quỹ phát triển khoa học và công nghệ không được tính khấu hao tài sản cố định vào chi phí được trừ?",
+        "answer": null
+    },
+    "126585": {
+        "question": "Hộ gia đình có phải xin phép cơ quan nhà nước trước khi chuyển đất trồng cây hàng năm sang đất ở hay không?",
+        "answer": null
+    },
+    "31643": {
+        "question": "Nguyên tắc biểu quyết tại Đại hội đại biểu Hội người mù Việt Nam là gì?",
+        "answer": null
+    },
+    "157745": {
+        "question": "Nguyên tắc phòng, chống bạo lực gia đình là gì?",
+        "answer": null
+    },
+    "46569": {
+        "question": "Công bố danh mục dự án chuyên ngành hàng không bao gồm những nội dung nào?",
+        "answer": null
+    },
+    "60747": {
+        "question": "Cảng, bến thủy nội địa phải tạm dừng hoạt động trong các trường hợp nào?",
+        "answer": null
+    },
+    "94169": {
+        "question": "Quyết định miễn nhiệm đối với công chức lãnh đạo có cần được sự đồng ý của các thành viên khác trong cơ quan hay không?",
+        "answer": null
+    },
+    "127587": {
+        "question": "Tòa án nhân dân Thành phố Hồ Chí Minh có bao nhiêu Tòa chuyên trách?",
+        "answer": null
+    },
+    "45597": {
+        "question": "Việc quản lý hồ sơ, sổ sách đào tạo cho chương trình cao đẳng, trung cấp được quy định ra sao?",
+        "answer": null
+    },
+    "92433": {
+        "question": "Biện pháp khắc phục trong trường hợp vi phạm này là gì?",
+        "answer": null
+    },
+    "141715": {
+        "question": "Chỉ đạo Bộ Kế hoạch và Đầu tư thực hiện chương trình để nâng cao hiệu quả kinh doanh trong khu vực kinh tế tư nhân như thế nào?",
+        "answer": null
+    },
+    "132019": {
+        "question": "Tài sản chìm đắm là gì?",
+        "answer": null
+    },
+    "145741": {
+        "question": "Trong trường hợp cần thiết, cơ quan nhà nước có thẩm quyền có thể áp dụng các biện pháp chống dịch nào?",
+        "answer": null
+    },
+    "86037": {
+        "question": "Nhiệm vụ của Hiệp hội Cao su Việt Nam là gì?",
+        "answer": null
+    },
+    "143901": {
+        "question": "Nhóm được ngân sách nhà nước hỗ trợ mức đóng theo quy định pháp luật ",
+        "answer": null
+    },
+    "149709": {
+        "question": "Ngân hàng thương mại phải đáp ứng điều kiện gì để được Ngân hàng Nhà nước thực hiện tái cấp vốn?",
+        "answer": null
+    },
+    "127023": {
+        "question": "Quyền ứng cử, giới thiệu người ứng cử vào các chức danh do Quốc hội bầu?",
+        "answer": null
+    },
+    "2771": {
+        "question": "Thu hồi đất nông nghiệp không đủ điều kiện để bồi thường thì người dân có được hỗ trợ gì không?",
+        "answer": null
+    },
+    "138857": {
+        "question": "Dịch vụ khí tượng hàng không sẽ có những nội dung được quy định như thế nào?",
+        "answer": null
+    },
+    "114697": {
+        "question": "Hồ sơ đề nghị công nhận tổ chức tôn giáo bao gồm những gì?",
+        "answer": null
+    },
+    "43083": {
+        "question": "Tổng giám đốc Trung tâm Lưu ký Chứng khoán Việt Nam thực hiện chức năng gì?",
+        "answer": null
+    },
+    "26363": {
+        "question": "Đề xuất nhiệm vụ khoa học cấp bộ của Bộ Tư pháp theo quy định được xây dựng dựa trên những căn cứ nào?",
+        "answer": null
+    },
+    "131033": {
+        "question": "Hồ sơ đề nghị bình chọn Nhà giáo của năm gồm những thành phần nào?",
+        "answer": null
+    },
+    "129777": {
+        "question": "Văn phòng đại diện tổ chức nghiên cứu nước ngoài có các nghĩa vụ và trách nhiệm gì?",
+        "answer": null
+    },
+    "121613": {
+        "question": "Lấy mẫu chẩn đoán khi áp dụng phương pháp mô bệnh học trong việc chẩn đoán bệnh sữa trên tôm hùm như thế nào?",
+        "answer": null
+    },
+    "14043": {
+        "question": "Tổng hợp phân tích kết quả phiếu tín nhiệm như thế nào?",
+        "answer": null
+    },
+    "44321": {
+        "question": "Thủ tục chia, tách, sáp nhập trường cao đẳng công lập được thực hiện thế nào? ",
+        "answer": null
+    },
+    "15553": {
+        "question": "Mức hưởng bảo hiểm xã hội một lần được quy định như thế nào?",
+        "answer": null
+    },
+    "145133": {
+        "question": "Giải pháp giải quyết vấn đề tai nạn lao động cho năm 2023 là gì?",
+        "answer": null
+    },
+    "21347": {
+        "question": "Thời hạn giải quyết trợ cấp tuất hằng tháng cho người lao động làm việc trong doanh nghiệp thuộc Bộ quốc phòng trong trường hợp bố chết và mẹ đang mang thai được quy định ra sao?",
+        "answer": null
+    },
+    "61199": {
+        "question": "Hồ sơ chấm dứt hoạt động cung cấp dịch vụ bù trừ, thanh toán giao dịch chứng khoán được giải quyết trong thời hạn bao nhiêu ngày?",
+        "answer": null
+    },
+    "41079": {
+        "question": "Giao dịch hợp đồng qua Sở Giao dịch hàng hóa được tính từ khi nào?",
+        "answer": null
+    },
+    "148573": {
+        "question": "Có được hưởng trợ cấp đối với hộ nghèo sinh 2 con gái hay không? ",
+        "answer": null
+    },
+    "91063": {
+        "question": "Nguyên tắc xác định nơi nộp thuế thu nhập doanh nghiệp là gì?",
+        "answer": null
+    },
+    "21881": {
+        "question": "Chọc chó nhà hàng xóm cắn người khác bị thương có phải bồi thường thiệt hại hay không?",
+        "answer": null
+    },
+    "109983": {
+        "question": "Lái xe ô tô tham gia giao thông có sử dụng chất ma túy bị xử phạt như thế nào?",
+        "answer": null
+    },
+    "104723": {
+        "question": "Nhà nước thực hiện đầu tư, hỗ trợ đối với hoạt động điện ảnh như thế nào?",
+        "answer": null
+    },
+    "815": {
+        "question": "Ngân sách địa phương có chi trả cho các hoạt động của Ủy ban Quốc gia Ứng phó sự cố thiên tai và Tìm kiếm Cứu nạn hay không?",
+        "answer": null
+    },
+    "23651": {
+        "question": "Đất ở được cấp cho hộ gia đình, cá nhân có chịu thuế sử dụng đất phi nông nghiệp không?",
+        "answer": null
+    },
+    "9615": {
+        "question": "Người tham gia tố tụng hành chính theo quy định của pháp luật như thế nào?",
+        "answer": null
+    },
+    "96815": {
+        "question": "Kế hoạch thanh tra thuế hàng năm đã được phê duyệt thì có thể điều chỉnh hay không?",
+        "answer": null
+    },
+    "67179": {
+        "question": "Người lao động bị chậm trả lương thì được quyền đơn phương chấm dứt hợp đồng lao động không?",
+        "answer": null
+    },
+    "125889": {
+        "question": "Kiểm tra, xác định năng lực nhà đầu tư như thế nào?",
+        "answer": null
+    },
+    "88963": {
+        "question": "Hồ sơ xét tặng huy chương được quy định như thế nào?",
+        "answer": null
+    },
+    "15999": {
+        "question": "Hồ sơ hoàn thuế được phân loại như thế nào?",
+        "answer": null
+    },
+    "49455": {
+        "question": "Thuế GTGT cho hóa đơn dịch vụ thu tiền trước ngày 01/7/2023 nhưng hoàn thành trong 6 tháng cuối năm 2023 là bao nhiêu?",
+        "answer": null
+    },
+    "134607": {
+        "question": "Kinh phí và cơ chế tài chính thực hiện đào tạo nghề nông nghiệp cho lao động nông thôn giai đoạn 2022-2025?",
+        "answer": null
+    },
+    "3933": {
+        "question": "Thủ tục cần thiết để thành lập một trung tâm anh ngữ, trực thuộc trường Cao đẳng Quốc tế Kent",
+        "answer": null
+    },
+    "65839": {
+        "question": "Việc cho vay chứng khoán theo phương thức thỏa thuận qua hệ thống được thực hiện trong trường hợp nào?",
+        "answer": null
+    },
+    "26045": {
+        "question": "Hợp tác xã phải đáp ứng điều kiện nào để được cấp giấy chứng nhận đăng ký hợp tác xã?",
+        "answer": null
+    },
+    "120661": {
+        "question": "Để đảm bảo an toàn tối thiểu thì khi cung cấp dịch vụ cấp điện cho tàu bay phải tuân thủ những quy định nào?",
+        "answer": null
+    },
+    "68871": {
+        "question": "Biển số xe NN là gì",
+        "answer": null
+    },
+    "17623": {
+        "question": "Ai có thẩm quyền thành lập, giải thể Ban chỉ huy quân sự Bộ, ngành trung ương?",
+        "answer": null
+    },
+    "47629": {
+        "question": "Giảng viên cơ hữu phải đảm bảo điều kiện gì về khối lượng giảng dạy của chương trình đào tạo từ xa?",
+        "answer": null
+    },
+    "8191": {
+        "question": "Mức lương tối thiểu vùng đối với người lao động làm việc theo hợp đồng lao động từ 01/7/2022?",
+        "answer": null
+    },
+    "97649": {
+        "question": "Kiểm toán viên được chấp thuận kiểm toán cho đơn vị có lợi ích công chúng cần có tối thiểu bao nhiêu tháng hành nghề?",
+        "answer": null
+    },
+    "39159": {
+        "question": "Thời gian kiểm tra viết của kỳ thi kiểm tra kết quả tập sự trợ giúp pháp lý là bao lâu?",
+        "answer": null
+    },
+    "96407": {
+        "question": "Người thực hiện công tác tiếp công dân có được hưởng chế độ bồi dưỡng hay không?",
+        "answer": null
+    },
+    "89607": {
+        "question": "Có bao nhiêu hình thức làm việc của Ủy ban thường vụ Quốc hội?",
+        "answer": null
+    },
+    "139345": {
+        "question": "Việc phát ngôn và cung cấp thông tin cho báo chí của Bộ Y tế được thực hiện thông qua những hình thức nào?",
+        "answer": null
+    },
+    "59041": {
+        "question": "Thẩm quyền thay đổi người nuôi con sau khi ly hôn thực hiện thế nào?",
+        "answer": null
+    },
+    "110929": {
+        "question": "Chữa bệnh động vật thủy sản dựa trên nguyên tắc gì?",
+        "answer": null
+    },
+    "9417": {
+        "question": "Nhãn của sản phẩm sữa thay thế sữa mẹ có được giống với hình ảnh nhãn sữa dành cho phụ nữ mang thai không?",
+        "answer": null
+    },
+    "8581": {
+        "question": "Mức phạt tiền tối đa đối với hành vi vi phạm hành chính về Trồng trọt là bao nhiêu?",
+        "answer": null
+    },
+    "96735": {
+        "question": "Nội dung hợp đồng theo mẫu không có hiệu lực trong trường hợp nào?",
+        "answer": null
+    },
+    "56489": {
+        "question": "Muốn đi nghĩa vụ quân sự dự bị thì phải thuộc trường hợp nào? ",
+        "answer": null
+    },
+    "109571": {
+        "question": "Hành vi giao xe cho người không đủ điều kiện điều khiển xe gắn máy tham gia giao thông sẽ bị xử phạt như thế nào?",
+        "answer": null
+    },
+    "149147": {
+        "question": "Viện trưởng Viện kiểm sát nhân dân tối cao có quyền bổ nhiệm Phó viện trưởng không?",
+        "answer": null
+    },
+    "127011": {
+        "question": "Được đăng ký dự kiểm định chất lượng đầu vào công chức tối đa bao nhiêu lần? ",
+        "answer": null
+    },
+    "148491": {
+        "question": "Thế nào là xổ số, vé số?",
+        "answer": null
+    },
+    "142621": {
+        "question": "Có các biện pháp bảo vệ nào đối với người làm chứng và người thân thích của người làm chứng trong vụ án hình sự?",
+        "answer": null
+    },
+    "60881": {
+        "question": "Tiêu chuẩn 1: Phẩm chất nhà giáo của giáo viên mầm non?",
+        "answer": null
+    },
+    "61969": {
+        "question": "Phẫu thuật cắt phanh má bằng Laser do ai thực hiện? Dụng cụ và thuốc phẫu thuật cắt phanh má được chuẩn bị như thế nào?",
+        "answer": null
+    },
+    "84377": {
+        "question": "Hồ sơ thủ tục và lệ phí cấp Giấy phép đưa người lao động Việt Nam đi làm việc ở nước ngoài",
+        "answer": null
+    },
+    "133349": {
+        "question": "Mức phạt khi công ty không ký hợp đồng đào tạo nghề với người lao động được pháp luật quy định như thế nào? ",
+        "answer": null
+    },
+    "73573": {
+        "question": "Vật chứng thu nhầm không liên quan đến vụ án thì xử lý như thế nào?",
+        "answer": null
+    },
+    "75851": {
+        "question": "Cơ cấu tổ chức của Hội Kế toán địa chất Việt Nam gồm những cơ quan nào? ",
+        "answer": null
+    },
+    "102299": {
+        "question": "Thương nhân kinh doanh mua bán khí sử dụng phương tiện đo để xác định lượng khí trong mua bán, thanh toán cần bảo đảm những yêu cầu gì?",
+        "answer": null
+    },
+    "127717": {
+        "question": "Tiêu hủy tài liệu, vật chứa bí mật nhà nước trong trường hợp nào?",
+        "answer": null
+    },
+    "154509": {
+        "question": "Việc cưỡng chế giao người chưa thành niên cho người được giao nuôi dưỡng chỉ được ủy thác thác trong trường hợp nào?",
+        "answer": null
+    },
+    "102149": {
+        "question": "Quy định về Giám đốc của Công ty trách nhiệm hữu hạn một thành viên",
+        "answer": null
+    },
+    "66425": {
+        "question": "Đối tượng nào sẽ được thuê mua nhà ở phục vụ tái định cư?",
+        "answer": null
+    },
+    "55463": {
+        "question": "Thực hiện báo cáo phương tiện phòng cháy chữa cháy như thế nào và tại đâu?",
+        "answer": null
+    },
+    "6905": {
+        "question": "Người sử dụng đất có quyền phân chia di sản là quyền sử dụng đất khi còn đang trong thời gian trả nợ tiền sử dụng đất hay không?",
+        "answer": null
+    },
+    "52155": {
+        "question": "Sổ theo dõi thực hiện tư vấn pháp luật miễn phí của Trung tâm tư vấn pháp luật là mẫu gì?",
+        "answer": null
+    },
+    "140671": {
+        "question": "Hậu quả của việc hủy bỏ hợp đồng",
+        "answer": null
+    },
+    "60985": {
+        "question": "Người điều khiển xe dừng xe trước trạm dừng xe buýt bị xử phạt như thế nào?",
+        "answer": null
+    },
+    "34369": {
+        "question": "Nghĩa vụ là gì? ",
+        "answer": null
+    },
+    "154317": {
+        "question": "Vợ có nghĩa vụ phải trả nợ cho khoản tiền vay của chồng để chữa bệnh cho con trong thời kỳ hôn nhân hay không?",
+        "answer": null
+    },
+    "106343": {
+        "question": "Người học tại các cơ sở đào tạo sơ cấp được nghỉ học tạm thời và bảo lưu kết quả học tập trong những trường hợp nào?",
+        "answer": null
+    },
+    "122379": {
+        "question": "Trình tự, thủ tục cho phép chuyển mục đích sử dụng đất",
+        "answer": null
+    },
+    "151451": {
+        "question": "Xin chứng nhận quyền sở hữu nhà xưởng bằng khung thép như thế nào?",
+        "answer": null
+    },
+    "133283": {
+        "question": "Thời gian, địa điểm thực hiện tập huấn trực tuyến hướng dẫn triển khai ứng dụng tem điện tử?",
+        "answer": null
+    },
+    "69435": {
+        "question": "Cơ quan chuyên trách bảo vệ an ninh quốc gia có những nhiệm vụ cụ thể nào?",
+        "answer": null
+    },
+    "138861": {
+        "question": "Người lao động đủ điều kiện hưởng trợ cấp thất nghiệp thì có được hưởng luôn bảo hiểm y tế không?",
+        "answer": null
+    },
+    "75417": {
+        "question": "Thẩm quyền tổ chức thi hành án của Thừa phát lại được quy định như thế nào?",
+        "answer": null
+    },
+    "74719": {
+        "question": "Khoảng cách tối thiểu được đặt phòng game (dịch vụ trò chơi điện tử) so với trường học là bao nhiêu?",
+        "answer": null
+    },
+    "158347": {
+        "question": "Có các biện pháp phòng ngừa, ngăn chặn vi phạm pháp luật về chứng khoán và thị trường chứng khoán nào?",
+        "answer": null
+    },
+    "141253": {
+        "question": "Nguyên đơn có phải làm lại đơn khởi kiện trong trường hợp vụ án dân sự có bản án phúc thẩm tuyên hủy bản án sơ thẩm vì vi phạm tố tụng không?",
+        "answer": null
+    },
+    "112135": {
+        "question": "Những đối tượng nào tham gia bảo hiểm y tế?",
+        "answer": null
+    },
+    "139003": {
+        "question": "Trách nhiệm của Cán bộ, công chức, viên chức, người lao động trong ngành Giao thông vận tải trong công tác phòng chống tác hại của việc uống rượu bia?",
+        "answer": null
+    },
+    "8573": {
+        "question": "Mức xử phạt hành chính đối với những hành vi liên quan đến thuốc hướng thần là bao nhiêu?",
+        "answer": null
+    },
+    "95887": {
+        "question": "Khi nghi ngờ mắc bệnh cúm A H1N1 người bệnh phải xử lý thế nào?",
+        "answer": null
+    },
+    "166843": {
+        "question": "Trưởng Ban kỹ thuật tiêu chuẩn quốc gia phải đáp ứng những yêu cầu nào?",
+        "answer": null
+    },
+    "163363": {
+        "question": "Trên Giấy chứng nhận đăng ký hộ kinh doanh sẽ có những nội dung gì?",
+        "answer": null
+    },
+    "26341": {
+        "question": "Hồ sơ đăng ký thành viên giao dịch đặc biệt chứng khoán phái sinh bao gồm những loại tài liệu gì?",
+        "answer": null
+    },
+    "6265": {
+        "question": "Số lượng Ủy viên Ban Chấp hành công đoàn cơ sở của doanh nghiệp đảm bảo có ít nhất bao nhiêu thành viên?",
+        "answer": null
+    },
+    "119687": {
+        "question": "Chuyên viên cao cấp về quản lý tài chính dự án đầu tư, doanh nghiệp của Cục hàng không Việt Nam phải làm những công việc nào?",
+        "answer": null
+    },
+    "32155": {
+        "question": "Chế độ báo cáo về việc tuyển sinh và cử công dân Việt Nam ra nước ngoài học tập như thế nào?",
+        "answer": null
+    },
+    "154503": {
+        "question": "Những loại xe nào phải lắp thiết bị giám sát hành trình?",
+        "answer": null
+    },
+    "41985": {
+        "question": "Sau khi hoàn thành việc kiểm kê tài sản doanh nghiệp cổ phần hóa cần phân loại tài sản của doanh nghiệp thành những những nhóm nào?",
+        "answer": null
+    },
+    "65747": {
+        "question": "Trẻ em mầm non có độ tuổi đi học là bao nhiêu?",
+        "answer": null
+    },
+    "152633": {
+        "question": "Cơ cấu tổ chức của Viện Nghiên cứu Hải quan như thế nào?",
+        "answer": null
+    },
+    "165635": {
+        "question": "Tổng Giám đốc có được ký các quy chế nội bộ Công ty không?",
+        "answer": null
+    },
+    "68651": {
+        "question": "Viện Hàn lâm Khoa học và Công nghệ Việt Nam có tối đa bao nhiêu Phó Chủ tịch?",
+        "answer": null
+    },
+    "20209": {
+        "question": "Trường hợp tổ chức, cá nhân nước ngoài đăng ký kê khai, nộp thuế trực tiếp với cơ quan thuế",
+        "answer": null
+    },
+    "160959": {
+        "question": "Phẫu thuật lấy thể thủy tinh sa vào dịch kính bằng kỹ thuật cắt dịch kính lấy thể thủy tinh có nhân cứng như thế nào?",
+        "answer": null
+    },
+    "38461": {
+        "question": "Trách nhiệm của UBND các tỉnh, TP trực thuộc Trung ương trong Đề án xây dựng 01 triệu căn hộ nhà ở xã hội cho công nhân là gì?",
+        "answer": null
+    },
+    "154717": {
+        "question": "Tiêu chuẩn về năng lực chuyên môn, nghiệp vụ đối với viên chức được bổ nhiệm vào chức danh kỹ thuật viên kiểm nghiệm thuốc thú y hạng 4 được quy định ra sao?",
+        "answer": null
+    },
+    "69277": {
+        "question": "Chủ tịch Ủy ban nhân dân cấp huyện có thẩm quyền xử phạt hành vi xúc phạm danh dự người tham gia hoạt động giáo dục sức khỏe về sức khỏe sinh sản vì định kiến giới không?",
+        "answer": null
+    },
+    "106983": {
+        "question": "Xử lý những hành vi bạo lực gia đình như thế nào?",
+        "answer": null
+    },
+    "48889": {
+        "question": "Khi tiến hành tố tụng, để buộc tội pháp nhân thì cần phải chứng minh được những vấn đề gì?",
+        "answer": null
+    },
+    "59245": {
+        "question": "Thành phần hồ sơ xuất khẩu giống vật nuôi, sản phẩm giống vật nuôi trong Danh mục giống vật nuôi cấm xuất khẩu phục vụ nghiên cứu khoa học, triển lãm, quảng cáo theo quy định pháp luật ",
+        "answer": null
+    },
+    "152385": {
+        "question": "Người học ngành dược trình độ trung cấp sau khi tốt nghiệp có thể làm những công việc nào?",
+        "answer": null
+    },
+    "156643": {
+        "question": "Mẫu quyết định tạm giam bị can trong giai đoạn chuẩn bị xét xử sơ thẩm mới nhất?",
+        "answer": null
+    },
+    "2415": {
+        "question": "Đối với trường đại học tuyển sinh trình độ cao đẳng bằng phương thức thi tuyển Ban thư ký Hội đồng tuyển sinh có nhiệm vụ và quyền hạn gì?",
+        "answer": null
+    },
+    "33443": {
+        "question": "Hành vi vi phạm quy định về vận hành thử nghiệm công trình xử lý chất thải của dự án đầu tư thuộc thẩm quyền cấp giấy phép môi trường của Ủy ban nhân dân cấp huyện?",
+        "answer": null
+    },
+    "44469": {
+        "question": "Kinh phí bồi thường Nhà nước bao gồm những khoản chi phí nào?",
+        "answer": null
+    },
+    "155049": {
+        "question": "Xử lý vụ việc có dấu hiệu tham nhũng trong kiểm toán nhà nước như thế nào?",
+        "answer": null
+    },
+    "37967": {
+        "question": "Cổ tức được quy định như thế nào?",
+        "answer": null
+    },
+    "56033": {
+        "question": "Chủ tịch Ủy ban nhân dân cấp huyện có quyền phạt tiền doanh nghiệp chế xuất không báo cáo về lượng hàng hóa nhập khẩu phục vụ xây dựng nhà xưởng đúng thời hạn không?",
+        "answer": null
+    },
+    "17591": {
+        "question": "Hậu ly hôn xúi giục con cái nghĩ xấu về cha bị xử phạt bao nhiêu?",
+        "answer": null
+    },
+    "97831": {
+        "question": "Quyền và trách nhiệm của người đề nghị cấp chứng chỉ hành nghề được quy định thế nào?",
+        "answer": null
+    },
+    "30529": {
+        "question": "Trách nhiệm của cơ quan nhà nước trong hợp tác quốc tế về phòng, chống rửa tiền được quy định như thế nào?",
+        "answer": null
+    },
+    "115289": {
+        "question": "Phát tờ rơi quảng cáo bột ngũ cốc dùng cho trẻ từ 12 đến dưới 24 tháng tuổi tại các ngã tư đường, trụ đèn đỏ bị xử phạt bao nhiêu?",
+        "answer": null
+    },
+    "89705": {
+        "question": "Thời hạn nộp báo cáo tài chính năm 2023 là khi nào?",
+        "answer": null
+    },
+    "162935": {
+        "question": "Người được cấp bằng tốt nghiệp cao đẳng sư phạm có nghĩa vụ như thế nào? ",
+        "answer": null
+    },
+    "126945": {
+        "question": "Công chức không giữ chức vụ lãnh đạo, quản lý được đánh giá ở mức hoàn thành tốt nhiệm vụ cần đáp ứng những tiêu chí nào?",
+        "answer": null
+    },
+    "110085": {
+        "question": "Đơn vị quản lý vận hành có trách nhiệm thế nào với việc thao tác thiết bị điện trong hệ thống điện quốc gia?",
+        "answer": null
+    },
+    "36627": {
+        "question": "Đối tượng được trang bị vũ khí thô sơ phải tuân thủ các quy định gì?",
+        "answer": null
+    },
+    "104799": {
+        "question": "Điều khiển xe máy kéo, xe máy chuyên dùng có nồng độ cồn dưới 0,25 miligam thì có bị xử phạt không?",
+        "answer": null
+    },
+    "122261": {
+        "question": "Lãnh trợ cấp thất nghiệp tính theo lương tháng cuối cùng đóng bảo hiểm thất nghiệp hay cộng hết tất cả thời gian đóng rồi chia ra bình quân?",
+        "answer": null
+    },
+    "46911": {
+        "question": "Nội dung báo cáo kết quả khảo sát xây dựng bao gồm những nội dung nào?",
+        "answer": null
+    },
+    "82295": {
+        "question": "Hồ sơ kế hoạch đầu tư phát triển cảng hàng không được thẩm định phê duyệt trong thời hạn bao nhiêu ngày?",
+        "answer": null
+    },
+    "138541": {
+        "question": "Khi cung cấp dịch vụ thám hiểm hang động thương nhân cần có các biện pháp đảm bảo an toàn nào?",
+        "answer": null
+    },
+    "102351": {
+        "question": "Hồ sơ đề nghị điều chỉnh nội dung giấy phép hoạt động của phương tiện xe cơ giới trong phạm vi bảo vệ công trình thủy lợi gồm những gì?",
+        "answer": null
+    },
+    "157553": {
+        "question": "Nguyên tắc công khai tài chính đối với ngân sách nhà nước của các tỉnh, thành phố trực thuộc Trung ương là gì?",
+        "answer": null
+    },
+    "114597": {
+        "question": "Người lưu trú tại cơ sở lưu trú của Bộ Công an có được hút thuốc lá trong buồng lưu trú không?",
+        "answer": null
+    },
+    "81331": {
+        "question": "Giá trị bồi thường đối với phần đất Nhà nước thu hồi được xác định như thế nào?",
+        "answer": null
+    },
+    "92507": {
+        "question": "Lô vị thuốc cổ truyền, thuốc cổ truyền bị thu hồi được phép khắc phục hoặc tái xuất trong trường hợp nào?",
+        "answer": null
+    },
+    "14797": {
+        "question": "Đối tượng miễn, giảm thu lệ phí cấp giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất trên địa bàn tỉnh Tiền Giang",
+        "answer": null
+    },
+    "126269": {
+        "question": "Chính sách hỗ trợ về nhà ở xã hội đối với hộ cận nghèo tại khu vực đô thị bao gồm những hình thức nào?",
+        "answer": null
+    },
+    "156345": {
+        "question": "Doanh nghiệp nộp thuế thu nhập doanh nghiệp ở đâu?",
+        "answer": null
+    },
+    "9405": {
+        "question": "Hiệp hội Kính xây dựng Việt Nam thành lập nhằm mục đích gì?",
+        "answer": null
+    },
+    "78401": {
+        "question": "Kết quả thi chứng chỉ bảo hiểm, chứng chỉ môi giới bảo hiểm, chứng chỉ về phụ trợ bảo hiểm có trong bao lâu?",
+        "answer": null
+    },
+    "16555": {
+        "question": "Trình tự sửa đổi, bổ sung thông tin cá nhân trong hồ sơ người có công đã chuyển ra như thế nào?",
+        "answer": null
+    },
+    "140245": {
+        "question": "Sẽ có dự thảo Nghị định quy định về Khu công nghệ cao trình Chính phủ trong quý 2/2023 đúng không?",
+        "answer": null
+    },
+    "80459": {
+        "question": "Địa điểm thực hiện thủ tục biên phòng theo cách thức thủ công đối với du thuyền được quy định thế nào?",
+        "answer": null
+    },
+    "125891": {
+        "question": "Vùng bảo hộ vệ sinh khu vực lấy nước sinh hoạt là gì?",
+        "answer": null
+    },
+    "111963": {
+        "question": "Trung tâm Dữ liệu và Hạ tầng công nghệ thông tin trực thuộc Cục Tin học và Thống kê tài chính có các nhiệm vụ như thế nào?",
+        "answer": null
+    },
+    "77473": {
+        "question": "Hồ sơ cấp Giấy chứng nhận đủ điều kiện thương nhân kinh doanh mua bán khí thiên nhiên nén cần những gì?",
+        "answer": null
+    },
+    "133111": {
+        "question": "Hội đồng thi tuyển chọn Thẩm phán do ai thành lập?",
+        "answer": null
+    },
+    "160135": {
+        "question": "Sử dụng nhân vật trong phim hoạt hình để quảng cáo rượu bia thì có vi phạm?",
+        "answer": null
+    },
+    "33163": {
+        "question": "Cấu trúc chương trình đào tạo của trường cao đẳng nghề theo từng ngành, nghề được thiết kế bao gồm những gì?",
+        "answer": null
+    },
+    "49833": {
+        "question": "Các giấy tờ nào có giá trị chứng nhận nguồn gốc xuất xứ sản phẩm thực phẩm? ",
+        "answer": null
+    },
+    "161583": {
+        "question": "Thành viên lập quỹ cần chuẩn bị những giấy tờ gì cho hồ sơ đăng ký lập quỹ hoán đổi danh mục?",
+        "answer": null
+    },
+    "137215": {
+        "question": "Trách nhiệm của Cơ quan bảo hiểm xã hội theo quy định pháp luật",
+        "answer": null
+    },
+    "146027": {
+        "question": "Người lái xe ô tô tham gia giao thông phải giảm tốc độ trong trường hợp nào? ",
+        "answer": null
+    },
+    "126955": {
+        "question": "Hồ sơ dự thầu theo phương thức một giai đoạn một túi hồ sơ được đánh giá dựa trên nguyên tắc nào?",
+        "answer": null
+    },
+    "49883": {
+        "question": "Chi tổ chức hội nghị quốc tế tổ chức theo hình thức luân phiên cấp Bộ trưởng đối với đại biểu và các đoàn khách dự được quy định thế nào?",
+        "answer": null
+    },
+    "146071": {
+        "question": "Cá nhân không thực hiện đăng ký tạm trú có thể bị xử phạt như thế nào?",
+        "answer": null
+    },
+    "78065": {
+        "question": "Hồ sơ đề nghị hỗ trợ liên kết gắn sản xuất với tiêu thụ sản phẩm nông nghiệp cần những gì?",
+        "answer": null
+    },
+    "97935": {
+        "question": "Việc cho vay vốn ưu đãi để mua nhà ở xã hội thông qua Ngân hàng Chính sách xã hội được thực hiện như thế nào?",
+        "answer": null
+    },
+    "137035": {
+        "question": "Thủ tục miễn thuế đối với hoạt động nhập khẩu linh kiện phục vụ đóng tàu, tàu biển xuất khẩu là gì?",
+        "answer": null
+    },
+    "157993": {
+        "question": "Quy định về mức xử phạt vi phạm hành chính đối với ô tô khi chạy quá tốc độ",
+        "answer": null
+    },
+    "104285": {
+        "question": "Người có thẻ bảo hiểm y tế đi khám bệnh không đúng tuyến có được chi trả?",
+        "answer": null
+    },
+    "30565": {
+        "question": "Người bệnh được chỉ định phẫu thuật tháo máu mủ hốc mắt khi nào? Phẫu thuật tháo máu mủ hốc mắt do ai thực hiện?",
+        "answer": null
+    },
+    "133995": {
+        "question": "Xin giấy phép xuất khẩu",
+        "answer": null
+    },
+    "146705": {
+        "question": "Trường hợp vật liệu nổ có nguy cơ gây mất an toàn, cần xử lý khẩn cấp thì ai có quyền quyết định tiêu hủy ngay?",
+        "answer": null
+    },
+    "157281": {
+        "question": "Đối tượng phục vụ của cơ sở trợ giúp xã hội bao gồm những đối tượng nào?",
+        "answer": null
+    },
+    "24103": {
+        "question": "Thẩm quyền kiểm tra về tổ chức hoạt động công chứng thuộc về cơ quan nào?",
+        "answer": null
+    },
+    "73025": {
+        "question": "Nhập khẩu linh kiện điện tử để bảo hành cho máy móc, thiết bị xuất khẩu thì có được hoàn thuế nhập khẩu hay không?",
+        "answer": null
+    },
+    "87143": {
+        "question": "Chủ tịch Hội đồng quản lý của đơn vị sự nghiệp công lập ngành Tư pháp sẽ có những nhiệm vụ và quyền hạn gì?",
+        "answer": null
+    },
+    "73425": {
+        "question": "Có thể đem thiết bị đạt giải nhất ở Hội thi thiết bị đào tạo tự làm cấp cơ sở để tham gia hội thi cấp tỉnh hay không?",
+        "answer": null
+    },
+    "70611": {
+        "question": "Người yêu cầu đăng ký biện pháp bảo đảm có nghĩa vụ và trách nhiệm gì?",
+        "answer": null
+    },
+    "74769": {
+        "question": "Mức lương có sở dùng làm căn cứ để tính gì?",
+        "answer": null
+    },
+    "29497": {
+        "question": "Nhiệm vụ và quyền hạn của Chi cục Đăng kiểm trong việc tổ chức thực hiện công tác đăng kiểm chất lượng, an toàn kĩ thuật đối với phương tiện, thiết bị giao thông vận tải là gì?",
+        "answer": null
+    },
+    "119197": {
+        "question": "Quy trình cho ý kiến đối với văn kiện chương trình hợp tác pháp luật được thực hiện thế nào?",
+        "answer": null
+    },
+    "23577": {
+        "question": "Thu thập thông tin về hệ thống kiểm soát nội bộ thực hiện bằng những phương pháp chủ yếu nào?",
+        "answer": null
+    },
+    "27263": {
+        "question": "Không cung cấp mẫu lưu giống cây trồng khi thanh tra, kiểm tra, giải quyết tranh chấp về giống cây trồng yêu cầu bị phạt thế nào?",
+        "answer": null
+    },
+    "138569": {
+        "question": "Biện pháp bảo đảm trong hoạt động chứng khoán được áp dụng đối với những đối tượng nào?",
+        "answer": null
+    },
+    "157079": {
+        "question": "Đánh giá định kì học viên trong Chương trình xóa mù chữ được hiểu như thế nào?",
+        "answer": null
+    },
+    "45111": {
+        "question": "Về nguồn kinh phí chi trả trợ cấp thôi việc có quy định những gì?",
+        "answer": null
+    },
+    "116501": {
+        "question": "Trị giá hải quan dùng để làm gì?",
+        "answer": null
+    },
+    "75815": {
+        "question": "Cơ sở khám bệnh, chữa bệnh bảo hiểm y tế có quyền gì về bảo hiểm y tế?",
+        "answer": null
+    },
+    "120887": {
+        "question": "Không cứu giúp người đang ở trong tình trạng nguy hiểm đến tính mạng thì có vi phạm pháp luật hay không?",
+        "answer": null
+    },
+    "119635": {
+        "question": "Người là nạn nhân của bạo lực gia đình có được chăm sóc, nuôi dưỡng trong cơ sở trợ giúp xã hội không?",
+        "answer": null
+    },
+    "16191": {
+        "question": "Bộ trưởng Bộ Tài chính, Thống đốc Ngân hàng Nhà nước Việt Nam chỉ đạo các cơ quan, đơn vị chức năng ",
+        "answer": null
+    },
+    "144871": {
+        "question": "Người tung tin sai sự thật nhằm vu khống người khác trên mạng xã hội Facebook có bị truy cứu trách nhiệm hình sự không?",
+        "answer": null
+    },
+    "12579": {
+        "question": "Khi nào trường cấp 3 cho thí sinh thi tốt nghiệp THPT rút học bạ để nộp cho trường đại học? ",
+        "answer": null
+    },
+    "70087": {
+        "question": "Một số các lưu ý khi thực hiện linh hoạt quy mô tuyển sinh/năm gồm những gì?",
+        "answer": null
+    },
+    "42381": {
+        "question": "Thẩm quyền của cơ quan tiến hành tố tụng của Việt Nam trong việc dẫn độ được quy định như thế nào?",
+        "answer": null
+    },
+    "147933": {
+        "question": "Nguyên tắc cấp giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản gắn liền với đất (sổ đỏ) là gì?",
+        "answer": null
+    },
+    "16993": {
+        "question": "Nguyên tắc áp dụng kỹ thuật mang thai hộ vì mục đích nhân đạo hiện nay ra sao?",
+        "answer": null
+    },
+    "131253": {
+        "question": "Những loại phân bón nào không được công nhận lưu hành tại Việt Nam?",
+        "answer": null
+    },
+    "127537": {
+        "question": "Thẩm quyền quyết định áp dụng can thiệp sớm đối với đối tượng giám sát ngân hàng?",
+        "answer": null
+    },
+    "67573": {
+        "question": "Chế độ phụ cấp đặc thù được áp dụng cho các chức danh tư pháp và thanh tra nào trong quân đội hiện nay?",
+        "answer": null
+    },
+    "16783": {
+        "question": "Người nào có thẩm quyền xử lý kỷ luật đối với Chỉ huy trưởng Ban chỉ huy quân sự cơ quan, tổ chức?",
+        "answer": null
+    },
+    "150095": {
+        "question": "Phạm nhân đang thi hành án có được nhận quà từ người thân hay không?",
+        "answer": null
+    },
+    "155203": {
+        "question": "Kiểm dịch viên thực vật cần đảm bảo tiêu chuẩn về trình độ đào tạo, bồi dưỡng như thế nào?",
+        "answer": null
+    },
+    "147387": {
+        "question": "Hồ sơ kiểm sát án hình sự được sắp xếp theo các tiêu chí gì?",
+        "answer": null
+    },
+    "39469": {
+        "question": "Người nước ngoài được cơ quan nào có thẩm quyền cấp thị thực của Việt Nam ở nước ngoài như thế nào?",
+        "answer": null
+    },
+    "166975": {
+        "question": "Nguyên tắc hoạt động của Hiệp hội Bông vải Việt Nam là gì?",
+        "answer": null
+    },
+    "109825": {
+        "question": "Công ty có quyền tự đóng dấu sao y bản chính giấy tờ không?",
+        "answer": null
+    },
+    "1087": {
+        "question": "Trình tự công nhận ngày truyền thống của cơ quan nhà nước cấp tỉnh được pháp luật quy định như thế nào? ",
+        "answer": null
+    },
+    "108449": {
+        "question": "Để kinh doanh dịch vụ cho thuê bồn chứa khí cần đáp ứng những điều kiện gì?",
+        "answer": null
+    },
+    "17255": {
+        "question": "Khi thực hiện cải tạo nghĩa trang thì cơ quan có thẩm quyền nào phải thực hiện thông báo đóng cửa nghĩa trang công khai cho người dân?",
+        "answer": null
+    },
+    "165253": {
+        "question": "Thời hiệu xử phạt vi phạm hành chính đối với người làm giả chứng thư số là bao lâu?",
+        "answer": null
+    },
+    "64801": {
+        "question": "Cấp phiếu lý lịch tư pháp để đi xin việc ở đâu?",
+        "answer": null
+    },
+    "28739": {
+        "question": "Việc quản lý tài sản kết cấu hạ tầng đường sắt quốc gia sẽ được thực hiện theo nguyên tắc nào?",
+        "answer": null
+    },
+    "164795": {
+        "question": "Sở Tư pháp thuộc Ủy ban nhân dân cấp tỉnh có nhiệm vụ và quyền hạn gì trong công tác dõi tình hình thi hành pháp luật?",
+        "answer": null
+    },
+    "81323": {
+        "question": "Việc kiểm tra, giám sát hải quan đối với hàng hóa là quà biếu, tặng được thực hiện như thế nào?",
+        "answer": null
+    },
+    "25149": {
+        "question": "Việc phát triển, cung cấp thông tin dịch vụ trên cổng thông tin điện tử phải tuân thủ quy định gì?",
+        "answer": null
+    },
+    "85379": {
+        "question": "Doanh nghiệp thực hiện tiêu hủy tài liệu kế toán nhưng không thành lập Hội đồng tiêu hủy thì có bị xử phạt hay không?",
+        "answer": null
+    },
+    "101651": {
+        "question": "Trong hàng không dân dụng thì tàu bay trên khu vực đông dân phải bay ở độ cao nào?",
+        "answer": null
+    },
+    "125007": {
+        "question": "Liên hiệp hợp tác xã muốn thay đổi người đại diện theo pháp luật thì có cần đăng ký với cơ quan nhà nước có thẩm quyền không?",
+        "answer": null
+    },
+    "32403": {
+        "question": "Pháp luật quy định như thế nào về khái niệm người khuyết tật?",
+        "answer": null
+    },
+    "147733": {
+        "question": "Trường hợp nào Cục Tài chính thẩm định hồ sơ cấp phát, thanh toán vốn đầu tư, kinh phí mua sắm tài sản, hàng hóa trong Công an nhân dân?",
+        "answer": null
+    },
+    "58595": {
+        "question": "Giấy chứng nhận đăng ký đại lý đổi tiền của nước có chung biên giới bị thu hồi trong những trường hợp nào?",
+        "answer": null
+    },
+    "106781": {
+        "question": "Cơ quan Hải quan có thẩm quyền tạm giữ người, áp giải người có hành vi vi phạm không?",
+        "answer": null
+    },
+    "124659": {
+        "question": "Để bảo đảm an toàn cơ sở dữ liệu quốc gia về chăn nuôi có các biện pháp nào được áp dụng?",
+        "answer": null
+    },
+    "129737": {
+        "question": "Tiêu chuẩn cụ thể của Trưởng Công an xã có theo quy định như cán bộ, công chức cấp xã bình thường hay không?",
+        "answer": null
+    },
+    "149985": {
+        "question": "Nguyên tắc bồi thường về đất khi Nhà nước thu hồi đất",
+        "answer": null
+    },
+    "99169": {
+        "question": "Cách tính thuế thu nhập cá nhân khi chuyển nhượng quyền sử dụng đất?",
+        "answer": null
+    },
+    "164061": {
+        "question": "Tiền lương trực Tết Âm lịch của người lao động được tính thế nào?",
+        "answer": null
+    },
+    "121671": {
+        "question": "Kết quả xổ số được phép thông tin trên phương tiện đại chúng không?",
+        "answer": null
+    },
+    "160621": {
+        "question": "Chất lượng nhiên liệu hàng không có thể đạt bao nhiêu chứng nhận?",
+        "answer": null
+    },
+    "112411": {
+        "question": "Giao tài sản bảo đảm, xử lý tài sản cầm cố, thế chấp?",
+        "answer": null
+    },
+    "38143": {
+        "question": "Nghỉ hưu năm 2020 thì được hưởng lương hưu hằng tháng không? Nếu có, cách tính như thế nào?",
+        "answer": null
+    },
+    "123279": {
+        "question": "Trình tự thủ tục cấp lại thẻ quân nhân chuyên nghiệp dự bị được thực hiện như thế nào?",
+        "answer": null
+    },
+    "137457": {
+        "question": "Viên chức tại cơ sở giáo dục đang bị tạm giam để đi điều tra gian lận thi cử có được hưởng chính sách gì không?",
+        "answer": null
+    },
+    "115017": {
+        "question": "Thủ tục bổ nhiệm công chức cấp tỉnh giữ chức vụ lãnh đạo được quy định ra sao?",
+        "answer": null
+    },
+    "90401": {
+        "question": "Hồ sơ đề nghị cấp Thẻ giám định viên quyền tác giả, quyền liên quan gồm những gì? Điều kiện cấp là gì?",
+        "answer": null
+    },
+    "117615": {
+        "question": "Chi cục dân số kế hoạch hóa gia đình tỉnh có quyền hạn gì trong công tác quản lý chất lượng về dân số trên địa bàn?",
+        "answer": null
+    },
+    "85851": {
+        "question": "Xử phạt vi phạm hành chính theo nguyên tắc nào?",
+        "answer": null
+    },
+    "110141": {
+        "question": "Quyền và nghĩa vụ của con trong nuôi dưỡng là gì?",
+        "answer": null
+    },
+    "115379": {
+        "question": "Công trình thu gom, thoát nước thải tại đô thị, khu dân cư tập trung được quản lý dựa trên nguyên tắc nào?",
+        "answer": null
+    },
+    "103999": {
+        "question": "Chi cục Thuế gửi cho từng hộ khoán thông báo về việc dự kiến doanh thu, mức thuế khoán khi nào?",
+        "answer": null
+    },
+    "94193": {
+        "question": "Hội viên của Hiệp hội Ngân hàng Việt Nam có hành vi vi phạm sẽ bị xử lý kỷ luật như thế nào?",
+        "answer": null
+    },
+    "2761": {
+        "question": "Cho người khác sử dụng giấy tờ của mình để làm thủ tục đăng ký kết hôn thì bị xử lý như thế nào?",
+        "answer": null
+    },
+    "124207": {
+        "question": "Mẫu Giấy đăng ký tập sự hành nghề công chứng theo quy định hiện hành là mẫu nào?",
+        "answer": null
+    },
+    "75605": {
+        "question": "Chủ thể nào được ký hợp đồng ủy thác đầu tư?",
+        "answer": null
+    },
+    "8049": {
+        "question": "Mục đích hoạt động của Quỹ Vì cuộc sống tươi đẹp là gì?",
+        "answer": null
+    },
+    "24167": {
+        "question": "Trong Luật Bảo hiểm xã hội, điều kiện được hưởng chế độ thai sản như thế nào?",
+        "answer": null
+    },
+    "89477": {
+        "question": "Sinh viên bị tai nạn lao động trong thời gian thực hành thì chi phí điều trị sẽ do người sử dụng lao động hay cơ sở giáo dục chi trả?",
+        "answer": null
+    },
+    "59183": {
+        "question": "Chương trình khuyến mại chấm dứt thực hiện khi nào?",
+        "answer": null
+    },
+    "50813": {
+        "question": "Người bán thuốc lá điện tử cho trẻ em bị xử phạt hành chính như thế nào?",
+        "answer": null
+    },
+    "165393": {
+        "question": "Tổ chức tín dụng chuyển đổi từ công ty TNHH MTV thành công ty TNHH 02 TV trở lên và ngược lại thì có cần phải có Phương án chuyển đổi hình thức pháp lý theo quy định không?",
+        "answer": null
+    },
+    "94363": {
+        "question": "Trách nhiệm thẩm định nội dung xuất bản phẩm nhập khẩu của cơ sở nhập khẩu xuất bản phẩm được quy định như thế nào?",
+        "answer": null
+    },
+    "48515": {
+        "question": "Thỏa thuận pháp lý là gì? Thực hiện minh bạch thông tin của thỏa thuận pháp lý trong phòng chống rửa tiền như thế nào?",
+        "answer": null
+    },
+    "66237": {
+        "question": "Việc tự công bố sản phẩm của các doanh nghiệp được thực hiện theo trình tự nào?",
+        "answer": null
+    },
+    "15231": {
+        "question": "Trường hợp nào nguyên liệu làm thuốc đang lưu hành trên thị trường bị thu hồi?",
+        "answer": null
+    },
+    "56659": {
+        "question": "Xử lý tài sản kết cấu hạ tầng giao thông đường bộ trong trường hợp bị mất, bị hủy hoại theo trình tự ra sao?",
+        "answer": null
+    },
+    "97329": {
+        "question": "Điều kiện chuyển nghề đối với công nhân quốc phòng trong quân đội là gì?",
+        "answer": null
+    },
+    "47829": {
+        "question": "Đối tượng áp dụng mức thu phí, lệ phí thuộc lĩnh vực tài nguyên và môi trường trên địa bàn tỉnh Tuyên Quang hiện nay?",
+        "answer": null
+    },
+    "117997": {
+        "question": "Mức phụ cấp trách nhiệm theo nghề đối với thanh tra viên là bao nhiêu?",
+        "answer": null
+    },
+    "67345": {
+        "question": "Trình tự thay đổi Trưởng đoàn thanh tra chuyên ngành của lực lượng Công an nhân dân thực hiện như thế nào?",
+        "answer": null
+    },
+    "97513": {
+        "question": "Thủ tục áp dụng ưu đãi đầu tư thực hiện như thế nào?",
+        "answer": null
+    },
+    "133881": {
+        "question": "Nếu chưa có quyết định thi hành án và người được hưởng án treo không có mặt tại nơi cư trú thì có bị xem là vi phạm nghĩa vụ không?",
+        "answer": null
+    },
+    "50381": {
+        "question": "Để được cấp giấy phép kinh doanh trò chơi điện tử có thưởng dành cho người nước ngoài thì cần phải thực hiện theo thủ tục như thế nào?",
+        "answer": null
+    },
+    "108141": {
+        "question": "Hành lang bảo vệ luồng được quy định như thế nào?",
+        "answer": null
+    },
+    "89355": {
+        "question": "Thành viên Hội đồng đạo đức trong nghiên cứu y sinh học cấp cơ sở phải đạt những tiêu chuẩn gì?",
+        "answer": null
+    },
+    "106857": {
+        "question": "Mẫu sổ thống kê tai nạn lao động của người lao động làm việc không theo hợp đồng lao động trên địa bàn xã/phường/thị trấn như thế nào?",
+        "answer": null
+    },
+    "32519": {
+        "question": "Kỹ thuật viên đường bộ hạng 1 có nhiệm vụ như thế nào?",
+        "answer": null
+    },
+    "3215": {
+        "question": "Hợp đồng thử việc là gì?",
+        "answer": null
+    },
+    "149771": {
+        "question": "Cổ phần ưu đãi cổ tức là gì?",
+        "answer": null
+    },
+    "60043": {
+        "question": "Các nội dung chi cho công tác xây dựng phong trào toàn dân bảo vệ an ninh Tổ quốc do các cơ quan, đơn vị ở cấp tỉnh, cấp huyện thực hiện theo quy định như thế nào?",
+        "answer": null
+    },
+    "164277": {
+        "question": "Bí mật nhà nước được phân loại ra sao?",
+        "answer": null
+    },
+    "80939": {
+        "question": "Thẻ Kiểm toán viên cao cấp có giá trị trong bao nhiêu năm?",
+        "answer": null
+    },
+    "16791": {
+        "question": "Có phải nộp giấy phép FLEGT cho cơ quan Hải quan khi làm các thủ tục hải quan để nhập khẩu gỗ hay không?",
+        "answer": null
+    },
+    "74091": {
+        "question": "Hội Mỹ nghệ kim hoàn đá quý Việt Nam có phải báo cáo với cơ quan quản lý nhà nước về hoạt động của Hội không?",
+        "answer": null
+    },
+    "112323": {
+        "question": "Ai có quyền bầu Ban Chấp hành Chi hội Luật gia trực thuộc? Số lượng Ủy viên Ban chấp hành do ai quyết định?",
+        "answer": null
+    },
+    "151897": {
+        "question": "Đề xuất quy trình đánh giá, xếp loại nhà giáo giáo dục nghề nghiệp theo chuẩn chuyên môn và nghiệp vụ thế nào?",
+        "answer": null
+    },
+    "106253": {
+        "question": "Viên chức là gì?",
+        "answer": null
+    },
+    "66597": {
+        "question": "Mẫu hàng của hồ sơ xác định trước mã số hàng hóa xuất nhập khẩu phải đảm bảo những nguyên tắc nào?",
+        "answer": null
+    },
+    "32609": {
+        "question": "Những biện pháp nào được áp dụng trong tổ chức, đấu tranh chống tội phạm sử dụng công nghệ cao?",
+        "answer": null
+    },
+    "113301": {
+        "question": "Việc chấm dứt áp dụng tạm thời điều ước quốc tế theo quy định pháp luật ",
+        "answer": null
+    },
+    "123375": {
+        "question": "Thời hạn nộp báo cáo dự toán tài chính công đoàn năm 2023 là khi nào?",
+        "answer": null
+    },
+    "43915": {
+        "question": "Muốn bán đấu giá hàng hóa bị lưu giữ trong trường hợp người nhận hàng từ chối nhận hàng thì người vận chuyển phải làm thủ tục gì?",
+        "answer": null
+    },
+    "155445": {
+        "question": "Thời hạn nộp biên lai thu tiền tạm ứng án phí cho tòa án là bao lâu?",
+        "answer": null
+    },
+    "64923": {
+        "question": "Ngoài những tiêu chuẩn chung thì Phó Chủ tịch Quốc hội cần đảm bảo những tiêu chuẩn cụ thể nào?",
+        "answer": null
+    },
+    "713": {
+        "question": "Ai có quyền xét xử phúc thẩm bản án, quyết định của Tòa án quân sự khu vực?",
+        "answer": null
+    },
+    "127419": {
+        "question": "Trình tự, thủ tục áp dụng biện pháp cách ly y tế tại nhà được pháp luật quy định như thế nào? ",
+        "answer": null
+    },
+    "94167": {
+        "question": "Ai có quyền yêu cầu hủy việc kết hôn trái pháp luật?",
+        "answer": null
+    },
+    "54729": {
+        "question": "Hội Hỗ trợ phát triển kinh tế miền núi có những quyền hạn nào?",
+        "answer": null
+    },
+    "108891": {
+        "question": "Thừa phát lại có được áp dụng biện pháp cưỡng chế khi tổ chức thi hành án dân sự hay không?",
+        "answer": null
+    },
+    "117987": {
+        "question": "Quy định về nghĩa vụ chứng minh trong vụ án dân sự như thế nào?",
+        "answer": null
+    },
+    "45163": {
+        "question": "Tiểu đội trưởng Dân quân thường trực thực hiện các nhiệm vụ thế nào?",
+        "answer": null
+    },
+    "145647": {
+        "question": "Giấy phép thăm dò khoáng sản bao gồm những nội dung gì? ",
+        "answer": null
+    },
+    "131111": {
+        "question": "Người dùng nhà, chổ ở của mình để chứa chấp cho hành vi đánh bạc thì có phải chịu hình phạt tù hay không?",
+        "answer": null
+    },
+    "66223": {
+        "question": "Trình tự thông qua văn bản quy phạm pháp luật theo thủ tục rút gọn cụ thể như thế nào?",
+        "answer": null
+    },
+    "165195": {
+        "question": "Việc tiến hành đo lường, đánh giá tuân thủ pháp luật trong hoạt động xuất khẩu, nhập khẩu, quá cảnh hàng hóa bao gồm những nội dung nào?",
+        "answer": null
+    },
+    "117415": {
+        "question": "Cấm sử dụng hình bác sĩ để quảng cáo bán hàng đa cấp kể từ ngày 20/6/2023 có đúng không?",
+        "answer": null
+    },
+    "111577": {
+        "question": "Người khai thác cảng hàng không phải có những trách nhiệm gì?",
+        "answer": null
+    },
+    "76843": {
+        "question": "Nhiệm vụ của Kiểm tra viên chính hải quan?",
+        "answer": null
+    },
+    "107195": {
+        "question": "Nguyên tắc xác định tiền nhuận bút, thù lao, quyền lợi vật chất được quy định như thế nào?",
+        "answer": null
+    },
+    "134991": {
+        "question": "Chủ nhiệm Ủy ban quốc gia về Thanh niên Việt Nam là ai?",
+        "answer": null
+    },
+    "166837": {
+        "question": "Khi làm thủ tục cấp thẻ Căn cước công dân có được chuẩn bị ảnh sẵn ở nhà đem lên không?",
+        "answer": null
+    },
+    "21055": {
+        "question": "Các thông tin trong Cơ sở dữ liệu quốc gia về Bảo hiểm được cập nhật và điều chỉnh từ các nguồn nào?",
+        "answer": null
+    },
+    "87149": {
+        "question": "Chứng chỉ kế toán trưởng được pháp luật quy định như thế nào?",
+        "answer": null
+    },
+    "9539": {
+        "question": "Hộ kinh doanh tạm ngừng kinh doanh mà không thông báo với cơ quan nhà nước thì có bị xử phạt gì không?",
+        "answer": null
+    },
+    "109787": {
+        "question": "Quy trình tư vấn, xét nghiệm để hỗ trợ công tác giám sát phát hiện nhiễm HIV được quy định như thế nào?",
+        "answer": null
+    },
+    "3649": {
+        "question": "Giấy phép tiến hành công việc bức xạ nhập khẩu vật liệu hạt nhân nguồn có thời hạn bao lâu?",
+        "answer": null
+    },
+    "12175": {
+        "question": "Các quy định pháp luật có liên quan đến thị trường bất động sản được định hướng hoàn thiện như thế nào?",
+        "answer": null
+    },
+    "147421": {
+        "question": "Có bắt buộc mua bảo hiểm y tế tại trường học đối với học sinh?",
+        "answer": null
+    },
+    "114911": {
+        "question": "Cải tạo không giam giữ là gì?",
+        "answer": null
+    },
+    "123737": {
+        "question": "Vụ án bị đình chỉ do nguyên đơn được triệu tập lần thứ hai mà vẫn vắng mặt thì có được khởi kiện lại không?",
+        "answer": null
+    },
+    "57485": {
+        "question": "Giá hàng hóa dịch vụ sản xuất trong nước được xác định theo công thức nào?",
+        "answer": null
+    },
+    "123421": {
+        "question": "Những vụ án hành chính được Tòa án thụ lý trước ngày 01/7/2016 nhưng chưa xét xử sơ thẩm thì áp dụng quy định nào?",
+        "answer": null
+    },
+    "65993": {
+        "question": "Giấy phép thăm dò khoáng sản được phép gia hạn hay không?",
+        "answer": null
+    },
+    "85895": {
+        "question": "Thể hiện thông tin chứng nhận quyền sở hữu công trình xây dựng trên đất nông nghiệp như thế nào?",
+        "answer": null
+    },
+    "165581": {
+        "question": "Hội đồng Khoa học công nghệ Bộ Nông nghiệp và Phát triển nông thôn có chức năng gì?",
+        "answer": null
+    },
+    "88187": {
+        "question": "Cha là người nước ngoài, mẹ là người Việt Nam thì có thể đặt tên con bằng tiếng nước ngoài không?",
+        "answer": null
+    },
+    "3575": {
+        "question": "Thành viên công ty hợp danh bao gồm những ai?",
+        "answer": null
+    },
+    "40917": {
+        "question": "Nhiệm vụ của Chủ tịch Ủy ban nhân dân các tỉnh tại khu vực biên giới phía Bắc là gì để giảm ùn ứ và thúc đẩy xuất khẩu nông sản?",
+        "answer": null
+    },
+    "40261": {
+        "question": "Trách nhiệm của doanh nghiệp đối với tai nạn lao động",
+        "answer": null
+    },
+    "46721": {
+        "question": "Học viện Quốc phòng có tư cách pháp nhân không? Học viện Quốc phòng được Bộ Quốc phòng ưu tiên đầu tư về những vấn đề gì?",
+        "answer": null
+    },
+    "165545": {
+        "question": "Trường hợp nào không được xét ra tù trước thời hạn có điều kiện?",
+        "answer": null
+    },
+    "8193": {
+        "question": "Kiểm kê thuốc, hoá chất của khoa Dược bệnh viện là kiểm kê những nội dung gì?",
+        "answer": null
+    },
+    "151339": {
+        "question": "Học sinh gian lận trong quá trình tham gia Cuộc thi khoa học kỹ thuật cấp quốc gia thì xử lý như thế nào?",
+        "answer": null
+    },
+    "23207": {
+        "question": "Bị cáo có quyền đề nghị thay đổi Thẩm phán hay không?",
+        "answer": null
+    },
+    "113789": {
+        "question": "Kỳ lập báo cáo tài chính năm được quy định như thế nào?",
+        "answer": null
+    },
+    "134763": {
+        "question": "Kỳ hạn người sử dụng lao động phải trả lương cho người lao động được quy định như thế nào?",
+        "answer": null
+    },
+    "8659": {
+        "question": "Quy định về việc tiếp nhận trưng cầu giám định tư pháp?",
+        "answer": null
+    },
+    "137523": {
+        "question": "Đối tượng được miễn, giảm học phí năm học 2022-2023?",
+        "answer": null
+    },
+    "147669": {
+        "question": "Phó Thủ trưởng đơn vị có thể thay mặt Thủ trưởng đơn vị làm Chủ Lễ chào cờ Tổ quốc không?",
+        "answer": null
+    },
+    "107599": {
+        "question": "Ban Biên tập Trang thông tin điện tử Bộ Giao thông vận tải trên Internet có nhiệm vụ và quyền hạn như thế nào?",
+        "answer": null
+    },
+    "126061": {
+        "question": "Trong hồ sơ đề nghị xét nâng bậc lương trước thời hạn có cần phải kèm theo Quyết định lương gần nhất của công chức không?",
+        "answer": null
+    },
+    "138601": {
+        "question": "Nội dung cung cấp thông tin định kỳ cho báo chí của Bộ Giao thông vận tải là gì?",
+        "answer": null
+    },
+    "57889": {
+        "question": "Để chẩn đoán bệnh hoại tử dưới vỏ và cơ quan tạo máu ở tôm thì có thể dùng những loại thuốc thử và vật liệu thử nào?",
+        "answer": null
+    },
+    "135589": {
+        "question": "Chính sách hỗ trợ về nhà ở xã hội được thực hiện theo nguyên tắc nào?",
+        "answer": null
+    },
+    "135227": {
+        "question": "Đơn đề nghị đính chính sổ đỏ mới nhất hiện nay? Hồ sơ đề nghị đính chính gồm những gì?",
+        "answer": null
+    },
+    "24349": {
+        "question": "Doanh nghiệp hoạt động trong ngành nghề nào thì được hưởng ưu đãi đầu tư?",
+        "answer": null
+    },
+    "72549": {
+        "question": "Mướp quả tươi hạng I trong mỗi bao gói có phải cùng giống và cùng kích cỡ không?",
+        "answer": null
+    },
+    "117065": {
+        "question": "Trách nhiệm lập quy hoạch thuộc về ai theo Luật Đất đai?",
+        "answer": null
+    },
+    "70013": {
+        "question": "Thủ tục hành chính trong Bộ Văn hóa Thể thao và Du lịch được đăng tải trên cổng thông tin điện tử có quy định như thế nào?",
+        "answer": null
+    },
+    "79919": {
+        "question": "Có thể được thực hiện công chứng ngoài trụ sở của tổ chức hành nghề công chứng trong trường hợp nào?",
+        "answer": null
+    },
+    "150197": {
+        "question": "Ban Chấp hành Hội Phòng chống HIV/AIDS Việt Nam có nhiệm kỳ bao nhiêu năm?",
+        "answer": null
+    },
+    "76207": {
+        "question": "Có phải bồi thường cho công ty khi nghỉ làm trước hạn hợp đồng thử việc?",
+        "answer": null
+    },
+    "147227": {
+        "question": "Giá cước dịch vụ bưu chính viễn thông có thể được miễn giảm trong những trường hợp nào?",
+        "answer": null
+    },
+    "3351": {
+        "question": "Vay vốn công ty mẹ nước ngoài lãi suất 0% được không?",
+        "answer": null
+    },
+    "111659": {
+        "question": "Xây dựng Cơ sở dữ liệu quốc gia về giá dựa trên các nguyên tắc gì?",
+        "answer": null
+    },
+    "42649": {
+        "question": "Sửa đổi công thức giá trị giao dịch lần 1 đối với giao dịch mua lại có kỳ hạn trái phiếu Chính phủ ra sao?",
+        "answer": null
+    },
+    "101439": {
+        "question": "Hồ sơ xin chuyển mục đích sử dụng đất không phải xin phép cho cơ quan cấp tỉnh gồm những gì?",
+        "answer": null
+    },
+    "111873": {
+        "question": "Hồ sơ thực hiện cấp sửa đổi, bổ sung giấy phép hoạt động tư vấn chuyên ngành điện lực thuộc thẩm quyền cấp tỉnh gồm những gì?",
+        "answer": null
+    },
+    "88747": {
+        "question": "Cơ quan nào có quyền quyết định trợ cấp cho trường hợp người bị thiệt hại về tính mạng do tham gia bảo vệ an ninh quốc gia?",
+        "answer": null
+    },
+    "149335": {
+        "question": "Nợ tiền sử dụng đất có được xây dựng nhà ở hay không?",
+        "answer": null
+    },
+    "135937": {
+        "question": "Trong những trường hợp nào thì thời điểm nghỉ hưu của người quản lý doanh nghiệp nhà nước được lùi?",
+        "answer": null
+    },
+    "8067": {
+        "question": "Có thể xác định thành phần tạp chất có trong phế liệu nhựa nhập khẩu để làm nguyên liệu sản xuất hay không?",
+        "answer": null
+    },
+    "42749": {
+        "question": "Tổng giám đốc Tổng công ty Thuốc lá Việt Nam do ai có quyền bổ nhiệm?",
+        "answer": null
+    },
+    "131299": {
+        "question": "Thẩm quyền cấp giấy phép xây dựng trên địa bàn tỉnh Nghệ An?",
+        "answer": null
+    },
+    "60015": {
+        "question": "Cán bộ, công chức là gì?",
+        "answer": null
+    },
+    "101479": {
+        "question": "Có các loại vạch kẻ đường thông dụng nào hiện nay?",
+        "answer": null
+    },
+    "5401": {
+        "question": "Tổ chức chi ngân sách nhà nước được quy định như thế nào?",
+        "answer": null
+    },
+    "23297": {
+        "question": "Trong công tác Quản lý thị trường, ai có thẩm quyền ban hành quyết định kiểm tra?",
+        "answer": null
+    },
+    "155661": {
+        "question": "Sau ly hôn mẹ trực tiếp nuôi con có được cản trở cha đến thăm nom con không?",
+        "answer": null
+    },
+    "155895": {
+        "question": "Thỏa thuận xác lập chế độ tài sản của vợ chồng có thể bị vô hiệu trong trường hợp nào?",
+        "answer": null
+    },
+    "83531": {
+        "question": "Hướng dẫn cách viết thư ngỏ chuyên nghiệp nhất?",
+        "answer": null
+    },
+    "60407": {
+        "question": "Cán bộ thực hiện công tác tuyển sinh quân sự có thuộc nhóm phải thay đổi vị trí công tác định kỳ hay không?",
+        "answer": null
+    },
+    "104013": {
+        "question": "Hành vi sắp xếp hoạt động giải trí cho cán bộ lãnh đạo để nhận được sự tín nhiệm bị xử lý thế nào?",
+        "answer": null
+    },
+    "130495": {
+        "question": "Trung tâm Dữ liệu và triển khai công nghệ thông tin tài chính tại thành phố Hồ Chí Minh được mở tài khoản ở đâu?",
+        "answer": null
+    },
+    "91139": {
+        "question": "Khi sự cố khẩn cấp xảy ra tại trung tâm dữ liệu thì trình tự xử lý sự cố được thực hiện như thế nào?",
+        "answer": null
+    },
+    "94725": {
+        "question": "Các trường hợp được hưởng trợ cấp tuất hàng tháng",
+        "answer": null
+    },
+    "56063": {
+        "question": "Công chức cấp trung ương bị xếp loại chất lượng không hoàn thành nhiệm vụ phải đạt các tiêu chí gì?",
+        "answer": null
+    },
+    "63943": {
+        "question": "Bản vẽ trong hồ sơ thiết kế kiến trúc kỹ thuật gồm những gì?",
+        "answer": null
+    },
+    "99845": {
+        "question": "Mẫu tờ khai ghi vào Sổ hộ tịch việc nuôi con nuôi được quy định như thế nào?",
+        "answer": null
+    },
+    "117399": {
+        "question": "Mẫu Kế hoạch giáo dục của giáo viên mới nhất?",
+        "answer": null
+    },
+    "128657": {
+        "question": "Thành lập Quỹ phát triển khoa học và công nghệ mà không thông báo với cơ quan có thẩm quyền thì doanh nghiệp bị xử phạt thế nào?",
+        "answer": null
+    },
+    "42341": {
+        "question": "Điểm mới về khai thuế, tính thuế, phân bổ số thuế GTGT, thuế TNDN, thuế tài nguyên phải nộp cho từng tỉnh nơi có nhà máy thủy điện nằm trên nhiều tỉnh năm 2022?",
+        "answer": null
+    },
+    "134117": {
+        "question": "Biển hiệu công ty có được phép sử dụng tiếng Anh không?",
+        "answer": null
+    },
+    "1411": {
+        "question": "Sau khi tốt nghiệp ngành kỹ thuật vật lý trị liệu và phục hồi chức năng trình độ cao đẳng thì người học phải có được tối thiểu những kỹ năng nào?",
+        "answer": null
+    },
+    "90117": {
+        "question": "Hiệu trưởng của trường Đại học Khoa học và Công nghệ Hà Nội có quyền hạn và nhiệm vụ như thế nào?",
+        "answer": null
+    },
+    "156459": {
+        "question": "Thẩm quyền cấp, điều chỉnh, gia hạn, cấp lại và thu hồi giấy phép xây dựng được quy định như thế nào?",
+        "answer": null
+    },
+    "55385": {
+        "question": "Nguyên tắc áp dụng chế độ ưu tiên đối với dự án đầu tư như thế nào?",
+        "answer": null
+    },
+    "13067": {
+        "question": "Tiêu chí xác định vị trí đất phi nông nghiệp tại nông thôn trên địa bàn tỉnh Vĩnh Long?",
+        "answer": null
+    },
+    "63857": {
+        "question": "Cơ quan nào thống nhất quản lý nhà nước về trưng mua, trưng dụng tài sản trong phạm vi cả nước theo quy định?",
+        "answer": null
+    },
+    "118433": {
+        "question": "Ai phải mua bảo hiểm công nhân công trường xây dựng?",
+        "answer": null
+    },
+    "71095": {
+        "question": "Người nào có thẩm quyền và trách nhiệm cấp bản sao từ sổ gốc?",
+        "answer": null
+    },
+    "401": {
+        "question": "Nếu thấy có đủ căn cứ truy cứu trách nhiệm hình sự đối với người dưới 18 tuổi phạm tội thì Kiểm sát viên có trách nhiệm gì?",
+        "answer": null
+    },
+    "129779": {
+        "question": "Vốn nhà nước tại doanh nghiệp bao gồm những nguồn nào? ",
+        "answer": null
+    },
+    "67657": {
+        "question": "Nộp tờ khai thuế thu nhập cá nhân tháng 5/2022",
+        "answer": null
+    },
+    "58627": {
+        "question": "Việc xác định mức nhuận bút, thù lao đối với biên đạo, trợ lý biên đạo tiết mục múa có tình tiết và cốt truyện căn cứ vào đâu?",
+        "answer": null
+    },
+    "87291": {
+        "question": "Hồ sơ đề nghị thay đổi tên của ngân hàng thương mại bao gồm những gì?",
+        "answer": null
+    },
+    "166417": {
+        "question": "Bộ hồ sơ đăng ký xét công nhận đạt tiêu chuẩn chức danh giáo sư được đóng thành mấy tập?",
+        "answer": null
+    },
+    "134511": {
+        "question": "Thủ tục biên phòng theo cách thức thủ công có được áp dụng đối với tàu thuyền buồm không?",
+        "answer": null
+    },
+    "152517": {
+        "question": "Có được xin từ chức vì lý do không đủ sức khỏe đối với viên chức giữ chức danh lãnh đạo tại đơn vị trực thuộc Bộ Tài chính hay không?",
+        "answer": null
+    },
+    "102907": {
+        "question": "Nhãn thực phẩm ngoài ghi hạn sử dụng thì còn bắt buộc phải có những thông tin gì?",
+        "answer": null
+    },
+    "62147": {
+        "question": "Bộ Nội vụ đang lấy ý kiến Nghị định quy định tăng mức lương cơ sở đối với CB, CC, VC và lực lượng vũ trang lên 1,8 triệu?",
+        "answer": null
+    },
+    "36773": {
+        "question": "Việc lựa chọn nhà thầu để thực hiện nạo vét duy tu đột xuất luồng hàng hải công cộng thực hiện như thế nào?",
+        "answer": null
+    },
+    "51459": {
+        "question": "Số tiền thu được từ việc xử lý tài sản cho thuê tài chính bị thu hồi được xử lý thế nào?",
+        "answer": null
+    },
+    "78221": {
+        "question": "Trường hợp nào được huy động phương tiện kỹ thuật dự bị?",
+        "answer": null
+    },
+    "44125": {
+        "question": "Hồ sơ thực hiện việc hoàn trả tiền đã đóng đối với người tham gia BHXH tự nguyện do cá nhân thực hiện?",
+        "answer": null
+    },
+    "139231": {
+        "question": "Ứng dụng công nghệ 4.0, công nghệ thông tin, AI, truy xuất nguồn gốc,… trong theo dõi, kiểm tra giám sát quy trình sản xuất, kinh doanh, xử lý môi trường?",
+        "answer": null
+    },
+    "125483": {
+        "question": "Đến năm 2025, cần hoàn thành bồi dưỡng công chức các sở, ngành; UBND quận, huyện, thị xã tại Hà Nội",
+        "answer": null
+    },
+    "40833": {
+        "question": "Trách nhiệm chi trả chi phí xác minh điều kiện thi hành án do ai thực hiện?",
+        "answer": null
+    },
+    "24095": {
+        "question": "Viện trưởng Viện kiểm sát quân sự khu vực do ai bổ nhiệm, miễn nhiệm?",
+        "answer": null
+    },
+    "87539": {
+        "question": "Biểu mẫu thống kê hài cốt liệt sĩ quy tập được hiện nay là mẫu thống kế nào?",
+        "answer": null
+    },
+    "30767": {
+        "question": "Kế hoạch lập đề nghị xây dựng văn bản quy phạm pháp luật của Bộ Giao thông vận tải phải đáp ứng tiêu chí nào?",
+        "answer": null
+    },
+    "129037": {
+        "question": "Công cụ chuyển nhượng là séc có được ký phát để ra lệnh cho chính người ký phát thực hiện thanh toán séc không?",
+        "answer": null
+    },
+    "22347": {
+        "question": "Sẽ mở rộng đối tượng chịu thuế bảo vệ môi trường đối với vật liệu nhựa có đúng không?",
+        "answer": null
+    },
+    "94033": {
+        "question": "Sĩ quan Quân đội nhân dân Việt Nam biệt phái ở Bộ có những nhiệm vụ gì?",
+        "answer": null
+    },
+    "13027": {
+        "question": "Việc kết hợp thuốc điều trị bệnh cúm A H1N1 đường uống và dạng hít được áp dụng trong trường hợp nào?",
+        "answer": null
+    },
+    "35621": {
+        "question": "Thư ký Tòa án tại Tòa án quân sự trung ương không được hưởng phụ cấp đặc thù trong trường hợp nào?",
+        "answer": null
+    },
+    "22685": {
+        "question": "Quy định nội bộ của tổ chức tín dụng, chi nhánh ngân hàng nước ngoài về bảo lãnh như thế nào?",
+        "answer": null
+    },
+    "18187": {
+        "question": "Hồ sơ rủi ro trong quản lý hải quan là gì? Hồ sơ rủi ro được lưu trữ dưới những dạng nào?",
+        "answer": null
+    },
+    "77149": {
+        "question": "Hệ thống của trạm cấp LPG bao gồm có mấy van điều áp?",
+        "answer": null
+    },
+    "129215": {
+        "question": "Phương pháp ELISA dùng để chẩn đoán hội chứng rối loạn sinh sản và hô hấp ở lợn có bao nhiêu bước thực hiện?",
+        "answer": null
+    },
+    "52653": {
+        "question": "Ủy ban Tiêu chuẩn Thực phẩm Việt Nam họp mỗi năm bao nhiêu lần?",
+        "answer": null
+    },
+    "41991": {
+        "question": "Thủ tục kê khai giá của doanh nghiệp sản xuất giấy được thực hiện như thế nào?",
+        "answer": null
+    },
+    "71273": {
+        "question": "Điều kiện hưởng chế độ thai sản có bắt buộc là tháng liền kề trước khi sinh phải đóng bảo hiểm xã hội không?",
+        "answer": null
+    },
+    "84283": {
+        "question": "Ai là người có thẩm quyền cấp Chứng chỉ giáo dục quốc phòng an ninh?",
+        "answer": null
+    },
+    "135669": {
+        "question": "Nguyên tắc trích khấu hao tài sản cố định như thế nào?",
+        "answer": null
+    },
+    "164721": {
+        "question": "Nộp hồ sơ chuyển nhượng mà không được chuyển nhượng thì có được tiếp tục thực hiện giấy phép không?",
+        "answer": null
+    },
+    "39947": {
+        "question": "Nếu cố tình gian dối để không thực hiện nghĩa vụ thanh toán thì có bị xử lý hình sự hay không?",
+        "answer": null
+    },
+    "18011": {
+        "question": "Bổ sung quy định về phòng, chống gian lận bảo hiểm theo Luật Kinh doanh bảo hiểm 2022?",
+        "answer": null
+    },
+    "94131": {
+        "question": "Tiêu chuẩn của công dân để được tham gia nghĩa vụ quân sự",
+        "answer": null
+    },
+    "149869": {
+        "question": "Việc đề nghị thay đổi nội dung trên chứng thư số đối với cán bộ công chức thực hiện như thế nào?",
+        "answer": null
+    },
+    "126931": {
+        "question": "Hồ sơ hoàn trả tiền đã đóng đối với người tham gia bảo hiểm xã hội tự nguyện thông qua đại lý thu?",
+        "answer": null
+    },
+    "76855": {
+        "question": "Phí thực hiện thủ tục cấp bản sao tài liệu lưu trữ tại Phòng đọc Lưu trữ lịch sử cấp tỉnh là bao nhiêu?",
+        "answer": null
+    },
+    "66253": {
+        "question": "Bảo đảm hiệu lực của bản án, quyết định theo quy định pháp luật?",
+        "answer": null
+    },
+    "89795": {
+        "question": "Đơn vị sự nghiệp công lập phải làm gì để chấm dứt hợp đồng làm việc đúng luật?",
+        "answer": null
+    },
+    "85297": {
+        "question": "Người lao động ký hợp đồng lao động xác định thời hạn có bắt buộc phải tham gia bảo hiểm thất nghiệp không?",
+        "answer": null
+    },
+    "27607": {
+        "question": "Những tố giác, tin báo về tội phạm, kiến nghị khởi tố trước ngày 01/01/2018 vẫn chưa giải quyết xong thì thời hạn giải quyết sẽ như thế nào?",
+        "answer": null
+    },
+    "145345": {
+        "question": "Có thể vay vốn ngân hàng để đầu tư vào mua vàng miếng được không?",
+        "answer": null
+    },
+    "167713": {
+        "question": "Nội dung đăng ký môi trường được quy định như thế nào?",
+        "answer": null
+    },
+    "83341": {
+        "question": "Kế toán trưởng có trách nhiệm và quyền hạn như thế nào?",
+        "answer": null
+    },
+    "162883": {
+        "question": "Quy định về căn cứ để lập hồ sơ công nhận người hoạt động cách mạng trước ngày 01 tháng 01 năm 1945",
+        "answer": null
+    },
+    "69909": {
+        "question": "Trường hợp muốn giải quyết tranh chấp bằng trọng tài cần đáp ứng những điều kiện gì?",
+        "answer": null
+    },
+    "24331": {
+        "question": "Ai có quyền bổ nhiệm thành viên Ủy ban Cạnh tranh Quốc gia? ",
+        "answer": null
+    },
+    "81559": {
+        "question": "Thành viên Hội đồng kiểm tra kết quả tập sự hành nghề luật sư và Ban giúp việc phải đáp ứng các tiêu chuẩn gì?",
+        "answer": null
+    },
+    "107893": {
+        "question": "Mẫu thông báo đăng ký tạm ngừng hoạt động, kinh doanh hoặc tiếp tục hoạt động sau tạm ngừng hoạt động được quy định ở đâu?",
+        "answer": null
+    },
+    "138855": {
+        "question": "Ai có quyền gỡ bỏ thông tin đăng tải trên Cổng Thông tin điện tử Bảo hiểm xã hội Việt Nam?",
+        "answer": null
+    },
+    "144151": {
+        "question": "Thi THPT 2023, thí sinh phải tuân thủ theo các quy định nào?",
+        "answer": null
+    },
+    "18447": {
+        "question": "Hàng hóa bán tại cửa hàng miễn thuế là những mặt hàng nào?",
+        "answer": null
+    },
+    "113123": {
+        "question": "Thủ tục đăng ký khi thay đổi tổ chức tín dụng được phép nơi mở tài khoản vốn đầu tư trong hoạt động dầu khí?",
+        "answer": null
+    },
+    "138445": {
+        "question": "Tàu bay mất khả năng di chuyển nằm trong khu vực có hoạt động bay nhưng không xác định được người khai thác tàu bay thì xử lý ra sao?",
+        "answer": null
+    },
+    "102405": {
+        "question": "Hành vi khai sai số lượng sản phẩm thực tế có mục đích trốn thuế có bị phạt tù không?",
+        "answer": null
+    },
+    "23303": {
+        "question": "Nguyên tắc xét, công nhận danh hiệu Giảng viên dạy giỏi, Giáo viên dạy giỏi cấp Bộ quốc phòng là gì?",
+        "answer": null
+    },
+    "147193": {
+        "question": "Công tác điều trị bệnh do vi rút Adeno ở mức độ nặng bao gồm những nội dung gì?",
+        "answer": null
+    },
+    "7639": {
+        "question": "Biện pháp kiểm soát nhiễm khuẩn để dự phòng lây nhiễm HIV là những biện pháp nào?",
+        "answer": null
+    },
+    "163905": {
+        "question": "Việc đăng ký hoạt động phát hành xuất bản phẩm được quy định như thế nào?",
+        "answer": null
+    },
+    "51625": {
+        "question": "Hình phạt trong trường hợp giết người không thành",
+        "answer": null
+    },
+    "140797": {
+        "question": "Khu vực sơ cứu cấp cứu tại cơ sở lao động phải đáp ứng các yêu cầu gì?",
+        "answer": null
+    },
+    "17789": {
+        "question": "Nghị định 26/2023/NĐ-CP được áp dụng từ ngày nào?",
+        "answer": null
+    },
+    "34235": {
+        "question": "Thời hiệu khiếu nại thông báo không kháng nghị theo thủ tục tái thẩm đối với bản án hình sự không đủ căn cứ, điều kiện kháng nghị là bao lâu?",
+        "answer": null
+    },
+    "77319": {
+        "question": "Thực hiện việc bảo quản thường xuyên đối với phao tròn cứu sinh dự trữ quốc gia quy định ra sao?",
+        "answer": null
+    },
+    "151999": {
+        "question": "Chủ tịch Ủy ban nhân dân tỉnh có quyền xử phạt doanh nghiệp công nghiệp sử dụng sản phẩm động viên công nghiệp vào mục đích kinh doanh không?",
+        "answer": null
+    },
+    "129199": {
+        "question": "Hiệp hội Thực phẩm minh bạch chịu sự quản lý nhà nước của cơ quan nào?",
+        "answer": null
+    },
+    "138443": {
+        "question": "Các biện pháp dự phòng cho nhân viên y tế (NVYT) để tránh tình trạng lây nhiễm COVID-19 như thế nào?",
+        "answer": null
+    },
+    "52085": {
+        "question": "Xăm mình có được thi tuyển công chức không? ",
+        "answer": null
+    },
+    "111393": {
+        "question": "Người chưa đủ 18 tuổi có được vay vốn ngân hàng không?",
+        "answer": null
+    },
+    "139149": {
+        "question": "Ai có thẩm quyền tổ chức thiết kế mẫu tem bưu chính theo Chương trình đề tài tem bưu chính hàng năm?",
+        "answer": null
+    },
+    "94481": {
+        "question": "Bao cao su được cung cấp và hướng dẫn sử dụng như thế nào khi áp dụng biện pháp can thiệp giảm tác hại trong dự phòng lây nhiễm HIV?",
+        "answer": null
+    },
+    "97717": {
+        "question": "Nhà thầu tư vấn là gì?",
+        "answer": null
+    },
+    "157119": {
+        "question": "Doanh nghiệp kinh doanh casino vượt quá số lượng máy trò chơi được phép kinh doanh sẽ bị xử phạt vi phạm hành chính thế nào?",
+        "answer": null
+    },
+    "30371": {
+        "question": "Cách ghi nhãn phụ cho thuốc trong trường hợp nhãn phụ có kích thước nhỏ không thể ghi đủ nội dung bắt buộc theo quy định?",
+        "answer": null
+    },
+    "111039": {
+        "question": "Trung tâm giáo dục nghề nghiệp công lập cấp huyện thực hiện những chương trình đào tạo thường xuyên nào?",
+        "answer": null
+    },
+    "164407": {
+        "question": "Về hồ sơ chấm dứt hoạt động của Văn phòng đại diện được quy định như thế nào? ",
+        "answer": null
+    },
+    "162929": {
+        "question": "Phòng Phóng viên có thể yêu cầu Phòng Thư ký tòa soạn xuất bản các ấn phẩm bản in do mình chuẩn bị không?",
+        "answer": null
+    },
+    "40891": {
+        "question": "Người hiến bộ phận cơ thể được thực hiện thủ tục lấy bộ phận cơ thể như thế nào?",
+        "answer": null
+    },
+    "48337": {
+        "question": "Công chức có được tham gia đào tạo, bồi dưỡng hay không?",
+        "answer": null
+    },
+    "81647": {
+        "question": "Thẻ Đảng viên là gì?",
+        "answer": null
+    },
+    "132995": {
+        "question": "Đối với gói thầu chào hàng cạnh tranh rút gọn thì có cần phải thẩm định kết quả lựa chọn nhà thầu không? ",
+        "answer": null
+    },
+    "7831": {
+        "question": "Tổ chức tương hỗ cung cấp bảo hiểm vi mô hoạt động không đúng với nội dung tại Giấy phép thành lập và hoạt động có bị thu hồi giấy phép không?",
+        "answer": null
+    },
+    "126205": {
+        "question": "Trường hợp công chức lãnh đạo thuộc diện Ban cán sự đảng Bộ Công Thương quản lý thì ai có trách nhiệm xây dựng kế hoạch luân chuyển?",
+        "answer": null
+    },
+    "68487": {
+        "question": "Chế độ quản lý học sinh trường giáo dưỡng như thế nào?",
+        "answer": null
+    },
+    "117205": {
+        "question": "Hội viên chính thức Hiệp hội Bán hàng đa cấp Việt Nam sẽ bị xóa tên khỏi Hiệp hội trong những trường hợp nào?",
+        "answer": null
+    },
+    "32643": {
+        "question": "Những tài sản nào được xem là tài sản chung của vợ chồng trong thời kỳ hôn nhân?",
+        "answer": null
+    },
+    "150947": {
+        "question": "Việc bán tài sản đặc biệt, tài sản chuyên dùng của lực lượng vũ trang nhân dân được thực hiện thế nào?",
+        "answer": null
+    },
+    "99903": {
+        "question": "Người tập sự được Ban chủ nhiệm Đoàn Luật sư gia hạn tập sự hành nghề luật sư không đạt yêu cầu thì xử lý như thế nào?",
+        "answer": null
+    },
+    "87431": {
+        "question": "Hồ sơ đề nghị thanh toán chi phí khám chữa bệnh đối với Dân quân tự vệ không tham gia BHYT có những gì?",
+        "answer": null
+    },
+    "73341": {
+        "question": "Viện kiểm sát nhân dân tối cao bố trí thường trực bảo vệ liên tục 24/24 có đúng không?",
+        "answer": null
+    },
+    "80311": {
+        "question": "Viện Kinh tế và Quy hoạch Thủy sản gồm có bao nhiêu phòng?",
+        "answer": null
+    },
+    "99679": {
+        "question": "Tài liệu kế toán được hiểu như thế nào?",
+        "answer": null
+    },
+    "68113": {
+        "question": "Phát hiện hóa đơn điện tử có sai sót thì thực hiện khai bổ sung hồ sơ khai thuế như thế nào?",
+        "answer": null
+    },
+    "79575": {
+        "question": "Sàn giao dịch bất động sản được quy định như thế nào?",
+        "answer": null
+    },
+    "83665": {
+        "question": "Hàng dự trữ quốc gia trong quá trình nhập kho, xuất kho và lưu kho phải tuân thủ các yêu cầu thế nào?",
+        "answer": null
+    },
+    "61993": {
+        "question": "Đối tượng nào được phép nhập khẩu tàu biển đã qua sử dụng?",
+        "answer": null
+    },
+    "55355": {
+        "question": "Hội đồng sáng kiến cấp Văn phòng Quốc hội có nhiệm vụ như thế nào?",
+        "answer": null
+    },
+    "78965": {
+        "question": "Sửa chữa hệ thống lò khí hoá than trong công nghệ sản xuất phân đạm là công việc đặc biệt nặng nhọc, nguy hiểm đúng không?",
+        "answer": null
+    },
+    "53049": {
+        "question": "Trong kết cấu hạ tầng giao thông đường bộ có trạm dừng nghỉ hay không?",
+        "answer": null
+    },
+    "92207": {
+        "question": "Chi phí yêu cầu Tòa án giải quyết tranh chấp về chia tài sản khi ly hôn là bao nhiêu theo quy định mới nhất hiện nay?",
+        "answer": null
+    },
+    "109457": {
+        "question": "Thu dọn mỏ dầu khí là nghĩa vụ của ai?",
+        "answer": null
+    },
+    "27517": {
+        "question": "Có được đền bù bằng đất ngang với diện tích đất bị thu hồi hay không?",
+        "answer": null
+    },
+    "119221": {
+        "question": "Cách chức Đảng viên vi phạm trong hoạt động vận động, quyên góp, tài trợ quỹ hỗ trợ, tài trợ, nhân đạo, từ thiện?",
+        "answer": null
+    },
+    "27073": {
+        "question": "Giám đốc Công an tỉnh có quyền xử phạt Trung tâm giáo dục nghề nghiệp in phôi văn bằng có nội dung không đúng mẫu quy định không?",
+        "answer": null
+    },
+    "148889": {
+        "question": "Chánh Thanh tra Bộ Tài chính có quyền xử phạt công ty xổ số kiến thiết tổ chức mở thưởng xổ số không đúng lịch mở thưởng không?",
+        "answer": null
+    },
+    "116573": {
+        "question": "Để chia doanh nghiệp do Nhà nước nắm giữ 100% vốn điều lệ thì cần đáp ứng những điều kiện gì?",
+        "answer": null
+    },
+    "154813": {
+        "question": "Khi hết thời hiệu khởi kiện thì có quyền khởi kiện theo quy định hiện hành?",
+        "answer": null
+    },
+    "51729": {
+        "question": "Nhiệm vụ và quyền hạn của trường mầm non được quy định thế nào?",
+        "answer": null
+    },
+    "140257": {
+        "question": "Quy định về tiêu chuẩn năng lực chuyên môn, nghiệp vụ đối với thư viện viên hạng III - Mã số: V.10.02.06?",
+        "answer": null
+    },
+    "11535": {
+        "question": "Khi gà mắc bệnh viêm đường hô hấp mãn tính thì tỷ lệ chết ở gà là bao nhiêu phần trăm?",
+        "answer": null
+    },
+    "39287": {
+        "question": "Khi nào tăng lương hưu trí 2023?",
+        "answer": null
+    },
+    "128575": {
+        "question": "Yêu cầu về giới hạn tốc độ khi điều khiển xe kéo đẩy tàu bay được quy định thế nào?",
+        "answer": null
+    },
+    "95205": {
+        "question": "Công tác huấn luyện bổ sung kiến thức, kỹ năng thực hiện nhiệm vụ rà phá bom mìn vật nổ được triển khai thực hiện theo các phương pháp nào?",
+        "answer": null
+    },
+    "33125": {
+        "question": "Kiểm tra, xử lý nghiêm các trường hợp sử dụng xe ô tô chưa chuyển đổi biển số sang màu vàng, chưa được cấp phù hiệu, biển hiệu vi phạm điều kiện kinh doanh vận tải bằng ô tô?",
+        "answer": null
+    },
+    "167579": {
+        "question": "Không đăng ký kết hôn có thể làm giấy khai sinh cho con được không?",
+        "answer": null
+    },
+    "61931": {
+        "question": "Đại sứ đặc mệnh toàn quyền có phải là người đứng đầu cơ quan đại diện ngoại giao hay không?",
+        "answer": null
+    },
+    "110053": {
+        "question": "Bệnh truyền nhiễm là gì? Bệnh truyền nhiễm được phân thành mấy nhóm?",
+        "answer": null
+    },
+    "33965": {
+        "question": "Trình tự để được chấp thuận nộp tiền trồng rừng thay thế trong trường hợp Ủy ban nhân dân cấp tỉnh bố trí đất để trồng rừng thay thế trên địa bàn?",
+        "answer": null
+    },
+    "95843": {
+        "question": "Thủ tục công nhận đạt tiêu chuẩn an toàn về an ninh trật tự đối với cơ quan, doanh nghiệp được thực hiện ra sao?",
+        "answer": null
+    },
+    "19227": {
+        "question": "Trường hợp người được hoãn chấp hành án phạt tù được thay đổi nơi cư trú thì việc tiếp nhận được thực hiện như thế nào?",
+        "answer": null
+    },
+    "92221": {
+        "question": "Tổ chức đề nghị lập hồ sơ nhân viên kiểm định gồm các giấy tờ tài liệu gì? Hồ sơ được gửi đến địa chỉ nào?",
+        "answer": null
+    },
+    "13519": {
+        "question": "Ký kết thỏa thuận quốc tế dựa trên những nguyên tắc nào?",
+        "answer": null
+    },
+    "96681": {
+        "question": "Tiến hành phương pháp PCR để chẩn đoán bệnh phó thương hàn lợn được thực hiện như thế nào?",
+        "answer": null
+    },
+    "23013": {
+        "question": "Khi thực hiện đánh giá cán bộ cấp tỉnh thì cần tuân thủ theo những nguyên tắc nào?",
+        "answer": null
+    },
+    "112687": {
+        "question": "Doanh nghiệp cảng hàng không cần đảm bảo nhà ga tại cảng hàng không có đủ những khu vực chức năng nào?",
+        "answer": null
+    },
+    "67397": {
+        "question": "Những quy định chung về kỹ thuật đối với quá trình xây dựng, khai thác và sử dụng công trình tàu điện ngầm là gì? ",
+        "answer": null
+    },
+    "125399": {
+        "question": "Hạ sĩ quan Công an nhân dân trực tiếp thực hiện công tác thẩm duyệt thiết kế, nghiệm thu về phòng cháy và chữa cháy phải bảo đảm các tiêu chuẩn nào?",
+        "answer": null
+    },
+    "60641": {
+        "question": "Trình tự, thủ tục xin cấp Giấy chứng nhận đủ điều kiện chăn nuôi bao gồm những bước nào?",
+        "answer": null
+    },
+    "78617": {
+        "question": "Quy trình giải thể Quỹ bảo lãnh tín dụng cho doanh nghiệp vừa và nhỏ được thực hiện như thế nào?",
+        "answer": null
+    },
+    "81": {
+        "question": "Cơ sở sản xuất tôm sú giống có những quyền và nghĩa vụ gì?",
+        "answer": null
+    },
+    "118471": {
+        "question": "Hệ số lương Thẩm phán, lương Thư ký Tòa án năm 2022 là bao nhiêu?",
+        "answer": null
+    },
+    "38419": {
+        "question": "Trung tâm Lưu chiểu dữ liệu truyền thông số quốc gia có những chức danh lãnh đạo nào?",
+        "answer": null
+    },
+    "153679": {
+        "question": "Sau khi tốt nghiệp ngành nuôi trồng thủy sản nước mặn, nước lợ trình độ trung cấp thì người học phải có kỹ năng ngoại ngữ như thế nào?",
+        "answer": null
+    },
+    "81717": {
+        "question": "Doanh nghiệp hành nghề quản lý, thanh lý tài sản mà không đáp ứng đủ điều kiện hành nghề thì sẽ bị xử phạt thế nào?",
+        "answer": null
+    },
+    "161281": {
+        "question": "Bị xử phạt ra sao khi sử dụng hóa chất cấm trong sản xuất thức ăn thủy sản?",
+        "answer": null
+    },
+    "125029": {
+        "question": "Người chiếm đoạt vũ khí quân dụng bị xử lý như thế nào?",
+        "answer": null
+    },
+    "130035": {
+        "question": "Quỹ bảo tồn di sản Huế có phải công bố công khai về kết quả hoạt động của Quỹ bảo tồn di sản Huế không?",
+        "answer": null
+    },
+    "144965": {
+        "question": "Mức lương hiện nay của Phó Chủ tịch Hội đồng nhân dân thành phố Hồ Chí Minh được quy định thế nào?",
+        "answer": null
+    },
+    "136067": {
+        "question": "Để được hưởng chế độ thai sản cần có những điều kiện gì?",
+        "answer": null
+    },
+    "51829": {
+        "question": "Những trường hợp nào Đảng viên sẽ bị xử lý kỷ luật bằng hình thức khiển trách?",
+        "answer": null
+    },
+    "132561": {
+        "question": "Cơ quan nào chịu trách nhiệm tiếp nhận hồ sơ đề nghị điều chỉnh nội dung giấy phép nổ mìn và các hoạt động gây nổ khác trong phạm vi bảo vệ công trình thủy lợi?",
+        "answer": null
+    },
+    "140203": {
+        "question": "Xử lý khi số phiếu tín nhiệm của cán bộ lãnh đạo thấp từ 2/3 trở lên?",
+        "answer": null
+    },
+    "102469": {
+        "question": "Hồ sơ đề nghị hưởng trợ cấp thất nghiệp bao gồm những giấy tờ gì?",
+        "answer": null
+    },
+    "155181": {
+        "question": "Đọc biểu thuế nhập khẩu ưu đãi đặc biệt của Việt Nam để thực hiện Hiệp định Thương mại Tự do Việt Nam - Hàn Quốc giai đoạn 2022 - 2027 như thế nào?",
+        "answer": null
+    },
+    "92369": {
+        "question": "Phiếu lý lịch tư pháp bao gồm những loại nào?",
+        "answer": null
+    },
+    "48625": {
+        "question": "Để thực hiện sáp nhập tổ chức khoa học và công nghệ công lập thì cần phải đáp ứng các điều kiện gì?",
+        "answer": null
+    },
+    "151527": {
+        "question": "Nội dung, tiêu chí đánh giá chất lượng và nghiệm thụ sản phẩm dịch vụ sự nghiệp công sử dụng ngân sách nhà nước thuộc lĩnh vực Lưu trữ là gì?",
+        "answer": null
+    },
+    "9749": {
+        "question": "Vận tải hàng hóa nguy hiểm trong lĩnh vực giao thông đường thủy nội địa",
+        "answer": null
+    },
+    "94443": {
+        "question": "Nhà nước hỗ trợ đầu tư vào các dự án về khoa học và công nghệ của công ty nông lâm nghiệp ra sao?",
+        "answer": null
+    },
+    "119477": {
+        "question": "Việc tiếp nhận hồ sơ cấp ý kiến pháp lý đối với các văn bản theo phân công của Thủ tướng Chính phủ được thực hiện thế nào?",
+        "answer": null
+    },
+    "106569": {
+        "question": "Để đảm bảo an toàn khai thác sân bay thì việc đặt chóp an toàn xung quanh tàu bay phải thực hiện như thế nào?",
+        "answer": null
+    },
+    "35419": {
+        "question": "Trong trường hợp nào Trưởng ban Ban Cơ yếu Chính phủ thôi hưởng phụ cấp chức vụ lãnh đạo?",
+        "answer": null
+    },
+    "56325": {
+        "question": "Thời hạn để công ty quản lý quỹ nộp các báo cáo định kỳ là khi nào?",
+        "answer": null
+    },
+    "164977": {
+        "question": "Chủ doanh nghiệp chịu trách nhiệm gì khi người lái thuyền gây tai nạn?",
+        "answer": null
+    },
+    "50091": {
+        "question": "Tố cáo của cơ quan báo chí gửi đến được thụ lý khi có đủ các điều kiện gì?",
+        "answer": null
+    },
+    "75067": {
+        "question": "Điều khiển xe chở hàng siêu trường mà không có giấy phép lưu hành thì có bị tước giấy phép lái xe hay không?",
+        "answer": null
+    },
+    "11337": {
+        "question": "Việc cấp Giấy phép vận tải đường bộ quốc tế Việt và Lào được thực hiện trong thời gian bao lâu?",
+        "answer": null
+    },
+    "129895": {
+        "question": "Người lao động làm việc chưa đủ 12 tháng thì số ngày nghỉ hằng năm của họ là bao nhiêu? ",
+        "answer": null
+    },
+    "106867": {
+        "question": "Việc nối mạng và quy trình báo cáo điện tử về thống kê áp dụng đối với các tổ chức tín dụng được quy định thế nào?",
+        "answer": null
+    },
+    "50059": {
+        "question": "Tiêu chuẩn xét danh hiệu “Lao động tiên tiến” là gì?",
+        "answer": null
+    },
+    "23621": {
+        "question": "Hoạt động kiểm tra việc thực hiện kết luận thanh tra được thực hiện dựa trên những căn cứ nào?",
+        "answer": null
+    },
+    "108281": {
+        "question": "Nộp thuế giá trị gia tăng ở đâu?",
+        "answer": null
+    },
+    "5985": {
+        "question": "Điều kiện làm chỉ huy trưởng công trường được quy định như thế nào?",
+        "answer": null
+    },
+    "101753": {
+        "question": "Trường hợp tổ chức, cá nhân nước ngoài không đăng ký kê khai, nộp thuế trực tiếp với cơ quan thuế",
+        "answer": null
+    },
+    "151979": {
+        "question": "Vay tiền của công ty cá cược để tham gia đặt cược bóng đá quốc tế được không?",
+        "answer": null
+    },
+    "73441": {
+        "question": "Giảng viên dạy môn giáo dục quốc phòng và an ninh phải đảm bảo yêu cầu giảng dạy ra sao?",
+        "answer": null
+    },
+    "36775": {
+        "question": "Hồ sơ đăng ký Mẫu chứng từ vận tải đa phương thức quốc tế gồm những giấy tờ gì?",
+        "answer": null
+    },
+    "164269": {
+        "question": "Cá nhân đang tham gia tố tụng dân sự chết thì Tòa án có tạm đình chỉ giải quyết vụ án dân sự được không?",
+        "answer": null
+    },
+    "52833": {
+        "question": "Con của công nhân bị tai nạn lao động có được giảm học phí không?",
+        "answer": null
+    },
+    "73559": {
+        "question": "Thành viên hợp tác xã thực hiện góp vốn như thế nào?",
+        "answer": null
+    },
+    "122539": {
+        "question": "Chồng trốn cấp dưỡng nuôi con sau ly hôn, phải làm sao?",
+        "answer": null
+    },
+    "39985": {
+        "question": "Chánh Thanh tra Viện kiểm sát nhân dân tối cao quy định như thế nào?",
+        "answer": null
+    },
+    "114791": {
+        "question": "Nhiệm vụ của Ban chấp hành Hiệp hội Cao su Việt Nam là gì?",
+        "answer": null
+    },
+    "134493": {
+        "question": "Sau khi làm xong thủ tục nhận nuôi con nuôi có phải thông báo cho nơi đã đăng ký khai sinh cho trẻ em được nhận làm con nuôi không?",
+        "answer": null
+    },
+    "74801": {
+        "question": "Hợp đồng lao động vô hiệu trong trường hợp nào?",
+        "answer": null
+    },
+    "114593": {
+        "question": "Quỹ Từ thiện sống xanh có những nhiệm vụ gì?",
+        "answer": null
+    },
+    "42527": {
+        "question": "Chấm dứt hợp đồng lao động khi nào?",
+        "answer": null
+    },
+    "73489": {
+        "question": "Điều tra vụ tai nạn lao động được pháp luật quy định như thế nào? ",
+        "answer": null
+    },
+    "69953": {
+        "question": "Trình tự thủ tục cấp Giấy phép liên vận giữa Việt Nam, Lào và Campuchia quy định ra sao?",
+        "answer": null
+    },
+    "131133": {
+        "question": "Ly hôn là gì? ",
+        "answer": null
+    },
+    "33127": {
+        "question": "Người khiếm thị được kết luận là khuyết tật nặng thì có được hưởng trợ cấp xã hội hàng tháng hay không?",
+        "answer": null
+    },
+    "33293": {
+        "question": "Có bao nhiêu cơ quan trực thuộc Bộ Khoa học và Công nghệ?",
+        "answer": null
+    },
+    "2757": {
+        "question": "Bảo vệ bí mật nhà nước phải tuân theo nguyên tắc nào?",
+        "answer": null
+    },
+    "83023": {
+        "question": "Thẩm quyền quyết định tạm đình chỉ thực hiện điều ước quốc tế thuộc về cơ quan nào?",
+        "answer": null
+    },
+    "129417": {
+        "question": "Văn phòng Quốc hội sử dụng con dấu có hình biểu tượng cần chuẩn bị giấy tờ gì?",
+        "answer": null
+    },
+    "6723": {
+        "question": "Hết thời hạn giấy phép nhưng hoạt động tìm kiếm cứu nạn chưa kết thúc thì xử lý như thế nào?",
+        "answer": null
+    },
+    "125557": {
+        "question": "Tài sản kết cấu hạ tầng thủy lợi bị thu hồi trong những trường hợp nào?",
+        "answer": null
+    },
+    "105413": {
+        "question": "Cuộc họp kiểm điểm để công chức tại các đơn vị thuộc Bộ Tài chính tự kiểm điểm và nhận hình thức kỷ luật chỉ được tiến hành khi nào?",
+        "answer": null
+    },
+    "42453": {
+        "question": "Lắp ráp ô tô trình độ cao đẳng là ngành nghề như thế nào?",
+        "answer": null
+    },
+    "77825": {
+        "question": "Cơ sở thực hiện xã hội hóa được Nhà nước cho thuê đất theo hình thức nào?",
+        "answer": null
+    },
+    "49085": {
+        "question": "Trường hợp nào tổ chức làm đại lý cho hãng vận tải nước ngoài được phép ghi giá trong hợp đồng bằng ngoại tệ? ",
+        "answer": null
+    },
+    "93353": {
+        "question": "Nhiệm vụ, quyền hạn của Ủy ban nhân dân thành phố trực thuộc trung ương",
+        "answer": null
+    },
+    "107831": {
+        "question": "Xe ưu tiên là xe nào?",
+        "answer": null
+    },
+    "87963": {
+        "question": "Danh mục chỉ tiêu thống kê lĩnh vực viễn thông gồm những gì?",
+        "answer": null
+    },
+    "138729": {
+        "question": "Phẫu thuật điều trị đứt gân Achille tới muộn có cần phải gây mê không?",
+        "answer": null
+    },
+    "26129": {
+        "question": "Công dân có được đi làm khi bị cấm đi khỏi nơi cư trú không? ",
+        "answer": null
+    },
+    "55115": {
+        "question": "Ai có thẩm quyền cấp lại giấy phép tài nguyên nước?",
+        "answer": null
+    },
+    "11493": {
+        "question": "Căn cứ tính thuế thu nhập doanh nghiệp như thế nào?",
+        "answer": null
+    },
+    "95239": {
+        "question": "Có thực hiện tinh giản biên chế đối với cán bộ công chức đang bị thanh tra, kiểm tra hay không?",
+        "answer": null
+    },
+    "49651": {
+        "question": "Tính thuế GTGT hàng nhập khẩu khác tính thuế GTGT thông thường như thế nào?",
+        "answer": null
+    },
+    "12683": {
+        "question": "Cơ quan nào có thẩm quyền thu hồi giấy phép sử dụng thiết bị phát tín hiệu ưu tiên đã được lắp đặt của xe được quyền ưu tiên?",
+        "answer": null
+    },
+    "65139": {
+        "question": "Giấy chứng nhận nghề loại giỏi được cộng bao nhiêu điểm khi xét tốt nghiệp THPT? ",
+        "answer": null
+    },
+    "50009": {
+        "question": "Lựa chọn nhà đầu tư thực hiện dự án đầu tư",
+        "answer": null
+    },
+    "144053": {
+        "question": "Hội Cơ học Việt Nam có quyền hạn và nhiệm vụ gì?",
+        "answer": null
+    },
+    "833": {
+        "question": "Giáo dục pháp luật về giao thông đường bộ có phải là trách nhiệm của mỗi gia đình hay không? ",
+        "answer": null
+    },
+    "10485": {
+        "question": "Cách áp dụng chính sách ưu đãi miễn, giảm tiền sử dụng đất của dự án đầu tư xây dựng chợ theo hình thức BOT như thế nào?",
+        "answer": null
+    },
+    "108369": {
+        "question": "Được áp dụng hình thức chào hàng cạnh tranh rút gọn trong việc lựa chọn nhà thầu cho thuê quảng cáo không?",
+        "answer": null
+    },
+    "138265": {
+        "question": "Chủ tịch Ủy ban nhân dân cấp huyện được quyền xử phạt tổ chức sử dụng trang thiết bị y tế đã hết hạn sử dụng không?",
+        "answer": null
+    },
+    "86617": {
+        "question": "Đang đi tù, có được đăng ký kết hôn không?",
+        "answer": null
+    },
+    "18851": {
+        "question": "Cá nhân chuẩn bị phạm tội tài trợ khủng bố thì có thể bị truy cứu trách nhiệm hình sự hay không?",
+        "answer": null
+    },
+    "147099": {
+        "question": "Nội dung kiểm tra cở sở gia công, sản xuất hàng hóa xuất khẩu như thế nào?",
+        "answer": null
+    },
+    "132391": {
+        "question": "Hồ sơ đăng ký thay đổi chủ doanh nghiệp tư nhân cần những giấy tờ gì?",
+        "answer": null
+    },
+    "165361": {
+        "question": "Trường hợp tổ chức kinh tế được hưởng ưu đãi đầu tư đặc biệt không thực hiện đúng cam kết thì xử lý thế nào?",
+        "answer": null
+    },
+    "57105": {
+        "question": "Khi sử dụng công cụ chuyển nhượng séc đến địa điểm thanh toán thì trong bao lâu được giải quyết?",
+        "answer": null
+    },
+    "137061": {
+        "question": "Người làm hư hại hiện vật trong bảo tàng thì bị xử phạt vi phạm hành chính thế nào?",
+        "answer": null
+    },
+    "59823": {
+        "question": "Nhà nước khuyến khích kinh tế tuần hoàn ra sao?",
+        "answer": null
+    },
+    "150707": {
+        "question": "Doanh nghiệp không báo cáo các loại khoáng sản đã phát hiện trong khu vực điều tra khoáng sản cho cơ quan có thẩm quyền thì bị xử phạt thế nào?",
+        "answer": null
+    },
+    "7251": {
+        "question": "Cho hộ gia đình thuê đất để sử dụng xây dựng công trình công cộng như thế nào?",
+        "answer": null
+    },
+    "46271": {
+        "question": "Đối tượng áp dụng và hiệu lực của Bộ luật Tố tụng Dân sự được quy định như thế nào?",
+        "answer": null
+    },
+    "71967": {
+        "question": "Điều kiện chuyển mục đích sử dụng đất nông nghiệp trồng lúa sang đất vườn trồng cây lâu năm",
+        "answer": null
+    },
+    "39131": {
+        "question": "Công ty trách nhiệm hữu hạn một thành viên có cơ cấu tổ chức như thế nào?",
+        "answer": null
+    },
+    "60023": {
+        "question": "Thủ tục đăng ký biển số xe ô tô trúng đấu giá thực hiện như thế nào theo quy định của pháp luật?",
+        "answer": null
+    },
+    "21617": {
+        "question": "Hướng nghiệp và phân luồng trong giáo dục thế nào?",
+        "answer": null
+    },
+    "97253": {
+        "question": "Cơ quan nào có thẩm quyền thành lập trường năng khiếu thể thao?",
+        "answer": null
+    },
+    "26659": {
+        "question": "Người sử dụng lao động được sử dụng người lao động làm thêm giờ trong Tết Âm lịch 2023 khi đáp ứng điều kiện nào?",
+        "answer": null
+    },
+    "65405": {
+        "question": "Cơ sở kinh doanh dịch vụ thẩm định giá ở nước ngoài đóng cửa có phải thông báo cho Bộ Tài chính không?",
+        "answer": null
+    },
+    "59523": {
+        "question": "Thủ tục rút hồ sơ đăng ký doanh nghiệp online trong trường hợp đăng ký doanh nghiệp qua mạng điện tử ra sao?",
+        "answer": null
+    },
+    "123767": {
+        "question": "Biên bản kiểm toán được lập theo nguyên tắc nào?",
+        "answer": null
+    },
+    "167151": {
+        "question": "Niên hạn sử dụng của tàu thủy lưu trú du lịch được phép nhập khẩu được quy định như thế nào?",
+        "answer": null
+    },
+    "90171": {
+        "question": "Điều kiện để người nước ngoài được sở hữu nhà ở tại Việt Nam là gì?",
+        "answer": null
+    },
+    "62671": {
+        "question": "Danh mục 48 thủ tục hành chính được sửa đổi gồm những thủ tục nào?",
+        "answer": null
+    },
+    "10887": {
+        "question": "Hợp đồng lao động có bị chấm dứt khi hết hạn hợp đồng?",
+        "answer": null
+    },
+    "112671": {
+        "question": "Trường Đại học Khoa học và Công nghệ Hà Nội có chức năng và nhiệm vụ như thế nào?",
+        "answer": null
+    },
+    "134915": {
+        "question": "Chính sách của Nhà nước về quyền tác giả, quyền liên quan theo quy định mới ra sao?",
+        "answer": null
+    },
+    "102371": {
+        "question": "Đối tượng nào không được nhận con nuôi theo quy định pháp luật?",
+        "answer": null
+    },
+    "142267": {
+        "question": "Điều kiện để đề tài nghiên cứu khoa học của sinh viên được tham gia xét tặng Giải thưởng khoa học và công nghệ là gì?",
+        "answer": null
+    },
+    "145691": {
+        "question": "Cục Bồi thường nhà nước được có tối đa bao nhiêu Phó Cục trưởng?",
+        "answer": null
+    },
+    "67317": {
+        "question": "Bất động sản hình thành trong tương lai được đưa vào kinh doanh khi đáp ứng được những điều kiện gì?",
+        "answer": null
+    },
+    "156665": {
+        "question": "Tờ khai hải quan là gì? Có mấy phương thức đăng ký tờ khai hải quan hiện nay?",
+        "answer": null
+    },
+    "143061": {
+        "question": "Thời giờ nào được tính vào thời giờ làm việc được hưởng lương?",
+        "answer": null
+    },
+    "765": {
+        "question": "Người phạm tội phá hủy phương tiện quan trọng về an ninh quốc gia bị truy cứu trách nhiệm hình sự thế nào?",
+        "answer": null
+    },
+    "145787": {
+        "question": "Việc xác định giá trị tài sản thế chấp được thực hiện theo công thức nào?",
+        "answer": null
+    },
+    "77041": {
+        "question": "Người muốn hành nghề Thừa phát lại thì phải tham gia đào tạo nghề?",
+        "answer": null
+    },
+    "16635": {
+        "question": "Thẩm quyền phê duyệt phương án chữa cháy được quy định ra sao? ",
+        "answer": null
+    },
+    "161909": {
+        "question": "Việc tách hộ khẩu để đăng ký thường trú tại cùng một chỗ ở hợp pháp được thực hiện như thế nào?",
+        "answer": null
+    },
+    "28983": {
+        "question": "Thay đổi người quản lý điểm kinh doanh trò chơi điện tử có thưởng thì phải thực hiện các thủ tục gì?",
+        "answer": null
+    },
+    "83961": {
+        "question": "Khi lập Kế hoạch kiểm toán, mục tiêu của cuộc kiểm toán được xác định căn cứ vào đâu?",
+        "answer": null
+    },
+    "42761": {
+        "question": "Thời hạn sử dụng Chứng minh công nhân quốc phòng là bao nhiêu năm?",
+        "answer": null
+    },
+    "148003": {
+        "question": "Chuyển từ đất trồng rừng sản xuất sang đất trồng cây lâu năm thì có cần phải xin phép cơ quan nhà nước hay không?",
+        "answer": null
+    },
+    "47305": {
+        "question": "Đối tượng nào được tham gia bảo hiểm xã hội?",
+        "answer": null
+    },
+    "62607": {
+        "question": "Công thức tính tiền khai thác tài nguyên nước",
+        "answer": null
+    },
+    "109267": {
+        "question": "Hướng dẫn mới về xếp lương đối với viên chức nhiều ngành từ ngày 15/8/2022",
+        "answer": null
+    },
+    "43923": {
+        "question": "Mức phạt đối với người sử dụng ma túy nhiều lần?",
+        "answer": null
+    },
+    "138677": {
+        "question": "Hiện nay có bao nhiêu chính sách hỗ trợ người lao động bị ảnh hưởng bởi Covid-19 theo Nghị quyết 68/NQ-CP năm 2021?",
+        "answer": null
+    },
+    "60653": {
+        "question": "Chính quyền địa phương ở huyện có nhiệm vụ và quyền hạn ra sao?",
+        "answer": null
+    },
+    "84791": {
+        "question": "Mẫu thông báo kết quả đánh giá giám sát điều kiện chăn nuôi đối với chăn nuôi trang trại quy mô lớn năm 2022?",
+        "answer": null
+    },
+    "31005": {
+        "question": "Hồ sơ đề nghị xác định mức độ khuyết tật bao gồm những gì?",
+        "answer": null
+    },
+    "147161": {
+        "question": "Với tội trộm cắp tài sản có thể truy tố trách nhiệm hình sự hay không?",
+        "answer": null
+    },
+    "131795": {
+        "question": "Đối tượng nào được áp dụng quy định về quản lý hoạt động giáo dục kỹ năng sống?",
+        "answer": null
+    },
+    "71157": {
+        "question": "Hồ sơ trình Cục hàng không Việt Nam ký quyết định nâng bậc lương trước thời hạn gồm những gì?",
+        "answer": null
+    },
+    "141287": {
+        "question": "Gia đình có nhu cầu nhận chăm sóc thay thế đối với trẻ em cần đáp ứng những điều kiện gì?",
+        "answer": null
+    },
+    "49107": {
+        "question": "Hiện nay nhiệm vụ, quyền hạn của Trưởng thôn bao gồm những gì? ",
+        "answer": null
+    },
+    "119941": {
+        "question": "Việc điều chỉnh Giấy chứng nhận đăng ký chứng khoán sau khi khi bổ sung chứng khoán cần những giấy tờ gì?",
+        "answer": null
+    },
+    "166733": {
+        "question": "Chi cục Kiểm định hải quan có cơ cấu tổ chức như thế nào?",
+        "answer": null
+    },
+    "159599": {
+        "question": "Thanh toán chi phí đi lại đối với cán bộ công chức đi công tác bằng phương tiện máy bay được quy định như thế nào? ",
+        "answer": null
+    },
+    "168241": {
+        "question": "Dụng cụ chữa cháy thô sơ là gì? Dụng cụ chữa cháy thô sơ bao gồm những loại dụng cụ nào?",
+        "answer": null
+    },
+    "20937": {
+        "question": "Kinh phí hoạt động đối với trang thông tin điện tử của đơn vị trực thuộc Bộ Khoa học và Công nghệ được lấy từ đâu?",
+        "answer": null
+    },
+    "33161": {
+        "question": "Số liệu thống kê hình sự liên ngành được thu thập từ những nguồn nào?",
+        "answer": null
+    },
+    "19537": {
+        "question": "Huân chương Bảo vệ Tổ quốc hạng nhì để tặng cho cá nhân có thành tích gì?",
+        "answer": null
+    },
+    "132157": {
+        "question": "Các sai sót chung nào thường gặp trong báo cáo thống kê ngành tư pháp? ",
+        "answer": null
+    },
+    "132515": {
+        "question": "Để kiểm tra đặc tính sinh hóa của vi khuẩn gây bệnh phù đầu gà bằng phương pháp lên men đường thì thực hiện ra sao?",
+        "answer": null
+    },
+    "54907": {
+        "question": "Hợp đồng vận chuyển hàng hóa bằng đường biển có mấy loại? ",
+        "answer": null
+    },
+    "152135": {
+        "question": "Kế hoạch an toàn sinh học được thực hiện như thế nào?",
+        "answer": null
+    },
+    "76171": {
+        "question": "Theo quy định pháp luật thì tài sản được chia như thế nào?",
+        "answer": null
+    },
+    "69305": {
+        "question": "Chủ tịch Ủy ban nhân dân cấp xã có được quyền xử phạt người sử dụng giấy phép đủ điều kiện kinh doanh dịch vụ karaoke của người khác để kinh doanh không?",
+        "answer": null
+    },
+    "19297": {
+        "question": "Hội viên chính thức Hội Tin học Việt Nam gồm những cá nhân nào?",
+        "answer": null
+    },
+    "19485": {
+        "question": "Phó hiệu trưởng kiêm chủ tịch công đoàn có được miễn dạy học hay không?",
+        "answer": null
+    },
+    "133237": {
+        "question": "Nhiệm vụ và quyền hạn của hội đồng trường trung học phổ thông công lập là gì?",
+        "answer": null
+    },
+    "152317": {
+        "question": "Tại phiên tòa giám đốc thẩm nếu có chứng cứ khác dẫn đến phải bổ sung kháng nghị, Kiểm sát viên đề nghị Hội đồng xét xử hoãn phiên tòa nhưng không được chấp nhận thì cần làm gì?",
+        "answer": null
+    },
+    "150821": {
+        "question": "Cơ quan nào có trách nhiệm báo cáo với Ban Chỉ đạo Trung ương về thực hiện hoạt động phòng chống tham nhũng, tiêu cực?",
+        "answer": null
+    },
+    "61761": {
+        "question": "Công ty nhập đầu cá hồi tươi chưa qua chế biến về bán thì giá tính thuế giá trị gia tăng được quy định thế nào?",
+        "answer": null
+    },
+    "84055": {
+        "question": "Đối tượng nào chưa được xét tặng kỷ niệm chương?",
+        "answer": null
+    },
+    "101717": {
+        "question": "Việc nộp tiền ký quỹ và cấp Giấy chứng nhận tiền ký quỹ ra sao?",
+        "answer": null
+    },
+    "10633": {
+        "question": "Hệ thống thông tin Một cửa điện tử Bộ Tài chính được quy định như thế nào?",
+        "answer": null
+    },
+    "82853": {
+        "question": "Hồ sơ đề nghị miễn, giảm án phí theo quy định mới nhất hiện nay bao gồm những gì?",
+        "answer": null
+    },
+    "141029": {
+        "question": "Quyền hạn của Chủ tịch Hội đồng giám sát xổ số được quy định thế nào?",
+        "answer": null
+    },
+    "16695": {
+        "question": "Các cơ quan có thẩm quyền quản lý nhà nước về chứng thực bao gồm những cơ quan nào? ",
+        "answer": null
+    },
+    "160735": {
+        "question": "Trình tự cấp giấy phép lao động tại Việt Nam?",
+        "answer": null
+    },
+    "160333": {
+        "question": "Hồ sơ, trình tự thủ tục thẩm định thiết kế xe cơ giới cải tạo phương tiện giao thông cơ giới đường bộ theo Thông tư 16/2022/TT-BGTVT?",
+        "answer": null
+    },
+    "56035": {
+        "question": "Chứng chỉ đào tạo của Bộ Tư pháp bị thu hồi khi nào?",
+        "answer": null
+    },
+    "90459": {
+        "question": "Hoạt động thu thập, tổng hợp thông tin về kết luận, kiến nghị kiểm toán được quy định như thế nào?",
+        "answer": null
+    },
+    "26015": {
+        "question": "Trình tự, thủ tục hoàn thuế trước kiểm tra sau đối với hàng hóa xuất nhập khẩu được thực hiện như thế nào?",
+        "answer": null
+    },
+    "93973": {
+        "question": "Hình thức, nội dung xét thăng hạng chức danh nghề nghiệp từ Lưu trữ viên lên Lưu trữ viên chính như thế nào?",
+        "answer": null
+    },
+    "46227": {
+        "question": "Thời gian thu hồi chứng thư số của cá nhân tại Bộ Giáo dục và Đào tạo trong bao lâu?",
+        "answer": null
+    },
+    "90005": {
+        "question": "Thời hiệu xử phạt vi phạm hành chính đối với doanh nghiệp cung cấp dịch vụ trò chơi điện tử G1 có hình ảnh xúc phạm anh hùng dân tộc là bao lâu?",
+        "answer": null
+    },
+    "22003": {
+        "question": "Chủ doanh nghiệp muốn đặt tên doanh nghiệp bằng tiếng nước ngoài có được không?",
+        "answer": null
+    },
+    "135951": {
+        "question": "Văn phòng Thông báo và Hỏi đáp quốc gia về Tiêu chuẩn Đo lường Chất lượng có chức năng là gì?",
+        "answer": null
+    },
+    "68001": {
+        "question": "Xây dựng dự toán ngân sách nhà nước để triển khai phát triển ngành nông nghiệp, nông thôn năm 2024 như thế nào?",
+        "answer": null
+    },
+    "83063": {
+        "question": "Phương tiện nào được miễn làm thủ tục vào, rời cảng, bến thủy nội địa, khu neo đậu theo quy định pháp luật",
+        "answer": null
+    },
+    "111281": {
+        "question": "Đơn vị được kiểm toán?",
+        "answer": null
+    },
+    "108017": {
+        "question": "Biển báo ZONE hiện nay bao gồm những loại biển báo nào?",
+        "answer": null
+    },
+    "92803": {
+        "question": "Nghĩa vụ của Chủ tịch và các thành viên Hội đồng thành viên khác trong Công ty Mua bán nợ Việt Nam là gì?",
+        "answer": null
+    },
+    "26611": {
+        "question": "Biện pháp xử lý hành chính đưa vào cơ sở cai nghiện bắt buộc quy định hồ sơ ra sao?",
+        "answer": null
+    },
+    "135949": {
+        "question": "Hồ sơ đăng ký kết hôn theo quy định hiện nay bao gồm những gì? ",
+        "answer": null
+    },
+    "84235": {
+        "question": "Áp dụng hồi tố trong văn bản quy phạm pháp luật hiện nay được quy định như thế nào?",
+        "answer": null
+    },
+    "57921": {
+        "question": "Trường hợp quay số mở thưởng mà bóng bị kẹt trong lồng cầu thì Hội đồng giám sát xổ số xử lý như thế nào?",
+        "answer": null
+    },
+    "156055": {
+        "question": "Trường hợp nào loại trừ trách nhiệm bảo hiểm bắt buộc trong hoạt động đầu tư xây dựng?",
+        "answer": null
+    },
+    "136149": {
+        "question": "Cơ cấu tổ chức của Quỹ Hỗ trợ nông dân như thế nào?",
+        "answer": null
+    },
+    "146753": {
+        "question": "Quy định về thời điểm lập hóa đơn điện tử đối với cơ sở bán lẻ, kinh doanh dịch vụ ăn uống trực tiếp cho khách hàng nhưng hạch toán tại trụ sở chính?",
+        "answer": null
+    },
+    "123927": {
+        "question": "Quy định về thời hạn nộp hồ sơ khai thuế đối với hộ khoán?",
+        "answer": null
+    },
+    "166373": {
+        "question": "Mẫu đơn đăng ký sử dụng các chất được kiểm soát mới nhất theo Nghị định 06 là mẫu nào?",
+        "answer": null
+    },
+    "78857": {
+        "question": "Khi nào kết quả của công tác kiểm tra và bảo dưỡng trạm bơm nước chữa cháy được xem là vẫn đủ điều kiện để hoạt động?",
+        "answer": null
+    },
+    "35143": {
+        "question": "Các nước tham gia Công ước Chống sa mạc hóa thuộc Châu Phi có thể giao trách nhiệm nào cho các tổ chức liên chính phủ tiểu vùng?",
+        "answer": null
+    },
+    "40327": {
+        "question": "Thừa phát lại được pháp luật quy định như thế nào?",
+        "answer": null
+    },
+    "49509": {
+        "question": "Khi nào cần áp dụng biện pháp kiểm soát đặc biệt tại cửa khẩu đường hàng không?",
+        "answer": null
+    },
+    "70395": {
+        "question": "Công ty có người lao động bị tai nạn nhưng công ty đã mua bảo hiểm tai nạn rồi thì công ty có phải bồi thường nữa không?",
+        "answer": null
+    },
+    "48785": {
+        "question": "Định mức thiết bị đọc mã vạch của ngành Thuế được phân bổ ra sao?",
+        "answer": null
+    },
+    "137707": {
+        "question": "Gia hạn giấy phép cung cấp dịch vụ phát thanh, truyền hình trả tiền trong khoảng thời gian nào?",
+        "answer": null
+    },
+    "76135": {
+        "question": "Người học ngành bảo vệ thực vật trình độ cao đẳng sau khi tốt nghiệp có thể làm những công việc nào?",
+        "answer": null
+    },
+    "38719": {
+        "question": "Thẩm tra dự thảo kế hoạch công tác hàng năm của các đơn vị thuộc Bộ Tư pháp tập trung vào những vấn đề gì?",
+        "answer": null
+    },
+    "111301": {
+        "question": "Hồ sơ, thủ tục đề nghị cấp giấy phép xuất bản tài liệu không kinh doanh ",
+        "answer": null
+    },
+    "72605": {
+        "question": "Cơ quan nào có trách nhiệm thông báo kịp thời cho Thanh tra Bộ Công Thương khi có công dân đến yêu cầu giải quyết khiếu nại, tố cáo?",
+        "answer": null
+    },
+    "74151": {
+        "question": "Quy định về chi phí để tính thuế đối với doanh nghiệp có giao dịch liên kết?",
+        "answer": null
+    },
+    "395": {
+        "question": "Quỹ bảo lãnh tín dụng cho các doanh nghiệp vừa và nhỏ xem xét xóa nợ gốc cho những đối tượng nào?",
+        "answer": null
+    },
+    "94207": {
+        "question": "Điều kiện áp dụng biện pháp chống bán phá giá tại Việt Nam là gì?",
+        "answer": null
+    },
+    "31875": {
+        "question": "Trung tâm trọng tài có được thành lập Chi nhánh và Văn phòng đại diện không?",
+        "answer": null
+    },
+    "35805": {
+        "question": "Việc bồi thường thiệt hại do tài sản bị mất, bị hủy hoại hoặc bị hư hỏng được thực hiện thế nào?",
+        "answer": null
+    },
+    "25067": {
+        "question": "Các cơ quan tiến hành tố tụng thực hiện phải xây dựng báo cáo về việc trả hồ sơ để điều tra bổ sung vào thời gian thế nào?",
+        "answer": null
+    },
+    "63975": {
+        "question": "Giấy chứng nhận đăng ký nhãn hiệu có thời hạn bao lâu?",
+        "answer": null
+    },
+    "49579": {
+        "question": "Hệ thống chuẩn mực kiểm toán nhà nước được áp dụng trong phạm vi nào?",
+        "answer": null
+    },
+    "154321": {
+        "question": "Công ty có phải chịu trách nhiệm khi không đóng đủ BHXH cho người lao động không?",
+        "answer": null
+    },
+    "168093": {
+        "question": "Ai có quyền quyết định giải thể trung tâm giáo dục thường xuyên?",
+        "answer": null
+    },
+    "118413": {
+        "question": "Đối tượng nào áp dụng các mẫu hóa đơn quy định tại Thông tư 78/2021/TT-BTC?",
+        "answer": null
+    },
+    "129455": {
+        "question": "Hiệp hội có quyền đại diện cho Hội viên kiến nghị với Nhà nước về các chính sách phát triển ngành đó không?",
+        "answer": null
+    },
+    "160033": {
+        "question": "Chánh thanh tra Bộ Quốc phòng có quyền lập biên bản vi phạm hành chính với doanh nghiệp công nghiệp vi phạm trên không?",
+        "answer": null
+    },
+    "80705": {
+        "question": "Khi thực hiện kiểm sát xét xử trong một vụ án hình sự mà có cả Kiểm sát viên và Kiểm tra viên cùng tham gia thì ai có quyền phân công, chỉ đạo?",
+        "answer": null
+    },
+    "20253": {
+        "question": "Con sinh ra sau ly hôn vẫn là con chung trong trường hợp nào?",
+        "answer": null
+    },
+    "139285": {
+        "question": "Phân hữu cơ khoáng muốn được công nhận lưu hành tại Việt Nam phải thực hiện khảo nghiệm có đúng không?",
+        "answer": null
+    },
+    "101607": {
+        "question": "Đang hưởng trợ cấp thất nghiệp mà tìm được việc làm thì có bị mất những tháng chưa hưởng hay không? ",
+        "answer": null
+    },
+    "123885": {
+        "question": "Ban Tôn giáo Chính phủ có phải là cơ quan thuộc Chính phủ không?",
+        "answer": null
+    },
+    "151721": {
+        "question": "Hồ sơ đề nghị cấp chứng chỉ hành nghề xây dựng bao gồm những gì?",
+        "answer": null
+    },
+    "150367": {
+        "question": "Trường hợp nào sẽ dừng cuộc đấu giá biển số xe ô tô?",
+        "answer": null
+    },
+    "61479": {
+        "question": "Bao lâu thì những phản ánh kiến nghị trên Cổng thông tin điện tử Bộ Nội vụ sẽ được giải quyết?",
+        "answer": null
+    },
+    "36425": {
+        "question": "Các yêu cầu tối thiểu đối với cơ sở chủ trì đối với chương trình đào tạo liên kết là gì?",
+        "answer": null
+    },
+    "9131": {
+        "question": "Mức thu phí thẩm định cấp Giấy xác nhận thực vật biến đổi gen đủ điều kiện sử dụng làm thực phẩm?",
+        "answer": null
+    },
+    "148521": {
+        "question": "Trung tâm Xử lý Quốc gia dự phòng thay thế cho Trung tâm Xử lý Quốc gia trong trường hợp nào?",
+        "answer": null
+    },
+    "47101": {
+        "question": "Phương pháp và thủ tục kiểm toán khi lập Kế hoạch kiểm toán tổng quát được quy định như thế nào?",
+        "answer": null
+    },
+    "48271": {
+        "question": "Khi thực hành chế biến cá tra phi lê đông lạnh, việc soi ký sinh trùng thực hiện như thế nào?",
+        "answer": null
+    },
+    "99625": {
+        "question": "Ai có quyền cấp Giấy chứng minh Thẩm phán?",
+        "answer": null
+    },
+    "104527": {
+        "question": "Thi đấu xe ô tô thể thao địa hình thì trọng tài có quy định về điều kiện như thế nào?",
+        "answer": null
+    },
+    "105061": {
+        "question": "Thừa phát lại có được lập vi bằng khi không trực tiếp chứng kiến mà chỉ thông qua người yêu cầu không?",
+        "answer": null
+    },
+    "81799": {
+        "question": "Ai có quyền bầu chọn Chủ tịch Hội Văn nghệ dân gian Việt Nam?",
+        "answer": null
+    },
+    "44677": {
+        "question": "Điều tra viên cao cấp không được hưởng phụ cấp trách nhiệm theo nghề trong những thời gian nào?",
+        "answer": null
+    },
+    "118381": {
+        "question": "Trường hợp giáo viên nghỉ chế độ thai sản có được đánh giá là lao động tiên tiến không?",
+        "answer": null
+    },
+    "58149": {
+        "question": "Số lượng cán bộ công chức ở xã theo quy định ra sao?",
+        "answer": null
+    },
+    "101237": {
+        "question": "Việc công bố thông tin bất thường khi tài khoản của công ty do Nhà nước nắm giữ 100% vốn điều lệ bị phong tỏa cần tuân theo những nguyên tắc gì?",
+        "answer": null
+    },
+    "53825": {
+        "question": "Mức phụ cấp ưu đãi mà giáo viên giảng dạy tại trường chuyên biệt được nhận là bao nhiêu?",
+        "answer": null
+    },
+    "117047": {
+        "question": "Hồ sơ đăng ký quốc tịch Việt Nam đối với tàu bay cần được gửi tới cơ quan nào?",
+        "answer": null
+    },
+    "119219": {
+        "question": "Khẩn trương xây dựng Nghị định sửa đổi Nghị định 139/2018/NĐ-CP về kinh doanh dịch vụ kiểm định xe cơ giới theo thủ tục rút gọn?",
+        "answer": null
+    },
+    "59877": {
+        "question": "Trường hợp các thành viên không thống nhất khi thẩm định, chấm điểm hồ sơ xét thăng hạng chức danh nghề nghiệp của ứng viên thì xử lý như thế nào?",
+        "answer": null
+    },
+    "163411": {
+        "question": "Tổ hợp tác phải gửi báo cáo tình hình hoạt động trước ngày bao nhiêu?",
+        "answer": null
+    },
+    "121297": {
+        "question": "Pháp luật Việt Nam quy định thế nào về quyền kinh doanh xuất, nhập khẩu?",
+        "answer": null
+    },
+    "72629": {
+        "question": "Đơn phương chấm dứt hợp đồng trái pháp luật chịu hậu quả pháp lý gì?",
+        "answer": null
+    },
+    "46647": {
+        "question": "Công ty chào bán cổ phiếu ra công chúng phải chuẩn bị hồ sơ đăng ký niêm yết như thế nào?",
+        "answer": null
+    },
+    "47671": {
+        "question": "Ban Chỉ đạo quốc gia về hội nhập quốc tế có nhiệm vụ như thế nào?",
+        "answer": null
+    },
+    "158617": {
+        "question": "Người lao động làm việc theo hợp đồng lao động mùa vụ đi du học ở nước ngoài có được hưởng bảo hiểm xã hội một lần hay không?",
+        "answer": null
+    },
+    "131115": {
+        "question": "Điều kiện về năng lực và uy tín đối với người được bổ nhiệm giữ chức Giám đốc kiêm Tổng Biên tập Nhà xuất bản Chính trị quốc gia Sự thật thế nào?",
+        "answer": null
+    },
+    "52563": {
+        "question": "Nhà hộ sinh cần đáp ứng những điều kiện gì để được cấp phép hoạt động?",
+        "answer": null
+    },
+    "134451": {
+        "question": "Thành phần và quy cách hồ sơ nghiệm thu công tác điều tiết khống chế bảo đảm an toàn giao thông, chống va trôi được quy định như thế nào?",
+        "answer": null
+    },
+    "34129": {
+        "question": "Bán nhà ở hình thành trong tương lai có cần Giấy chứng nhận quyền sử dụng đất không?",
+        "answer": null
+    },
+    "108775": {
+        "question": "Vụ án hình sự đối với người dưới 18 tuổi chưa kết thúc điều tra thì ai có thẩm quyền yêu cầu Cơ quan điều tra ra quyết định xử lý vụ án? ",
+        "answer": null
+    },
+    "33541": {
+        "question": "Ai phải nộp thuế thu nhập doanh nghiệp?",
+        "answer": null
+    },
+    "155657": {
+        "question": "Quy trình thực hiện một dự án PPP diễn ra như thế nào? ",
+        "answer": null
+    },
+    "67909": {
+        "question": "Mức đoàn phí hiện nay mà đoàn viên công đoàn phải đóng hàng tháng là bao nhiêu?",
+        "answer": null
+    },
+    "52967": {
+        "question": "Tài khoản của Kho bạc Nhà nước được mở tại đâu?",
+        "answer": null
+    },
+    "39113": {
+        "question": "Có được thanh toán lại chi phí khám chữa bệnh khi quên mang thẻ bảo hiểm y tế?",
+        "answer": null
+    },
+    "147721": {
+        "question": "Sinh viên học nghệ thuật truyền thống nộp hồ sơ hưởng chế độ ưu đãi tại trường nghệ thuật tư thục thì trong bao lâu đơn đề nghị được xác nhận? ",
+        "answer": null
+    },
+    "36355": {
+        "question": "Cho vay nặng lãi bị xử phạt hành chính bao nhiêu?",
+        "answer": null
+    },
+    "85733": {
+        "question": "Người bị tạm giữ, người bị tạm giam có quyền bầu cử không?",
+        "answer": null
+    },
+    "158097": {
+        "question": "Cuộc họp công bố quyết định thanh tra của Kiểm toán nhà nước gồm những nội dung chính nào?",
+        "answer": null
+    },
+    "49441": {
+        "question": "Doanh nghiệp viễn thông có quyền quyết định giá cước viễn thông của doanh nghiệp hay không?",
+        "answer": null
+    },
+    "144419": {
+        "question": "Tem kiểm định xe máy chuyên dùng quân sự được cấp khi nào?",
+        "answer": null
+    },
+    "114687": {
+        "question": "Hội viên chính thức của Hội Văn học nghệ thuật các dân tộc thiểu số Việt Nam được quyền xin ra khỏi Hội không?",
+        "answer": null
+    },
+    "147915": {
+        "question": "Doanh nghiệp dịch vụ đăng ký hoạt động dịch vụ đưa người lao động Việt Nam đi làm việc tại Nhật Bản cần chuẩn bị những giấy tờ gì?",
+        "answer": null
+    },
+    "116463": {
+        "question": "Tiền lương làm thêm giờ đối với người lao động đi công tác vào thứ 7, chủ nhật thì được tính lương thế nào?",
+        "answer": null
+    },
+    "119877": {
+        "question": "Trong thi hành án hình sự, thi hành án phạt cảnh cáo được thực hiện thế nào?",
+        "answer": null
+    },
+    "38969": {
+        "question": "Vi phạm quy định về tổ chức, quản trị, điều hành thì bị xử lý như thế nào? ",
+        "answer": null
+    },
+    "23701": {
+        "question": "Vỏ bọc bưu gửi bị rách, hư hại mà đơn vị chuyển phát không thực hiện việc gói, bọc lại bưu gửi thì sẽ bị xử phạt vi phạm bao nhiêu?",
+        "answer": null
+    },
+    "5397": {
+        "question": "Sàn giao dịch bất động sản là gì?",
+        "answer": null
+    },
+    "74071": {
+        "question": "Doanh nghiệp có vốn đầu tư nước ngoài được phép kinh doanh bất động sản dưới những hình thức nào tại Việt Nam?",
+        "answer": null
+    },
+    "44139": {
+        "question": "Để giảm tỷ lệ tử vong do bệnh sốt xuất huyết Dengue (SXHD) Sở Y tế đề nghị các cơ sở khám bệnh, chữa bệnh trên địa bàn Thành phố thực hiện nội dung gì?",
+        "answer": null
+    },
+    "154871": {
+        "question": "Thẩm quyền cấp giấy chứng nhận đăng ký hoạt động liên kết đào tạo với nước ngoài theo quy định mới nhất?",
+        "answer": null
+    },
+    "25285": {
+        "question": "Bảo vệ rừng là trách nhiệm của ai?",
+        "answer": null
+    },
+    "116299": {
+        "question": "Lập dự án đầu tư xây dựng theo quy định pháp luật ",
+        "answer": null
+    },
+    "129069": {
+        "question": "Hồ sơ đề nghị rút ngắn thời gian thử thách đối với người được tha tù trước thời hạn có điều kiện bao gồm những giấy tờ gì?",
+        "answer": null
+    },
+    "61397": {
+        "question": "Doanh nghiệp không đáp ứng giả định hoạt động liên tục lập trình Bảng cân đối kế toán cần đảm bảo các quy định nào?",
+        "answer": null
+    },
+    "16111": {
+        "question": "Doanh nghiệp có tự in chứng từ khấu trừ thuế TNCN của tổ chức khấu trừ cho cá nhân không ký hợp đồng hoặc ký hợp đồng dưới 3 tháng được không?",
+        "answer": null
+    },
+    "37859": {
+        "question": "Doanh nghiệp môi giới bảo hiểm bị thu hồi giấy phép thành lập và hoạt động trong những trường hợp nào?",
+        "answer": null
+    },
+    "101921": {
+        "question": "Thời hạn của giấy phép lái xe hạng D được ghi ở đâu?",
+        "answer": null
+    },
+    "120851": {
+        "question": "Việc thực hiện chỉ định thầu đối với gói thầu phi tư vấn dưới 100 triệu đồng phải đáp ứng những điều kiện nào?",
+        "answer": null
+    },
+    "96329": {
+        "question": "Mức hưởng BHXH 1 lần năm 2023 được tính như thế nào?",
+        "answer": null
+    },
+    "83377": {
+        "question": "Thù lao của Hòa giải viên thương mại được tính như thế nào?",
+        "answer": null
+    },
+    "165265": {
+        "question": "Hoạt động quản lý, bảo vệ, bảo tồn, phát triển và sử dụng rừng trong phương án quản lý rừng bền vững đối với rừng đặc dụng được quy định như thế nào?",
+        "answer": null
+    },
+    "61501": {
+        "question": "Thời gian bảo hành đối với thiết bị kiểm tra hóa đơn, biên lai của ngành Thuế tối thiểu là bao nhiêu năm?",
+        "answer": null
+    },
+    "155191": {
+        "question": "Mang thai hộ có bị cấm hay không? ",
+        "answer": null
+    },
+    "116757": {
+        "question": "Sau khi kết thúc thời gian tập sự hành nghề Thừa phát lại thì sẽ được bổ nhiệm làm Thừa phát lại đúng không?",
+        "answer": null
+    },
+    "144819": {
+        "question": "Thời hạn tạm giam đối với các bị can trong vụ án hình sự được tính như thế nào?",
+        "answer": null
+    },
+    "130747": {
+        "question": "Việc cấp phù hiệu cho xe ô tô được tăng cường để giải tỏa hành khách trên tuyến cố định trong dịp Tết Nguyên đán được quy định thế nào?",
+        "answer": null
+    },
+    "18645": {
+        "question": "Trong độ tuổi đi nghĩa vụ quân sự mà đi xăm hình có bị cấm không?",
+        "answer": null
+    },
+    "14855": {
+        "question": "Yêu cầu cơ bản về an toàn hệ thống thông tin theo cấp độ theo Tiêu chuẩn là gì?",
+        "answer": null
+    },
+    "124919": {
+        "question": "Kiểm tra viên được phân công quản lý hồ sơ tin báo về tội phạm tạm đình chỉ có những trách nhiệm gì?",
+        "answer": null
+    },
+    "167771": {
+        "question": "Quy định chung về giá dịch vụ trong lĩnh vực giáo dục, đào tạo khi thực hiện giao nhiệm vụ, đặt hàng, đấu thầu như thế nào?",
+        "answer": null
+    },
+    "133903": {
+        "question": "Ngoài phạt tiền còn bị xử phạt bổ sung gì không?",
+        "answer": null
+    },
+    "60315": {
+        "question": "Kế hoạch phát triển nhà ở công vụ thuộc Bộ quốc phòng được lập và chấp thuận như thế nào?",
+        "answer": null
+    },
+    "127075": {
+        "question": "Cấp giấy chứng nhận quyền sử dụng đất được quy định như thế nào?",
+        "answer": null
+    },
+    "164003": {
+        "question": "Việc báo cáo hoạt động đầu tư tại Việt Nam là trách nhiệm của ai?",
+        "answer": null
+    },
+    "81595": {
+        "question": "Mức thu lệ phí khi đăng ký nuôi con nuôi hiện nay đối với công dân Việt Nam đang thường trú trong nước là bao nhiêu?",
+        "answer": null
+    },
+    "147153": {
+        "question": "Cách điền Mẫu số 03/TNDN Tờ khai quyết toán thuế TNDN áp dụng đối với phương pháp doanh thu - chi?",
+        "answer": null
+    },
+    "87621": {
+        "question": "Phương pháp xác định dạng khuyết tật và mức độ khuyết tật",
+        "answer": null
+    },
+    "98155": {
+        "question": "Người trực tiếp nuôi con sau ly hôn có được là người khuyết tật?",
+        "answer": null
+    },
+    "28645": {
+        "question": "Điều kiện có hiệu lực của giao dịch dân sự được quy định như thế nào? ",
+        "answer": null
+    },
+    "96781": {
+        "question": "Phòng ngừa, ứng phó, khắc phục sự cố trong quá trình bay đo từ, bay đo trọng lực trong thăm dò khoáng sản như thế nào?",
+        "answer": null
+    },
+    "62913": {
+        "question": "Hội đồng thành viên EVN có được quyết định giá mua, bán điện giữa EVN với các Tổng công ty Điện lực không?",
+        "answer": null
+    }
+}

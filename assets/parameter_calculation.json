@@ -1,0 +1,17 @@
+{
+  "method": "Full unquantized architectures including embeddings and tied output head counted once. Independently recount on meta device at runtime.",
+  "base_parameters": {
+    "embedding": 117653760,
+    "reranker": 567755777,
+    "generator": 3085938688
+  },
+  "base_total": 3771348225,
+  "lora_rank_16": 29933568,
+  "total_with_unmerged_lora": 3801281793,
+  "max_allowed_exclusive": 4000000000,
+  "source_configs": [
+    "https://huggingface.co/intfloat/multilingual-e5-small/blob/main/config.json",
+    "https://huggingface.co/AITeamVN/Vietnamese_Reranker/blob/main/config.json",
+    "https://huggingface.co/AITeamVN/Vi-Qwen2-3B-RAG/blob/main/config.json"
+  ]
+}

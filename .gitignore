@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.coverage
+
+# Kết quả sinh trong lúc chạy local/Kaggle không thuộc mã nguồn.
+runs/
+legalqa_under4b_run/
