@@ -6,9 +6,64 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from .data import iter_documents, legal_parents, token_children
+from .data import DOC_NUMBER, iter_documents, legal_parents, token_children
 from .io import Journal, digest, file_hash, load_questions, read_json, source_hash, write_json
 from .models import Encoder, Reranker, model_lock, release
+
+
+QUESTION_STOPWORDS = frozenset({
+    "ai", "bao", "bằng", "các", "cho", "có", "của", "được", "gì", "hay", "khi",
+    "là", "một", "nào", "như", "những", "phải", "quy", "sao", "sẽ", "theo", "thế",
+    "thì", "tại", "trong", "và", "về", "với", "đối", "định",
+})
+RECENCY_MARKERS = ("mới nhất", "hiện hành", "hiện nay", "còn hiệu lực")
+
+
+def word_tokens(text):
+    return re.findall(r"[^\W_]+", text.casefold(), re.UNICODE)
+
+
+def content_terms(text):
+    return list(dict.fromkeys(token for token in word_tokens(text)
+                              if len(token) > 1 and token not in QUESTION_STOPWORDS))
+
+
+def legal_document_numbers(text):
+    return {match.group(0).casefold() for match in DOC_NUMBER.finditer(text)
+            if any(char.isalpha() for char in match.group(0).rsplit("/", 1)[-1])}
+
+
+def document_year(text):
+    years = [int(value) for value in re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", text)]
+    return max(years) if years else None
+
+
+def retrieval_adjustment(question, candidate, settings, newest_year=None):
+    """Small interpretable boosts complement the neural reranker without replacing it."""
+    candidate_text = (candidate.get("header", "")+"\n"+candidate.get("text", "")).casefold()
+    terms = content_terms(question)
+    candidate_terms = set(word_tokens(candidate_text))
+    coverage = sum(term in candidate_terms for term in terms)/max(1, len(terms))
+    adjustment = settings.get("lexical_score_weight", 0.0)*coverage
+
+    requested_documents = legal_document_numbers(question)
+    if requested_documents and any(number in candidate_text for number in requested_documents):
+        adjustment += settings.get("exact_document_bonus", 0.0)
+
+    question_years = set(re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", question))
+    if question_years and any(year in candidate_text for year in question_years):
+        adjustment += settings.get("year_match_bonus", 0.0)
+
+    tokens = word_tokens(question)
+    phrases = [" ".join(tokens[i:i+3]) for i in range(max(0, len(tokens)-2))
+               if sum(token not in QUESTION_STOPWORDS for token in tokens[i:i+3]) >= 2]
+    if any(phrase in candidate_text for phrase in phrases):
+        adjustment += settings.get("phrase_match_bonus", 0.0)
+
+    if newest_year and any(marker in question.casefold() for marker in RECENCY_MARKERS):
+        if document_year(candidate.get("header", "")) == newest_year:
+            adjustment += settings.get("recency_bonus", 0.0)
+    return adjustment
 
 
 def rrf(rankings, constant=60):
@@ -174,6 +229,45 @@ class Retriever:
                                 (query, self.c["retrieval"]["bm25_k"])).fetchall()
         return [row[0] for row in rows]
 
+    def _fts(self, query, limit):
+        rows = self.con.execute(
+            "SELECT rowid FROM search WHERE search MATCH ? "
+            "ORDER BY bm25(search,2.5,1.0),rowid LIMIT ?", (query, limit)
+        ).fetchall()
+        return [row[0] for row in rows]
+
+    def bm25_phrases(self, question):
+        tokens = word_tokens(question)
+        phrases = []
+        for size in (4, 3):
+            for start in range(max(0, len(tokens)-size+1)):
+                part = tokens[start:start+size]
+                if sum(token not in QUESTION_STOPWORDS for token in part) >= 2:
+                    phrases.append(" ".join(part))
+        phrases = list(dict.fromkeys(phrases))[:24]
+        if not phrases:
+            return []
+        query = " OR ".join('"'+phrase+'"' for phrase in phrases)
+        return self._fts(query, self.c["retrieval"].get("precise_bm25_k", 40))
+
+    def bm25_precise(self, question):
+        terms = content_terms(question)
+        if len(terms) < 3:
+            return []
+        limit = self.c["retrieval"].get("precise_bm25_k", 40)
+        result = []
+        # Start strict and relax only when needed. Earlier rows remain ahead after deduplication.
+        for count in dict.fromkeys([min(12, len(terms)), min(8, len(terms)), min(5, len(terms))]):
+            selected = sorted(terms, key=lambda value: (-len(value), terms.index(value)))[:count]
+            query = " AND ".join('"'+term+'"' for term in selected)
+            try:
+                result.extend(self._fts(query, limit))
+            except sqlite3.OperationalError:
+                continue
+            if len(dict.fromkeys(result)) >= limit:
+                break
+        return list(dict.fromkeys(result))[:limit]
+
     def chunks(self, ids):
         if not ids:
             return {}
@@ -183,16 +277,22 @@ class Retriever:
     def retrieve_one(self, question, dense_ids, reranker):
         start = time.perf_counter()
         bm = self.bm25(question)
+        phrase_bm = self.bm25_phrases(question)
+        precise_bm = self.bm25_precise(question)
         bm_seconds = time.perf_counter()-start
         rc = self.c["retrieval"]
-        fusion = rrf([bm, dense_ids], rc["rrf_constant"])
+        fusion = rrf([bm, phrase_bm, precise_bm, dense_ids], rc["rrf_constant"])
         chunks = self.chunks(fusion)
         pool = diversified(fusion, chunks, rc["pool_k"], rc["max_children_per_parent"])
         t = time.perf_counter()
         scores = reranker.score(question, [chunks[k]["header"]+"\n"+chunks[k]["text"] for k in pool])
-        ranked = sorted(zip(pool,scores), key=lambda pair: (-pair[1], pair[0]))
+        years = [document_year(chunks[key]["header"]) for key in pool]
+        newest_year = max((year for year in years if year), default=None)
+        scored = [(key, score, retrieval_adjustment(question, chunks[key], rc, newest_year))
+                  for key,score in zip(pool,scores)]
+        ranked = sorted(scored, key=lambda row: (-(row[1]+row[2]), row[0]))
         selected, seen = [], set()
-        for key, score in ranked:
+        for key, score, adjustment in ranked:
             child = chunks[key]
             if child["parent_id"] in seen:
                 continue
@@ -206,12 +306,13 @@ class Retriever:
                 parent["text"] = parent["text"][start_char:end_char]
             selected.append({**parent, "seed_start": child["start"]-start_char, "seed_end": child["end"]-start_char,
                              "source_window_start": start_char, "source_window_end": end_char,
-                             "seed_chunk_id": key, "rerank_score": score})
+                             "seed_chunk_id": key, "rerank_score": score,
+                             "retrieval_adjustment": adjustment, "final_score": score+adjustment})
             if len(selected) == rc["parents_k"]:
                 break
         return {"question": question, "contexts": selected,
-                "stages": {"bm25": bm, "dense": dense_ids, "rrf": fusion,
-                           "reranked": [k for k,_ in ranked]},
+                "stages": {"bm25": bm, "bm25_phrases": phrase_bm, "bm25_precise": precise_bm,
+                           "dense": dense_ids, "rrf": fusion, "reranked": [row[0] for row in ranked]},
                 "seconds": {"bm25": bm_seconds, "rerank": time.perf_counter()-t}}
 
 

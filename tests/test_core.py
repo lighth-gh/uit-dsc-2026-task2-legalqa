@@ -12,8 +12,8 @@ from legalqa.generation import package_submission
 from legalqa.io import Journal, ROOT, config, group_key, read_json, validate_predictions, write_json
 from legalqa.models import require_approved
 from legalqa.metrics import select_reports
-from legalqa.prompts import answer_flags, clean_answer, pack_prompt, window_around_seed
-from legalqa.retrieval import diversified, rrf
+from legalqa.prompts import answer_flags, clean_answer, complete_truncated_answer, pack_prompt, window_around_seed
+from legalqa.retrieval import Retriever, diversified, retrieval_adjustment, rrf
 from legalqa.training import training_examples
 
 
@@ -129,6 +129,23 @@ class CoreTests(unittest.TestCase):
         rows = con.execute('SELECT text FROM s WHERE s MATCH ? ORDER BY bm25(s)',('"đấu" OR "thầu"',)).fetchall()
         self.assertEqual(len(rows),1)
         self.assertIn("đấu thầu",rows[0][0])
+        con.close()
+
+    def test_phrase_and_precise_bm25_recover_specific_legal_context(self):
+        con = sqlite3.connect(":memory:")
+        con.execute("CREATE VIRTUAL TABLE search USING fts5(header, text, tokenize='unicode61 remove_diacritics 0')")
+        con.executemany("INSERT INTO search(header,text) VALUES(?,?)", [
+            ("94/2013/NĐ-CP", "danh mục phao tròn cứu sinh dự trữ quốc gia"),
+            ("QCVN 05:2016/BTC", "đơn vị trực tiếp quản lý phao tròn cứu sinh chuẩn bị đầy đủ vật tư thiết bị dụng cụ"),
+            ("", "nội dung không liên quan"),
+        ])
+        engine = Retriever.__new__(Retriever)
+        engine.con = con
+        engine.c = {"retrieval":{"precise_bm25_k":10}}
+        question = "Đơn vị quản lý phao tròn cứu sinh chuẩn bị vật tư thiết bị dụng cụ như thế nào?"
+        self.assertEqual(engine.bm25_phrases(question)[0], 2)
+        self.assertEqual(engine.bm25_precise(question)[0], 2)
+        con.close()
 
     def test_rrf_and_parent_diversity(self):
         self.assertEqual(rrf([[1,2],[2,3]])[0],2)
@@ -157,6 +174,17 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(all(x==-100 for x in labels[:-len(answer_ids)]))
         self.assertEqual(report["used"],1)
 
+    def test_prompt_gives_top_context_more_room(self):
+        c = config();tok = TinyTokenizer()
+        c["generation"].update({"max_input_tokens":900,"parent_max_tokens":400,"min_context_tokens":80})
+        parents = [{"parent_id":str(i),"text":" ".join(f"p{i}w{j}" for j in range(500)),
+                    "seed_start":0,"seed_end":20} for i in range(4)]
+        _,packed = pack_prompt("câu hỏi pháp luật",parents,tok,c)
+        sizes = [len(tok(item["text"])["input_ids"]) for item in packed]
+        self.assertGreater(sizes[0],sizes[1])
+        self.assertGreater(sizes[1],sizes[2])
+        self.assertGreaterEqual(sizes[-1],32)
+
     def test_cleaning_preserves_law_numbers_and_money(self):
         text = "**Trả lời:**\n- Theo Điều 2 Nghị định 12/2020/NĐ-CP, phạt 1.000.000 đồng."
         clean = clean_answer(text)
@@ -165,6 +193,40 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("**",clean)
         self.assertFalse(answer_flags(clean,clean)["unsupported_document_numbers"])
         self.assertTrue(answer_flags("Theo 99/2025/NĐ-CP.",clean)["unsupported_document_numbers"])
+
+    def test_answer_flags_ignore_dates_and_substantive_information_clauses(self):
+        evidence = "Điều 1. Áp dụng từ ngày 01/08/2022 theo 12/2020/NĐ-CP."
+        answer = "Từ 01/08/2022, nếu việc xác minh không đủ thông tin thì cơ quan hải quan được từ chối ưu đãi."
+        self.assertFalse(answer_flags(answer,evidence)["unsupported_document_numbers"])
+        self.assertFalse(answer_flags(answer,evidence)["refusal"])
+        self.assertTrue(answer_flags("Không có thông tin để trả lời.",evidence)["refusal"])
+
+    def test_complete_truncated_answer_drops_incomplete_tail(self):
+        completed = " ".join(["nội dung"]*24)+"."
+        answer = completed+" Phần tiếp theo đang bị cắt giữa"
+        self.assertEqual(complete_truncated_answer(answer),completed)
+
+    def test_retrieval_adjustment_rewards_exact_document_phrase_and_year(self):
+        settings = {"lexical_score_weight":2.0,"phrase_match_bonus":1.0,
+                    "exact_document_bonus":4.0,"year_match_bonus":1.0,"recency_bonus":.75}
+        question = "Quy định mới nhất năm 2023 tại 06/2023/TT-BVHTTDL về chuyên viên di sản văn hóa?"
+        exact = {"header":"06/2023/TT-BVHTTDL", "text":"quy định về chuyên viên di sản văn hóa"}
+        old = {"header":"16/2021/TT-BVHTTDL", "text":"quy định về viên chức di sản"}
+        self.assertGreater(retrieval_adjustment(question,exact,settings,2023),
+                           retrieval_adjustment(question,old,settings,2023)+4)
+
+    def test_three_kaggle_notebooks_share_quality_config_and_artifacts(self):
+        artifact = "/kaggle/input/datasets/lighth/ver3-smoke-output/legalqa_smoke_full_v1"
+        dataset = "/kaggle/input/datasets/lighth/uit-dsc-2026-task2-legalqa-train"
+        for name in ["legalqa_smoke_pipeline.ipynb", "legalqa_dev100_pipeline.ipynb",
+                     "legalqa_main_run.ipynb"]:
+            notebook = json.loads((ROOT/name).read_text(encoding="utf-8"))
+            source = "\n".join("".join(cell.get("source",[])) for cell in notebook["cells"])
+            self.assertIn(artifact,source,name)
+            self.assertIn(dataset,source,name)
+            self.assertIn("CODE / 'config.json'",source,name)
+            self.assertNotIn("['retrieval'].update",source,name)
+            self.assertNotIn("['generation'].update",source,name)
 
     def test_submission_rejects_wrong_id_set_even_same_length(self):
         with self.assertRaises(ValueError):validate_predictions({"x":{"answer":"a"}},{"y":{}})

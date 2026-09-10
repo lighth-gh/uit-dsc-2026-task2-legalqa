@@ -2,9 +2,9 @@
 
 Bộ code độc lập này được dựng từ 5 tệp người dùng gửi trong lượt yêu cầu ngày 09/09/2026. Không dùng mã nguồn, checkpoint, lựa chọn mô hình hay tiêu chí release từ lịch sử chat. Mục tiêu là tạo một hệ thống Task 2 có thể huấn luyện, đánh giá đúng mã BTC và xuất submission để tái lập.
 
-Cấu hình chính: BM25 và multilingual-e5-small → RRF → Vietnamese_Reranker → mở rộng ngữ cảnh theo điều luật → Vi-Qwen2-3B-RAG → kiểm tra đầu ra → JSON và ZIP. Fine-tune mô hình sinh bằng QLoRA trên câu hỏi và đáp án gốc của BTC, chọn checkpoint bằng METEOR của validation.
+Cấu hình quality V6: BM25 thường + BM25 cụm từ/chính xác và multilingual-e5-small → RRF → Vietnamese_Reranker kèm lexical/legal/recency boosts → mở rộng ngữ cảnh theo điều luật → Vi-Qwen2-3B-RAG → kiểm tra đầu ra → JSON và ZIP. Fine-tune mô hình sinh bằng QLoRA trên câu hỏi và đáp án gốc của BTC, chọn checkpoint bằng METEOR của validation.
 
-**Trạng thái bàn giao:** đã chạy kiểm định CPU cho dữ liệu, chia tập, chunking, BM25, ghép ngữ cảnh, mask nhãn SFT, cache và đóng gói. Chưa chạy trọng số thật, huấn luyện GPU hay đo điểm pipeline mới. Năm file đính kèm không chứa toàn bộ `train.json`, corpus và bộ câu hỏi test; môi trường tạo bộ code cũng không có PyTorch/GPU. Vì vậy đây là bộ triển khai để chạy và kiểm chứng trên Kaggle, chưa phải checkpoint đã được chứng minh tăng điểm. Xem `VALIDATION.md`.
+**Trạng thái:** pipeline V5 đã chạy thành công trên 100 câu với artifacts Version 3; quality V6 sửa các lỗi tìm kiếm/hậu xử lý rút ra từ diagnostics và cần được đo lại trên cùng dev100 trước khi chạy full dev. Kiểm định CPU bao phủ dữ liệu, chia tập, BM25 chính xác/cụm từ, legal boosts, ghép ngữ cảnh, mask nhãn SFT, cache và đóng gói. Xem `VALIDATION.md`.
 
 ## Mô hình và ngân sách
 
@@ -21,19 +21,19 @@ Ba mô hình nằm trong Excel được duyệt, theo các đường dẫn ở d
 
 ## Chạy trên Kaggle bằng notebook
 
-Import `legalqa_main_run.ipynb` vào Kaggle và bật GPU + Internet. Notebook clone nhánh `main` từ `https://github.com/lighth-gh/uit-dsc-2026-task2-legalqa.git` vào `/kaggle/working/uit-dsc-2026-task2-legalqa`, sau đó cài thư viện, tải trọng số và chạy toàn bộ pipeline trong Kaggle runtime; notebook chủ động dừng nếu chạy ngoài Kaggle.
+Import một trong ba notebook vào Kaggle và bật GPU + Internet. Cả ba clone nhánh `main` từ `https://github.com/lighth-gh/uit-dsc-2026-task2-legalqa.git`, đọc cùng `config.json`, dùng dữ liệu từ `lighth/uit-dsc-2026-task2-legalqa-train` và tái sử dụng index/model từ `lighth/ver3-smoke-output`; notebook chủ động dừng nếu chạy ngoài Kaggle.
 
-Để kiểm tra tích hợp trước khi chạy pipeline đầy đủ, dùng `legalqa_smoke_pipeline.ipynb`. Bản Version 4 tái sử dụng full index 407.107 chunks và model weights từ output Kaggle Version 3 (`scriptVersionId=348583427`), sau đó chạy 30 câu dev bằng cấu hình retrieval đầy đủ; cần gắn output Version 3 qua **Add Input → Notebook Output Files** trước khi chạy.
+Chạy theo thứ tự: `legalqa_smoke_pipeline.ipynb` (30 câu), `legalqa_dev100_pipeline.ipynb` (100 câu), rồi `legalqa_main_run.ipynb` (full dev/SFT/submission). Trong **Add Input → Datasets**, gắn `lighth/ver3-smoke-output` và `lighth/uit-dsc-2026-task2-legalqa-train`. Full index 407.107 chunks và model weights được đọc từ Dataset, không build hoặc tải lại.
 
-Mặc định notebook dùng `train.json`, `public-official.json` và `selected-contexts.zip` trong repo vừa clone (`USE_REPO_DATA = True`). Với dữ liệu private hoặc Kaggle Dataset riêng, đặt `USE_REPO_DATA = False`, sửa `KAGGLE_DATASET_ROOT` tại cell cấu hình và chọn đúng tên file test.
+Ba notebook mặc định dùng `USE_REPO_DATA = False` và đường dẫn `/kaggle/input/datasets/lighth/...`. Với vòng private, sửa `KAGGLE_DATASET_ROOT` sang Dataset chứa đúng test private và đổi `PHASE` trong main-run; không đổi nguồn index/model nếu corpus không thay đổi.
 
 | Cell có tiêu đề | Làm gì | Kết quả cần kiểm tra |
 | --- | --- | --- |
 | 1 Thiết lập Kaggle và đường dẫn | Chọn dữ liệu trong repo hoặc Kaggle Dataset | Runtime là Kaggle và các đường dẫn đúng |
 | 2 Clone mã nguồn từ GitHub | Clone/cập nhật fast-forward nhánh `main` | In ra thư mục code và commit đang chạy |
 | 3 Cài môi trường và kiểm định CPU | Cài dependencies, WordNet, chạy unittest | Mọi test đều qua |
-| 4 Chia tập và khóa mô hình | Tạo train/dev/holdout, tải và cố định revision | `parameter_audit.json` dưới 4B |
-| 5 Lập chỉ mục | Tạo SQLite BM25 và FAISS | Corpus có tài liệu/chunk không rỗng |
+| 4 Chia tập và khóa mô hình | Tạo train/dev/holdout, dùng model lock Version 3 | `parameter_audit.json` dưới 4B |
+| 5 Xác nhận chỉ mục | Kiểm tra SQLite/FAISS Version 3 | Đúng 8.507 tài liệu và 407.107 chunks |
 | 6 Smoke 30 câu | Truy xuất, sinh chưa SFT và chấm đúng BTC | Xem trực tiếp đáp án và audit |
 | 7 Baseline và truy xuất tập phát triển | Lưu retrieval của dev và train | Báo cáo baseline và token coverage |
 | 8 Fine tune | Huấn luyện một hoặc hai epoch | `training_data_report.json`, checkpoint mỗi epoch |
@@ -114,7 +114,7 @@ Có thể refit trên `train_all.json` sau khi đã chốt toàn bộ cấu hìn
 
 ## Tái lập và lưu thực nghiệm
 
-Giữ cùng run: `config.json`, `models/models.lock.json`, `models/parameter_audit.json`, `split_manifest.json`, chỉ mục và manifest, adapter đã chọn, báo cáo METEOR/ROUGE-L, prediction manifest, audit, checkpoint JSONL và kết quả `python -m pip freeze`. Có thể tải trước trọng số rồi chạy offline; `from_pretrained` trong các stage đều dùng file cục bộ. Hub chỉ được dùng ở `fetch-models` để tải trọng số và ghi revision.
+Giữ cùng run: `config.json`, `models/models.lock.json`, `models/parameter_audit.json`, `split_manifest.json`, tham chiếu Dataset/index Version 3, adapter đã chọn, báo cáo METEOR/ROUGE-L, prediction manifest, audit, checkpoint JSONL và kết quả `python -m pip freeze`. `from_pretrained` trong các stage đều dùng file cục bộ từ Dataset; Hub chỉ được dùng khi chủ động chạy `fetch-models` ngoài ba notebook đồng bộ.
 
 Sau khi hết phiên Kaggle, chỉ dữ liệu trong output đã Save Version hoặc đã tải xuống mới tiếp tục dùng được ở phiên sau. Thêm output đó làm input rồi chép các thư mục muốn tiếp tục sang `/kaggle/working`; cập nhật đường dẫn tại cell cấu hình. Để đóng gói cho BTC, thêm các trọng số/adapter vào gói code hoặc trình bày bước tải đúng revision theo lock, như quy định BTC cho phép.
 

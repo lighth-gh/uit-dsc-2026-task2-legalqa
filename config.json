@@ -9,11 +9,13 @@
   "chunking": {"child_tokens": 320, "overlap_tokens": 64, "header_tokens": 48},
   "retrieval": {
     "bm25_k": 100, "dense_k": 100, "rrf_constant": 60,
-    "pool_k": 24, "max_children_per_parent": 2, "parents_k": 4,
+    "precise_bm25_k": 40, "pool_k": 40, "max_children_per_parent": 2, "parents_k": 4,
+    "lexical_score_weight": 2.0, "phrase_match_bonus": 1.0,
+    "exact_document_bonus": 4.0, "year_match_bonus": 1.0, "recency_bonus": 0.75,
     "embedding_batch": 32, "reranker_batch": 8, "reranker_max_tokens": 768
   },
   "generation": {
-    "max_input_tokens": 4096, "max_new_tokens": 2048,
+    "max_input_tokens": 4096, "max_new_tokens": 1536,
     "parent_max_tokens": 1400, "min_context_tokens": 256,
     "load_in_4bit": true
   },

@@ -5,7 +5,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from .io import Journal, digest, file_hash, load_questions, read_json, source_hash, validate_predictions, write_json
 from .models import load_generator, model_lock
-from .prompts import answer_flags, clean_answer, extractive_fallback, pack_prompt
+from .prompts import answer_flags, clean_answer, complete_truncated_answer, extractive_fallback, pack_prompt
 from .retrieval import read_retrieval
 
 
@@ -56,8 +56,17 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
                 evidence = "\n".join(p["text"] for p in packed)
                 flags = answer_flags(answer,evidence)
                 invalid = flags["empty"] or flags["artifact"] or bool(flags["unsupported_document_numbers"])
-                # A truncation or refusal is explicitly audited. Source fallback uses the actual supplied evidence.
-                if invalid or hit_limit or flags["refusal"]:
+                # Preserve a grounded, complete prefix when the token budget is reached. A raw
+                # parent dump is reserved for genuinely invalid or short refusal-only answers.
+                if hit_limit and not invalid and not flags["refusal"]:
+                    completed = complete_truncated_answer(answer)
+                    if completed:
+                        answer = completed
+                        route = "generated_truncated"
+                    else:
+                        answer = extractive_fallback(packed)
+                        route = "source_fallback"
+                elif invalid or flags["refusal"]:
                     answer = extractive_fallback(packed)
                     route = "source_fallback"
                 else:
