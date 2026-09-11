@@ -51,6 +51,9 @@ class CoreTests(unittest.TestCase):
             write_json(d/"a.json",a);write_json(d/"b.json",b)
             best=select_reports([d/"a.json",d/"b.json"],d/"selected.json")
             self.assertEqual(best["label"],"b")
+            self.assertEqual(best["objective"]["primary_metric"],"meteor")
+            self.assertEqual(best["objective"]["target_meteor"],.65)
+            self.assertFalse(best["objective"]["target_met"])
             b["reference_hash"]="different"
             write_json(d/"b.json",b)
             with self.assertRaises(ValueError):select_reports([d/"a.json",d/"b.json"],d/"bad.json")
@@ -73,6 +76,8 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(c["models"]["generator"],"AITeamVN/Vi-Qwen2-3B-RAG")
         self.assertEqual(c["retrieval"]["pool_k"],32)
         self.assertEqual(c["generation"]["max_new_tokens"],1536)
+        self.assertEqual(c["evaluation"],{
+            "primary_metric":"meteor", "secondary_metric":"rougeL", "target_meteor":.65})
         c["models"]["generator"] = "Qwen/Qwen3-4B"
         with self.assertRaises(ValueError):require_approved(c)
 
@@ -253,6 +258,7 @@ class CoreTests(unittest.TestCase):
             self.assertIn(artifact,source,name)
             self.assertIn(dataset,source,name)
             self.assertIn("CODE / 'config.json'",source,name)
+            self.assertIn("Evaluation objective:",source,name)
             self.assertIn("quality_v7",source,name)
             self.assertNotIn("quality_v6",source,name)
             self.assertNotIn("['retrieval'].update",source,name)

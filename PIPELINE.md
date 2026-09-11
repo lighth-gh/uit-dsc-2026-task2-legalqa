@@ -108,6 +108,8 @@ Schema khác nhau: prediction là `{id: {"answer": text}}`, còn reference truy�
 
 METEOR gọi NLTK với `reference.split()` và `prediction.split()`, dùng các mặc định của NLTK. Không thay bằng token-F1 hoặc `meteor_exact_approx`. NLTK và tài nguyên WordNet phải có sẵn; nếu thiếu, code báo lỗi, không lén chuyển metric.
 
+Mục tiêu chính của pipeline là METEOR ≥ 0,65 trên validation so sánh được. Mọi lựa chọn cấu hình hoặc checkpoint xếp theo METEOR trước; ROUGE-L chỉ là metric phụ dùng khi METEOR hòa. Báo cáo metric luôn ghi `target_met` và khoảng cách `meteor_gap`, nhưng notebook vẫn hoàn tất diagnostics khi chưa đạt mục tiêu.
+
 ROUGE-L giữ nguyên `use_stemmer=False` và tokenizer của ZIP: lower-case, thay các ký tự ngoài `a-z0-9` bằng khoảng trắng. Vì vậy chữ tiếng Việt có dấu bị cắt thành các mảnh ký tự ASCII. Đây là đặc điểm implementation của BTC; không sửa tokenizer khi đánh giá chính thức và cũng không bỏ dấu đáp án để khai thác metric. Có thể thêm phép đo tiếng Việt riêng cho nghiên cứu, nhưng phải đặt tên khác.
 
 File ZIP không pin version NLTK của container chấm. Bộ code pin NLTK 3.9.1, lưu phiên bản thực và fingerprint scorer trong báo cáo. Đã dùng đúng logic scorer được gửi; chỉ có thể xác nhận trùng hoàn toàn môi trường server khi có version image/dependencies từ BTC.

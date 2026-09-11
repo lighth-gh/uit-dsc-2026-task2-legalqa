@@ -15,6 +15,7 @@ Kiểm định local bao phủ phần chạy CPU và các contract của pipelin
 | Load đúng ba checkpoint thật từ Dataset Version 3 | Đã chạy trong Kaggle V5 |
 | Generation trên Kaggle | V5 hoàn tất 100/100; QLoRA chưa chạy |
 | Mốc so sánh quality V7 | V5: METEOR 0,44316 / ROUGE-L 0,49798; V6: 0,42585 / 0,48897 trên cùng dev100 và reference hash |
+| Mục tiêu lựa chọn | Ưu tiên METEOR; ROUGE-L chỉ phá hòa; yêu cầu METEOR ≥ 0,65 |
 
 Các kiểm định quan trọng bao gồm không lẫn câu hỏi/đáp án trùng qua split; không lấy số trang web hoặc ngày `01/08` làm số luật; BM25 cụm từ/chính xác; legal boosts không dùng reference; câu pháp lý chứa “không đủ thông tin” không bị coi là refusal; cửa sổ child phủ nội dung và không vượt parent; context đầu được thêm ngân sách nhưng các context sau vẫn có mức tối thiểu; cứu output bị cắt; mask prompt và giữ nguyên target SFT; ID/schema JSON; cache sai cấu hình bị từ chối; journal tiếp tục được sau dòng ghi dở; ba notebook dùng chung config và Dataset paths.
 

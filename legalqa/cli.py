@@ -71,10 +71,10 @@ def main():
         result = fit(c,args.train,args.retrieval,args.models,args.output,args.device,args.resume)
     elif cmd == "evaluate":
         from .metrics import evaluate
-        result = evaluate(args.predictions,args.references,args.output,args.label)
+        result = evaluate(args.predictions,args.references,args.output,args.label,c.get("evaluation"))
     elif cmd == "select":
         from .metrics import select_reports
-        result = select_reports(args.reports,args.output)
+        result = select_reports(args.reports,args.output,c.get("evaluation"))
     elif cmd == "compare":
         from .metrics import compare_reports
         result = compare_reports(args.baseline,args.candidate,args.output,c["seed"])

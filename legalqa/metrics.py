@@ -9,6 +9,20 @@ from pathlib import Path
 from .io import ROOT, digest, file_hash, load_questions, read_json, validate_predictions, write_json
 
 
+DEFAULT_OBJECTIVE = {"primary_metric":"meteor", "secondary_metric":"rougeL", "target_meteor":0.65}
+
+
+def evaluation_objective(settings=None):
+    objective = {**DEFAULT_OBJECTIVE, **(settings or {})}
+    if objective["primary_metric"] != "meteor" or objective["secondary_metric"] != "rougeL":
+        raise ValueError("This pipeline requires METEOR as primary and ROUGE-L only as secondary")
+    target = float(objective["target_meteor"])
+    if not 0 <= target <= 1:
+        raise ValueError("target_meteor must be between 0 and 1")
+    objective["target_meteor"] = target
+    return objective
+
+
 def metric_environment():
     import numpy as np
     import nltk
@@ -46,7 +60,7 @@ def references(path):
     return result
 
 
-def evaluate(prediction_path, reference_path, output, label=None):
+def evaluate(prediction_path, reference_path, output, label=None, objective=None):
     import numpy as np
     pred, truth = read_json(prediction_path), references(reference_path)
     validate_predictions(pred,truth)
@@ -66,8 +80,13 @@ def evaluate(prediction_path, reference_path, output, label=None):
     if abs(np.mean([r["rougeL"] for r in rows.values()])-official["rouge"])>1e-12:
         raise AssertionError("Per-item ROUGE differs from the original BTC function")
     lengths = np.asarray([r["prediction_words"] for r in rows.values()])
+    objective = evaluation_objective(objective)
+    target = objective["target_meteor"]
+    objective_report = {**objective, "target_met":float(official["meteor"]) >= target,
+                        "meteor_gap":max(0.0,target-float(official["meteor"]))}
     report = {"label":label or Path(prediction_path).stem,"samples":len(rows),
               "meteor":float(official["meteor"]),"rougeL":float(official["rouge"]),
+              "objective":objective_report,
               "prediction_path":str(Path(prediction_path).resolve()), "prediction_hash":digest(pred),
               "reference_hash":digest(truth),"metric_identity":identity,"per_question":rows,
               "lengths":{"mean":float(lengths.mean()),"p90":float(np.quantile(lengths,.9)),
@@ -84,7 +103,7 @@ def evaluate(prediction_path, reference_path, output, label=None):
     return {k:v for k,v in report.items() if k not in {"per_question","metric_identity","prediction_manifest"}}
 
 
-def select_reports(paths, output):
+def select_reports(paths, output, objective=None):
     reports = [read_json(p) for p in paths]
     if not reports:
         raise ValueError("Need at least one evaluation report")
@@ -94,8 +113,13 @@ def select_reports(paths, output):
                 raise ValueError(f"Cannot compare runs with different {key}")
         if set(report["per_question"]) != set(reports[0]["per_question"]):
             raise ValueError("Cannot compare different validation IDs")
-    best = max(reports,key=lambda r:(r["meteor"],r["rougeL"]))
-    result = {"selection_rule":"highest METEOR; ROUGE-L only for a METEOR tie (local choice)",
+    objective = evaluation_objective(objective)
+    primary,secondary = objective["primary_metric"],objective["secondary_metric"]
+    best = max(reports,key=lambda r:(r[primary],r[secondary]))
+    target = objective["target_meteor"]
+    result = {"selection_rule":"highest METEOR; ROUGE-L only for a METEOR tie",
+              "objective":{**objective,"target_met":best["meteor"] >= target,
+                           "meteor_gap":max(0.0,target-best["meteor"])},
               "label":best["label"],"meteor":best["meteor"],"rougeL":best["rougeL"],
               "reference_hash":best["reference_hash"],"prediction_manifest":best.get("prediction_manifest"),
               "candidates":[{"label":r["label"],"meteor":r["meteor"],"rougeL":r["rougeL"]} for r in reports]}

@@ -6,6 +6,8 @@ Cấu hình quality V7: BM25 thường + BM25 cụm từ/chính xác và multili
 
 **Trạng thái:** V6 chạy thành công trên 100 câu nhưng giảm còn METEOR 0,42585 và ROUGE-L 0,48897 do một số câu từ chối dài không kích hoạt fallback. Quality V7 sửa đúng regression này, ưu tiên thực thể của context đầu, phân bổ lại ngân sách context và giảm rerank pool xuống 32; cần chạy lại smoke30/dev100 trước full dev. Xem `VALIDATION.md`.
 
+**Mục tiêu tối ưu:** ưu tiên METEOR tuyệt đối khi chọn cấu hình/checkpoint; ROUGE-L chỉ dùng để phá hòa khi METEOR bằng nhau. Mốc cần đạt trên validation là **METEOR ≥ 0,65**.
+
 ## Mô hình và ngân sách
 
 | Thành phần | Mô hình | Số tham số gốc theo kiến trúc |
