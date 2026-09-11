@@ -20,12 +20,15 @@ def main():
     p.add_argument("--corpus",required=True); p.add_argument("--output",required=True)
     p = sub.add_parser("retrieve")
     p.add_argument("--questions",required=True); p.add_argument("--index",required=True); p.add_argument("--output",required=True)
+    p.add_argument("--mode",choices=["full","lexical"],default="full")
     p = sub.add_parser("generate")
     p.add_argument("--questions",required=True); p.add_argument("--retrieval",required=True); p.add_argument("--output",required=True)
     p.add_argument("--adapter"); p.add_argument("--mode",choices=["generate","extractive"],default="generate")
     p = sub.add_parser("fit")
     p.add_argument("--train",required=True); p.add_argument("--retrieval",required=True); p.add_argument("--output",required=True)
     p.add_argument("--resume"); p.add_argument("--gpu",default="0")
+    p = sub.add_parser("prepare-sft")
+    p.add_argument("--train",required=True); p.add_argument("--output",required=True)
     p = sub.add_parser("evaluate")
     p.add_argument("--predictions",required=True); p.add_argument("--references",required=True); p.add_argument("--output",required=True)
     p.add_argument("--label")
@@ -62,13 +65,16 @@ def main():
         result = build_index(c,args.corpus,args.models,args.output,args.device)
     elif cmd == "retrieve":
         from .retrieval import retrieve
-        result = retrieve(c,args.questions,args.models,args.index,args.output,args.device)
+        result = retrieve(c,args.questions,args.models,args.index,args.output,args.device,args.mode)
     elif cmd == "generate":
         from .generation import generate
         result = generate(c,args.questions,args.retrieval,args.models,args.output,args.device,args.adapter,args.mode)
     elif cmd == "fit":
         from .training import fit
         result = fit(c,args.train,args.retrieval,args.models,args.output,args.device,args.resume)
+    elif cmd == "prepare-sft":
+        from .training import prepare_training_subset
+        result = prepare_training_subset(c,args.train,args.output)
     elif cmd == "evaluate":
         from .metrics import evaluate
         result = evaluate(args.predictions,args.references,args.output,args.label,c.get("evaluation"))

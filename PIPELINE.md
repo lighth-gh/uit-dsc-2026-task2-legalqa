@@ -64,7 +64,7 @@ Tài liệu đọc được cả ZIP và thư mục lồng `selected-contexts/se
 
 Tách parent theo dòng mở đầu “Điều …”. Tài liệu không có cấu trúc điều luật vẫn được giữ và có cửa sổ văn bản để truy xuất. Trong mỗi parent, child mặc định dài 320 token E5, overlap 64; phần số hiệu/tiêu đề tối đa 48 token. Phần kiểm tra input đảm bảo không lén mất nửa child vì E5 chỉ nhận tối đa 512 token.
 
-BM25 dùng SQLite FTS5, giữ dấu và ưu tiên trường tiêu đề/số hiệu. Quality V7 giữ hai nhánh nhẹ trên cùng FTS index: cụm 3–4 từ và truy vấn AND các từ nội dung, giúp các cụm đặc thù như tên biểu mẫu, chức danh hoặc mặt hàng không bị chìm trong truy vấn OR. Dense dùng E5 với tiền tố `query: ` cho câu hỏi, `passage: ` cho văn bản, mean pooling có attention mask và L2 normalization. FAISS dùng inner product trên các vector đã chuẩn hóa. Không có thêm model học tham số.
+BM25 dùng SQLite FTS5, giữ dấu và ưu tiên trường tiêu đề/số hiệu. Quality V8 giữ hai nhánh nhẹ trên cùng FTS index: cụm 3–4 từ và truy vấn AND các từ nội dung, giúp các cụm đặc thù như tên biểu mẫu, chức danh hoặc mặt hàng không bị chìm trong truy vấn OR. Dense dùng E5 với tiền tố `query: ` cho câu hỏi, `passage: ` cho văn bản, mean pooling có attention mask và L2 normalization. FAISS dùng inner product trên các vector đã chuẩn hóa. Không có thêm model học tham số.
 
 BM25 thường và dense lấy 100 child; hai nhánh chính xác lấy tối đa 40. RRF kết hợp thứ hạng với hằng số 60; tối đa hai child từ một parent vào pool 32 để giảm các đoạn chồng lấn chiếm hết chỗ. Reranker chấm cặp `(question, child)` với sequence classifier, batch 8, tối đa 768 token. Điểm cuối có các boost nhỏ, được ghi vào retrieval JSON: độ phủ từ nội dung, cụm từ, số hiệu/năm được nêu trực tiếp và ưu tiên năm mới nhất chỉ khi câu hỏi yêu cầu “mới nhất/hiện hành”. Không dùng reference hoặc answer để rerank.
 
@@ -84,17 +84,20 @@ Giữ encoder và reranker ở checkpoint được duyệt. Chỉ SFT Vi-Qwen2-3
 | Target modules | q/k/v/o, gate/up/down projection |
 | Epoch | Đánh giá checkpoint epoch 1 và 2 |
 | Learning rate | 5e-5, cosine, warmup 5% |
-| Batch và tích lũy gradient | 1 và 16 trên một GPU |
+| Batch và tích lũy gradient | 1 và 8 trên một GPU |
 | Sequence training tối đa | 8.192 token |
+| Prompt SFT tối đa | 2.048 token; inference vẫn dùng tối đa 4.096 token |
 | Loss | Chỉ trên answer và EOS; toàn bộ prompt mask -100 |
+| Số mẫu main run | Tối đa 768 QA, chọn xác định bằng seed 2026 |
+| Retrieval cho SFT | Lexical BM25/cụm từ/chính xác; không dùng answer, encoder hoặc reranker |
 
 Answer gốc được ưu tiên giữ đầy đủ; prompt có thể thu ngắn để vừa sequence. Nếu cả target và ngữ cảnh tối thiểu không vừa, ghi ID mẫu bị bỏ, không cắt target rồi gắn EOS như thể answer đã đầy đủ. Retrieval phục vụ training cũng chỉ dựa trên câu hỏi, nên không có bước “chọn passage tốt nhất bằng gold answer” rồi vô tình tạo train/inference mismatch. Các mẫu retrieval kém cần được phân tích và sửa ở retrieval, không chữa bằng thêm gold answer vào prompt.
 
-Không mặc định chọn checkpoint có training loss thấp nhất. Sinh answer trên cùng dev, chấm đúng METEOR, giữ một checkpoint có điểm tốt nhất. So sánh cặp baseline/candidate có bootstrap theo câu hỏi để xem cải thiện có tập trung vào một ít ví dụ hay không; interval theo câu có thể lạc quan nếu còn near-duplicate.
+Main run bắt buộc hoàn tất QLoRA và phải có checkpoint epoch trước khi đi tiếp. Giới hạn 768 QA và prompt SFT 2.048 token là cấu hình thực dụng cho một phiên Kaggle; answer gốc vẫn không bị cắt. Không mặc định chọn checkpoint có training loss thấp nhất. Sinh answer của từng checkpoint trên cùng dev100, chấm đúng METEOR, rồi giữ checkpoint QLoRA có METEOR cao nhất; ROUGE-L chỉ phá hòa. Baseline chỉ là mốc kiểm soát trong báo cáo `compare`, không được âm thầm thay adapter ở holdout/submission. Nếu mọi adapter kém baseline, notebook cảnh báo để người chạy quyết định vòng tuning tiếp theo. So sánh cặp baseline/candidate có bootstrap theo câu hỏi để xem cải thiện có tập trung vào một ít ví dụ hay không; interval theo câu có thể lạc quan nếu còn near-duplicate.
 
 ## Sinh câu trả lời và kiểm soát lỗi
 
-Greedy decoding, một beam, không sampling. Quality V7 dùng `max_new_tokens=1536`, không có hard cap số từ hoặc quy tắc ép mọi câu về cùng độ dài. Prompt ưu tiên context đầu và cấm trộn quy định giữa các thực thể gần tên. Nếu model mở đầu bằng lời từ chối nhưng context đầu phủ ít nhất 65% từ nội dung của câu hỏi, pipeline dùng source fallback; nếu bằng chứng yếu thì giữ lời từ chối thay vì chép nguồn không liên quan. Ngân sách chưa dùng của parent ngắn được phân phối lại cho các parent sau. Không tra cứu pháp luật hiện hành bên ngoài corpus.
+Greedy decoding, một beam, không sampling. Quality V8 dùng `max_new_tokens=1536`, không có hard cap số từ hoặc quy tắc ép mọi câu về cùng độ dài. Prompt ưu tiên context đầu và cấm trộn quy định giữa các thực thể gần tên. Fallback chỉ kích hoạt khi bằng chứng đạt ít nhất 78% từ nội dung trong cùng một cửa sổ cục bộ, có cụm liên tiếp và anchor đầu câu hỏi; câu hỏi về thay đổi/hiện hành hoặc độ tuổi còn phải có đúng dấu hiệu tương ứng. Đoạn nguồn fallback được chọn theo câu hỏi và giới hạn khoảng 420 từ. Với câu hỏi trực tiếp về chủ thể, nếu answer trích số hiệu của một context nhưng sao chép mệnh đề dài từ context khác, entity guard chuyển sang nguồn liên quan. Nếu bằng chứng yếu thì giữ lời từ chối thay vì chép nguồn không liên quan. Không tra cứu pháp luật hiện hành bên ngoài corpus.
 
 Mọi câu đi qua cùng một route generation. Code không chép answer của hàng xóm KNN và không có classifier được học thêm để định tuyến. Bước cuối bỏ artifact trình bày cơ bản, giữ số hiệu và con số. Ngày dạng `01/08` không bị hiểu nhầm là số hiệu; cụm “không đủ thông tin” trong nội dung một điều kiện pháp lý không bị hiểu nhầm là refusal. Chỉ câu trả lời ngắn mở đầu bằng lời từ chối mới fallback. Nếu output chạm token limit nhưng có các câu hoàn chỉnh, giữ phần hoàn chỉnh với route `generated_truncated`; chỉ dùng đoạn nguồn khi output thật sự rỗng/lỗi/citation không được hỗ trợ hoặc không thể cứu phần hoàn chỉnh.
 

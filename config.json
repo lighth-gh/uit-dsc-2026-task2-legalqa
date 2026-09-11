@@ -25,10 +25,13 @@
     "target_meteor": 0.65
   },
   "training": {
+    "required": true, "max_examples": 768, "max_prompt_tokens": 2048,
+    "retrieval_mode": "lexical", "lexical_pool_k": 24,
+    "selection_split": "dev100",
     "lora_rank": 16, "lora_alpha": 32, "lora_dropout": 0.05,
     "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     "epochs": 2, "learning_rate": 0.00005,
-    "batch_size": 1, "gradient_accumulation": 16,
+    "batch_size": 1, "gradient_accumulation": 8,
     "max_sequence_tokens": 8192, "warmup_ratio": 0.05
   },
   "submission_filename": "submission.json"

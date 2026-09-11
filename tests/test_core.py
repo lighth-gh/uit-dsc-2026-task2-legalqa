@@ -12,10 +12,12 @@ from legalqa.generation import package_submission
 from legalqa.io import Journal, ROOT, config, group_key, read_json, validate_predictions, write_json
 from legalqa.models import require_approved
 from legalqa.metrics import select_reports
-from legalqa.prompts import (SYSTEM, answer_flags, clean_answer, complete_truncated_answer, pack_prompt,
+from legalqa.prompts import (SYSTEM, answer_flags, citation_context_conflict, clean_answer,
+                             complete_truncated_answer, extractive_fallback,
+                             localized_evidence_support, pack_prompt,
                              refusal_evidence_support, window_around_seed)
 from legalqa.retrieval import Retriever, diversified, retrieval_adjustment, rrf
-from legalqa.training import training_examples
+from legalqa.training import fit, prepare_training_subset, training_examples
 
 
 class TinyTokenizer:
@@ -78,6 +80,11 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(c["generation"]["max_new_tokens"],1536)
         self.assertEqual(c["evaluation"],{
             "primary_metric":"meteor", "secondary_metric":"rougeL", "target_meteor":.65})
+        self.assertTrue(c["training"]["required"])
+        self.assertEqual(c["training"]["max_examples"],768)
+        self.assertEqual(c["training"]["max_prompt_tokens"],2048)
+        self.assertEqual(c["training"]["retrieval_mode"],"lexical")
+        self.assertEqual(c["training"]["selection_split"],"dev100")
         c["models"]["generator"] = "Qwen/Qwen3-4B"
         with self.assertRaises(ValueError):require_approved(c)
 
@@ -153,6 +160,25 @@ class CoreTests(unittest.TestCase):
         question = "Đơn vị quản lý phao tròn cứu sinh chuẩn bị vật tư thiết bị dụng cụ như thế nào?"
         self.assertEqual(engine.bm25_phrases(question)[0], 2)
         self.assertEqual(engine.bm25_precise(question)[0], 2)
+        con.close()
+
+    def test_lexical_training_retrieval_uses_no_dense_or_reranker_stage(self):
+        con = sqlite3.connect(":memory:"); con.row_factory = sqlite3.Row
+        con.execute("CREATE TABLE parents(parent_id TEXT PRIMARY KEY, doc_id TEXT, heading TEXT, number TEXT, text TEXT, source_file TEXT, link TEXT)")
+        con.execute("CREATE TABLE chunks(chunk_id INTEGER PRIMARY KEY, parent_id TEXT, start INTEGER, end INTEGER, header TEXT, text TEXT)")
+        con.execute("CREATE VIRTUAL TABLE search USING fts5(header, text, tokenize='unicode61 remove_diacritics 0')")
+        text = "Cơ quan hải quan từ chối hưởng ưu đãi thuế quan khi hồ sơ không hợp lệ."
+        con.execute("INSERT INTO parents VALUES(?,?,?,?,?,?,?)",("p1","d1","Điều 1","1/NĐ-CP",text,"context_1.json",""))
+        con.execute("INSERT INTO chunks VALUES(?,?,?,?,?,?)",(0,"p1",0,len(text),"1/NĐ-CP Điều 1",text))
+        con.execute("INSERT INTO search(rowid,header,text) VALUES(?,?,?)",(0,"1/NĐ-CP Điều 1",text))
+        engine = Retriever.__new__(Retriever)
+        engine.con = con
+        engine.c = {"retrieval":{**config()["retrieval"],"parents_k":1},
+                    "training":{"lexical_pool_k":8}}
+        result = engine.retrieve_one_lexical("Cơ quan hải quan từ chối ưu đãi thuế quan khi nào?")
+        self.assertEqual(result["contexts"][0]["parent_id"],"p1")
+        self.assertEqual(result["stages"]["dense"],[])
+        self.assertEqual(result["seconds"]["rerank"],0.0)
         con.close()
 
     def test_rrf_and_parent_diversity(self):
@@ -234,6 +260,73 @@ class CoreTests(unittest.TestCase):
         self.assertIn("ưu tiên trích đoạn đầu tiên",SYSTEM)
         self.assertIn("đúng thực thể được hỏi",SYSTEM)
 
+    def test_localized_support_rejects_missing_constraints(self):
+        exact_question = "Cơ quan hải quan từ chối hưởng ưu đãi thuế quan trong trường hợp nào?"
+        exact = [{"text":"Cơ quan hải quan từ chối hưởng ưu đãi thuế quan trong hai trường hợp sau."}]
+        self.assertTrue(localized_evidence_support(exact_question,exact)["strong"])
+
+        comparison_question = "Quy định mới nhất thay đổi điều kiện cấp phép như thế nào?"
+        old = [{"text":"Quy định điều kiện cấp phép và hồ sơ đề nghị cấp phép."}]
+        self.assertFalse(localized_evidence_support(comparison_question,old)["strong"])
+
+        age_question = "Tuổi nghỉ hưu của kiểm sát viên là bao nhiêu tuổi?"
+        no_age = [{"text":"Quy định về tuổi nghỉ hưu của kiểm sát viên được thực hiện theo pháp luật."}]
+        self.assertFalse(localized_evidence_support(age_question,no_age)["strong"])
+        child_age_question = "Trẻ em bao nhiêu tuổi được cấp thẻ miễn phí?"
+        child_age = [{"text":"Trẻ em 6 tuổi được cấp thẻ miễn phí theo quy định."}]
+        self.assertTrue(localized_evidence_support(child_age_question,child_age)["age_value_present"])
+
+        entity_question = "Mức phạt đối với hành vi vận chuyển quả lựu trái phép là bao nhiêu?"
+        wrong_entity = [{"text":"Mức phạt đối với hành vi vận chuyển trái phép hàng hóa là 10 triệu đồng."}]
+        self.assertFalse(localized_evidence_support(entity_question,wrong_entity)["strong"])
+
+    def test_direct_actor_citation_conflict_is_guarded(self):
+        question = "Cơ quan nào bầu Chủ tịch Hội đồng quản lý Quỹ?"
+        contexts = [
+            {"number":"1795/QĐ-TTg", "text":"Thủ tướng Chính phủ quyết định thành lập Quỹ và phê duyệt điều lệ."},
+            {"number":"435/QĐ-BNV", "text":"Hội đồng quản lý Quỹ bầu Chủ tịch Hội đồng quản lý Quỹ theo nhiệm kỳ."},
+        ]
+        answer = ("Theo 1795/QĐ-TTg, Hội đồng quản lý Quỹ bầu Chủ tịch Hội đồng "
+                  "quản lý Quỹ theo nhiệm kỳ.")
+        conflict = citation_context_conflict(question,answer,contexts,min_phrase=8)
+        self.assertTrue(conflict["conflict"])
+        self.assertEqual(conflict["conflicting_context_index"],1)
+
+    def test_query_aware_fallback_is_bounded_and_uses_relevant_context(self):
+        question = "Cơ quan hải quan từ chối hưởng ưu đãi thuế quan trong trường hợp nào?"
+        contexts = [
+            {"number":"1/NĐ-CP", "heading":"Điều 1", "text":"nội dung khác "*600},
+            {"number":"2/NĐ-CP", "heading":"Điều 2",
+             "text":"Cơ quan hải quan từ chối hưởng ưu đãi thuế quan khi hồ sơ không hợp lệ. "+"chi tiết "*600},
+        ]
+        support = localized_evidence_support(question,contexts)
+        answer = extractive_fallback(question,contexts,support,max_words=120)
+        self.assertEqual(support["context_index"],1)
+        self.assertIn("từ chối hưởng ưu đãi thuế quan",answer)
+        self.assertLessEqual(len(answer.split()),125)
+
+    def test_prepare_sft_subset_is_deterministic_and_writes_question_only_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            train = {str(i):{"question":f"câu hỏi {i}","answer":f"đáp án {i}"} for i in range(8)}
+            write_json(root/"train.json",train)
+            c = config(); c["training"]["max_examples"] = 3
+            first = prepare_training_subset(c,root/"train.json",root/"sft.json")
+            first_train = read_json(root/"sft.json")
+            first_questions = read_json(root/"sft.questions.json")
+            second = prepare_training_subset(c,root/"train.json",root/"sft2.json")
+            second_train = read_json(root/"sft2.json")
+            self.assertEqual(first["samples"],3)
+            self.assertEqual(list(first_train),list(second_train))
+            self.assertEqual(set(first_questions),set(first_train))
+            self.assertTrue(all(set(item)=={"question"} for item in first_questions.values()))
+            self.assertEqual(second["samples"],3)
+
+    def test_fit_rejects_non_quantized_lora_before_loading_torch(self):
+        c = config(); c["generation"]["load_in_4bit"] = False
+        with self.assertRaisesRegex(ValueError,"QLoRA is required"):
+            fit(c,"missing-train.json","missing-retrieval.json","missing-models","missing-output")
+
     def test_complete_truncated_answer_drops_incomplete_tail(self):
         completed = " ".join(["nội dung"]*24)+"."
         answer = completed+" Phần tiếp theo đang bị cắt giữa"
@@ -259,10 +352,27 @@ class CoreTests(unittest.TestCase):
             self.assertIn(dataset,source,name)
             self.assertIn("CODE / 'config.json'",source,name)
             self.assertIn("Evaluation objective:",source,name)
-            self.assertIn("quality_v7",source,name)
-            self.assertNotIn("quality_v6",source,name)
+            self.assertIn("quality_v8",source,name)
+            self.assertNotIn("quality_v7",source,name)
             self.assertNotIn("['retrieval'].update",source,name)
             self.assertNotIn("['generation'].update",source,name)
+
+    def test_main_run_requires_qlora_and_selects_on_dev100_meteor(self):
+        notebook = json.loads((ROOT/"legalqa_main_run.ipynb").read_text(encoding="utf-8"))
+        source = "\n".join("".join(cell.get("source",[])) for cell in notebook["cells"])
+        self.assertIn("RUN_SFT = True",source)
+        self.assertNotIn("RUN_SFT = False",source)
+        self.assertIn("prepare-sft",source)
+        self.assertIn("load_in_4bit",source)
+        self.assertIn("training']['retrieval_mode'",source)
+        self.assertIn("training']['selection_split'",source)
+        self.assertIn("training_result.json",source)
+        self.assertIn("Không tìm thấy checkpoint QLoRA",source)
+        self.assertIn("primary_metric') != 'meteor'",source)
+        self.assertIn("reports = []",source)
+        self.assertNotIn("reports = [BASE_REPORT]",source)
+        self.assertIn("Main run bắt buộc dùng checkpoint QLoRA",source)
+        self.assertIn("'--adapter', SELECTED_ADAPTER",source)
 
     def test_submission_rejects_wrong_id_set_even_same_length(self):
         with self.assertRaises(ValueError):validate_predictions({"x":{"answer":"a"}},{"y":{}})

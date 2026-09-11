@@ -2,9 +2,9 @@
 
 Bộ code độc lập này được dựng từ 5 tệp người dùng gửi trong lượt yêu cầu ngày 09/09/2026. Không dùng mã nguồn, checkpoint, lựa chọn mô hình hay tiêu chí release từ lịch sử chat. Mục tiêu là tạo một hệ thống Task 2 có thể huấn luyện, đánh giá đúng mã BTC và xuất submission để tái lập.
 
-Cấu hình quality V7: BM25 thường + BM25 cụm từ/chính xác và multilingual-e5-small → RRF → Vietnamese_Reranker kèm lexical/legal/recency boosts → mở rộng ngữ cảnh theo điều luật → Vi-Qwen2-3B-RAG → fallback chọn lọc theo độ phủ bằng chứng → JSON và ZIP. Fine-tune mô hình sinh bằng QLoRA trên câu hỏi và đáp án gốc của BTC, chọn checkpoint bằng METEOR của validation.
+Cấu hình quality V8: BM25 thường + BM25 cụm từ/chính xác và multilingual-e5-small → RRF → Vietnamese_Reranker kèm lexical/legal/recency boosts → mở rộng ngữ cảnh theo điều luật → Vi-Qwen2-3B-RAG → fallback cục bộ có kiểm tra thực thể → JSON và ZIP. Main run bắt buộc fine-tune mô hình sinh bằng QLoRA trên câu hỏi và đáp án gốc của BTC, rồi chọn checkpoint bằng METEOR trên dev100.
 
-**Trạng thái:** V6 chạy thành công trên 100 câu nhưng giảm còn METEOR 0,42585 và ROUGE-L 0,48897 do một số câu từ chối dài không kích hoạt fallback. Quality V7 sửa đúng regression này, ưu tiên thực thể của context đầu, phân bổ lại ngân sách context và giảm rerank pool xuống 32; cần chạy lại smoke30/dev100 trước full dev. Xem `VALIDATION.md`.
+**Trạng thái:** V7 đạt METEOR 0,45299 trên dev100, tốt hơn V5 0,44316 và V6 0,42585 nhưng vẫn xa mục tiêu 0,65. Quality V8 giới hạn fallback vào cửa sổ bằng chứng mạnh, chặn trộn citation/thực thể và bắt buộc QLoRA; cần chạy lại smoke30/dev100 rồi mới chạy main. Xem `VALIDATION.md`.
 
 **Mục tiêu tối ưu:** ưu tiên METEOR tuyệt đối khi chọn cấu hình/checkpoint; ROUGE-L chỉ dùng để phá hòa khi METEOR bằng nhau. Mốc cần đạt trên validation là **METEOR ≥ 0,65**.
 
@@ -37,13 +37,13 @@ Ba notebook mặc định dùng `USE_REPO_DATA = False` và đường dẫn `/ka
 | 4 Chia tập và khóa mô hình | Tạo train/dev/holdout, dùng model lock Version 3 | `parameter_audit.json` dưới 4B |
 | 5 Xác nhận chỉ mục | Kiểm tra SQLite/FAISS Version 3 | Đúng 8.507 tài liệu và 407.107 chunks |
 | 6 Smoke 30 câu | Truy xuất, sinh chưa SFT và chấm đúng BTC | Xem trực tiếp đáp án và audit |
-| 7 Baseline và truy xuất tập phát triển | Lưu retrieval của dev và train | Báo cáo baseline và token coverage |
-| 8 Fine tune | Huấn luyện một hoặc hai epoch | `training_data_report.json`, checkpoint mỗi epoch |
-| 9 Chọn checkpoint trên dev | Sinh từ từng checkpoint và so với baseline | Chọn METEOR cao nhất cùng IDs |
+| 7 Baseline và truy xuất tập phát triển | Baseline dev100; chọn 768 QA và tạo lexical retrieval cho train | Báo cáo baseline và cache train không dùng answer để truy xuất |
+| 8 Fine tune | Bắt buộc QLoRA hai epoch | `training_result.json`, `training_data_report.json`, checkpoint mỗi epoch |
+| 9 Chọn checkpoint trên dev100 | Sinh từ từng checkpoint và so với baseline | Chọn METEOR cao nhất; ROUGE-L chỉ phá hòa |
 | 10 Holdout | Đánh giá một lần trên tập đã giữ riêng | Kiểm tra khả năng tổng quát |
 | 11 Public hoặc private submission | Dùng đúng cấu hình và checkpoint đã chọn | ZIP chứa đúng một JSON |
 
-Cell 8, 10 và 11 dùng các cờ `RUN_SFT`, `RUN_HOLDOUT`, `RUN_SUBMISSION` để bạn chọn giai đoạn cần chạy. Mặc định các bước dài này tắt. Cờ này chỉ điều khiển thực nghiệm, không phải yêu cầu xin phép. Khi chạy lại, cache đúng fingerprint được tiếp tục; thay cấu hình làm fingerprint khác thì dùng tên output mới. Không bỏ kiểm tra fingerprint để dùng lại kết quả khác mô hình.
+Main run đặt `RUN_SFT = True` và sẽ dừng nếu QLoRA bị tắt, không tạo được `training_result.json`, không có checkpoint để đánh giá, hoặc checkpoint được chọn không có adapter. Baseline chỉ là mốc so sánh; holdout và submission bắt buộc dùng checkpoint QLoRA có METEOR cao nhất. Chỉ `RUN_HOLDOUT` và `RUN_SUBMISSION` mặc định tắt. Khi chạy lại, cache đúng fingerprint được tiếp tục; thay cấu hình làm fingerprint khác thì dùng tên output mới. Không bỏ kiểm tra fingerprint để dùng lại kết quả khác mô hình.
 
 Notebook dùng một GPU cho mỗi subprocess; đặc biệt QLoRA chỉ thấy GPU 0. Nếu có hai T4, không mặc định coi chúng là một GPU có VRAM cộng gộp. Retrieval hoàn tất và nhả model trước khi generation bắt đầu. Chưa có benchmark tốc độ/VRAM thực tế của cấu hình này.
 
@@ -64,15 +64,15 @@ python -m legalqa generate --questions runs/data/dev30.questions.json --retrieva
 python -m legalqa evaluate --predictions runs/dev30.base.json --references runs/data/dev30.references.json --output runs/dev30.base.metrics.json --label base
 ```
 
-Sau smoke, tạo retrieval và baseline cho toàn bộ dev; tạo retrieval cho train mà chỉ đưa **question** vào retriever:
+Sau smoke, tạo baseline trên dev100, chọn tập QLoRA xác định bằng seed và tạo lexical retrieval mà chỉ đưa **question** vào retriever:
 
 ```bash
-python -m legalqa retrieve --questions runs/data/dev.questions.json --index runs/index --output runs/dev.retrieval.json
-python -m legalqa generate --questions runs/data/dev.questions.json --retrieval runs/dev.retrieval.json --output runs/dev.base.json
-python -m legalqa evaluate --predictions runs/dev.base.json --references runs/data/dev.references.json --output runs/dev.base.metrics.json --label base
-python -m legalqa diagnose-retrieval --qa runs/data/dev.json --retrieval runs/dev.retrieval.json --index runs/index --output runs/dev.coverage.json
-python -m legalqa retrieve --questions runs/data/train.questions.json --index runs/index --output runs/train.retrieval.json
-python -m legalqa fit --train runs/data/train.json --retrieval runs/train.retrieval.json --output runs/sft --gpu 0
+python -m legalqa retrieve --questions runs/data/dev100.questions.json --index runs/index --output runs/dev100.retrieval.json
+python -m legalqa generate --questions runs/data/dev100.questions.json --retrieval runs/dev100.retrieval.json --output runs/dev100.base.json
+python -m legalqa evaluate --predictions runs/dev100.base.json --references runs/data/dev100.references.json --output runs/dev100.base.metrics.json --label base_v8
+python -m legalqa prepare-sft --train runs/data/train.json --output runs/data/train.sft.json
+python -m legalqa retrieve --questions runs/data/train.sft.questions.json --index runs/index --output runs/train.sft.lexical.retrieval.json --mode lexical
+python -m legalqa fit --train runs/data/train.sft.json --retrieval runs/train.sft.lexical.retrieval.json --output runs/sft --gpu 0
 ```
 
 `fit` đặt `CUDA_VISIBLE_DEVICES` trước khi import torch. Khi tiếp tục lần train bị ngắt, chỉ định `--resume runs/sft/checkpoint-N` cùng input và cấu hình. Kiểm tra `training_data_report.json`: đáp án quá dài không bị cắt lén; mẫu không vừa được ghi rõ ID và bỏ khỏi lượt train. Nếu số bỏ đáng kể, cần điều chỉnh ngân sách trước khi train dài.
@@ -80,13 +80,13 @@ python -m legalqa fit --train runs/data/train.json --retrieval runs/train.retrie
 Ví dụ đánh giá một checkpoint. Thay `checkpoint-N` bằng thư mục thực tế do Trainer tạo, không đoán N:
 
 ```bash
-python -m legalqa generate --questions runs/data/dev.questions.json --retrieval runs/dev.retrieval.json --adapter runs/sft/checkpoint-N --output runs/dev.sft.json
-python -m legalqa evaluate --predictions runs/dev.sft.json --references runs/data/dev.references.json --output runs/dev.sft.metrics.json --label sft_epoch
-python -m legalqa compare --baseline runs/dev.base.metrics.json --candidate runs/dev.sft.metrics.json --output runs/dev.comparison.json
-python -m legalqa select --reports runs/dev.base.metrics.json runs/dev.sft.metrics.json --output runs/selection.json
+python -m legalqa generate --questions runs/data/dev100.questions.json --retrieval runs/dev100.retrieval.json --adapter runs/sft/checkpoint-N --output runs/dev100.sft.json
+python -m legalqa evaluate --predictions runs/dev100.sft.json --references runs/data/dev100.references.json --output runs/dev100.sft.metrics.json --label sft_epoch
+python -m legalqa compare --baseline runs/dev100.base.metrics.json --candidate runs/dev100.sft.metrics.json --output runs/dev100.comparison.json
+python -m legalqa select --reports runs/dev100.sft.metrics.json --output runs/selection.json
 ```
 
-Lặp hai lệnh generate/evaluate cho từng checkpoint, rồi đưa tất cả báo cáo vào `select`. Nếu baseline tốt nhất thì giữ baseline. Không coi `adapter_last` mặc nhiên là tốt nhất. ROUGE-L dùng để theo dõi chất lượng bổ sung; không yêu cầu cả hai metric đều tăng mới được chọn mô hình, vì BTC xếp hạng chính theo METEOR.
+Lặp hai lệnh generate/evaluate cho từng checkpoint, rồi đưa các báo cáo checkpoint vào `select`; baseline chỉ đi vào lệnh `compare`. Main run bắt buộc chọn một adapter QLoRA, không coi `adapter_last` mặc nhiên là tốt nhất. Nếu adapter tốt nhất vẫn kém baseline, notebook cảnh báo rõ nhưng không âm thầm bỏ QLoRA. ROUGE-L dùng để theo dõi chất lượng bổ sung; không yêu cầu cả hai metric đều tăng mới được chọn mô hình, vì BTC xếp hạng chính theo METEOR.
 
 Với checkpoint được chọn, chạy holdout bằng cùng các lệnh trên, đổi `dev` thành `holdout`. Khi sang test, retriever và generator chỉ nhận câu hỏi:
 
@@ -96,7 +96,7 @@ python -m legalqa generate --questions runs/data/test.questions.json --retrieval
 python -m legalqa package --predictions runs/submission.json --questions runs/data/test.questions.json --output runs/submission.zip
 ```
 
-Bỏ `--adapter` nếu chọn baseline. ZIP mặc định chứa `submission.json` ở gốc. **ZIP scorer được gửi không kèm `metadata.json` của bộ reference để xác nhận tên `metadata.files.input` trên máy chấm.** `submission.json` là tên mặc định theo log cung cấp; kiểm tra tên yêu cầu ở vòng thi, nếu khác thì dùng `package --filename ten_btc_yeu_cau.json`. Code không cần biết tên file reference trên máy BTC để chấm validation tại máy bạn.
+Trong quality V8 main run không bỏ `--adapter`: submission bắt buộc dùng checkpoint QLoRA đã chọn. ZIP mặc định chứa `submission.json` ở gốc. **ZIP scorer được gửi không kèm `metadata.json` của bộ reference để xác nhận tên `metadata.files.input` trên máy chấm.** `submission.json` là tên mặc định theo log cung cấp; kiểm tra tên yêu cầu ở vòng thi, nếu khác thì dùng `package --filename ten_btc_yeu_cau.json`. Code không cần biết tên file reference trên máy BTC để chấm validation tại máy bạn.
 
 ## Thử nghiệm có kiểm soát
 

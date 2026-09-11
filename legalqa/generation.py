@@ -6,7 +6,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from .io import Journal, digest, file_hash, load_questions, read_json, source_hash, validate_predictions, write_json
 from .models import load_generator, model_lock
 from .prompts import (answer_flags, clean_answer, complete_truncated_answer,
-                      extractive_fallback, pack_prompt, refusal_evidence_support)
+                      citation_context_conflict, extractive_fallback, pack_prompt,
+                      refusal_evidence_support)
 from .retrieval import read_retrieval
 
 
@@ -57,6 +58,7 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
                 evidence = "\n".join(p["text"] for p in packed)
                 flags = answer_flags(answer,evidence)
                 refusal_support = refusal_evidence_support(questions[key]["question"], packed)
+                entity_conflict = citation_context_conflict(questions[key]["question"],answer,packed)
                 invalid = flags["empty"] or flags["artifact"] or bool(flags["unsupported_document_numbers"])
                 # Preserve a grounded, complete prefix when the token budget is reached. A raw
                 # parent dump is reserved for invalid output or a refusal despite strong evidence.
@@ -66,10 +68,13 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
                         answer = completed
                         route = "generated_truncated"
                     else:
-                        answer = extractive_fallback(packed)
+                        answer = extractive_fallback(questions[key]["question"],packed,refusal_support)
                         route = "source_fallback"
+                elif entity_conflict["conflict"]:
+                    answer = extractive_fallback(questions[key]["question"],packed,refusal_support)
+                    route = "entity_guard_fallback"
                 elif invalid or (flags["refusal"] and refusal_support["strong"]):
-                    answer = extractive_fallback(packed)
+                    answer = extractive_fallback(questions[key]["question"],packed,refusal_support)
                     route = "source_fallback"
                 elif flags["refusal"]:
                     # Keep an honest refusal when retrieval itself does not contain enough
@@ -78,9 +83,13 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
                 else:
                     route = "generated"
             else:
-                answer, route, flags = extractive_fallback(packed), "extractive_baseline", {}
+                refusal_support = refusal_evidence_support(questions[key]["question"],packed)
+                entity_conflict = {"conflict":False,"conflicting_context_index":None,"copied_phrase_words":0}
+                answer = extractive_fallback(questions[key]["question"],packed,refusal_support)
+                route,flags = "extractive_baseline",{}
             audit = {"route": route, "raw_answer": raw, "flags_before_fallback": flags,
                 "refusal_evidence_support": refusal_support if mode == "generate" else None,
+                "entity_conflict": entity_conflict,
                 "hit_token_limit": hit_limit, "input_tokens": len(prompt_ids), "output_tokens": completion_tokens,
                 "answer_words": len(answer.split()), "context_parent_ids": [p["parent_id"] for p in packed],
                 "seconds": time.perf_counter()-start}

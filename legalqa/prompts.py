@@ -25,6 +25,7 @@ REFUSAL = re.compile(
     r"^\s*(?:(?:dựa|theo)\s+[^.!?]{0,160}[,:]\s*)?"
     r"(?:chưa đủ căn cứ|không có thông tin|không đủ thông tin|không thể trả lời)", re.I
 )
+WORD = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 def messages(question, contexts):
@@ -90,7 +91,9 @@ def pack_prompt(question, parents, tokenizer, c, budget=None):
             pids = tokenizer(prefix, add_special_tokens=False)["input_ids"][:64]
             text = tokenizer.decode(pids)+"\n"+text
         packed.append({"parent_id": parent["parent_id"], "text": text,
-                       "seed_chunk_id": parent.get("seed_chunk_id")})
+                       "seed_chunk_id": parent.get("seed_chunk_id"),
+                       "number": parent.get("number", ""), "heading": parent.get("heading", ""),
+                       "final_score": parent.get("final_score")})
     # Exact generator-token check, including role markers, question, and generation prompt.
     while True:
         prompt_ids = tokenizer.apply_chat_template(messages(question, packed), tokenize=True, add_generation_prompt=True)
@@ -121,12 +124,6 @@ def clean_answer(text):
 
 
 def answer_flags(answer, evidence):
-    def legal_numbers(text):
-        # A legal document suffix contains letters (NĐ-CP, TT-BTC, QĐ-VSD, ...).
-        # Calendar fragments such as 01/08 must never be treated as citations.
-        return {m.group(0).casefold() for m in DOC_NUMBER.finditer(text)
-                if any(char.isalpha() for char in m.group(0).rsplit("/", 1)[-1])}
-
     supported_numbers = legal_numbers(evidence)
     output_numbers = legal_numbers(answer)
     # REFUSAL is anchored at the opening, so long refusal-plus-speculation answers are
@@ -143,19 +140,121 @@ QUESTION_STOPWORDS = frozenset({
     "là", "một", "nào", "như", "những", "phải", "quy", "sao", "sẽ", "theo", "thế",
     "thì", "tại", "trong", "và", "về", "với", "đối", "định",
 })
+EVIDENCE_MARKERS = ("thay đổi", "mới nhất", "hiện hành", "hiện nay", "còn hiệu lực")
+DIRECT_ACTOR = re.compile(r"^\s*(?:ai\b|cơ quan nào\b|tổ chức nào\b|đơn vị nào\b|chủ thể nào\b)", re.I)
+
+
+def word_tokens(text):
+    return WORD.findall(text.casefold())
+
+
+def content_terms(text):
+    return list(dict.fromkeys(token for token in word_tokens(text)
+                              if len(token) > 1 and token not in QUESTION_STOPWORDS))
+
+
+def legal_numbers(text):
+    # A legal document suffix contains letters (NĐ-CP, TT-BTC, QĐ-VSD, ...).
+    # Calendar fragments such as 01/08 must never be treated as citations.
+    return {m.group(0).casefold() for m in DOC_NUMBER.finditer(text)
+            if any(char.isalpha() for char in m.group(0).rsplit("/", 1)[-1])}
+
+
+def longest_shared_phrase(left, right, maximum=8, minimum=2):
+    left, right = word_tokens(left), " "+" ".join(word_tokens(right))+" "
+    for size in range(min(maximum, len(left)), minimum-1, -1):
+        for start in range(len(left)-size+1):
+            if " "+" ".join(left[start:start+size])+" " in right:
+                return size
+    return 0
+
+
+def localized_evidence_support(question, contexts, threshold=0.78, window_words=160):
+    """Find locally concentrated question evidence instead of whole-parent word overlap."""
+    terms = content_terms(question)
+    qwords = word_tokens(question)
+    anchor = terms[:2]
+    candidates = []
+    for index,context in enumerate(contexts):
+        text = context.get("text", "")
+        matches = list(WORD.finditer(text.casefold()))
+        heading_words = word_tokens(context.get("heading", ""))
+        if not matches:
+            continue
+        step = max(32, window_words//2)
+        starts = list(range(0, len(matches), step))
+        if starts[-1]+window_words < len(matches):
+            starts.append(max(0, len(matches)-window_words))
+        for start in starts:
+            end = min(len(matches), start+window_words)
+            words = heading_words+[match.group(0) for match in matches[start:end]]
+            token_set = set(words)
+            matched = sum(term in token_set for term in terms)
+            coverage = matched/max(1,len(terms))
+            joined = " "+" ".join(words)+" "
+            phrase = 0
+            for size in range(min(8,len(qwords)),1,-1):
+                if any(" "+" ".join(qwords[pos:pos+size])+" " in joined
+                       for pos in range(len(qwords)-size+1)):
+                    phrase = size
+                    break
+            anchor_match = len(anchor) >= 2 and " "+" ".join(anchor)+" " in joined
+            # Retrieval order remains meaningful: a modest rank prior prevents a tiny
+            # lexical gain in a lower, conflicting document from displacing context 1.
+            score = coverage+min(phrase,8)*0.02+0.10/(index+1)
+            candidates.append({"context_index":index,"window_start":start,"window_end":end,
+                               "coverage":coverage,"matched_terms":matched,
+                               "question_terms":len(terms),"longest_phrase":phrase,
+                               "anchor_match":anchor_match,"score":score})
+    if not candidates:
+        return {"strong":False,"coverage":0.0,"matched_terms":0,"question_terms":len(terms),
+                "context_index":None,"window_start":0,"window_end":0,
+                "longest_phrase":0,"anchor_match":False}
+    best = max(candidates,key=lambda row:(row["score"],-row["context_index"],-row["window_start"]))
+    context = contexts[best["context_index"]]
+    context_words = word_tokens(context.get("text", ""))
+    relevant_text = " ".join(word_tokens(context.get("heading", ""))+
+                             context_words[best["window_start"]:best["window_end"]])
+    marker_ok = all(marker not in question.casefold() or marker in relevant_text for marker in EVIDENCE_MARKERS)
+    age_ok = True
+    if "tuổi" in qwords and "bao nhiêu" in question.casefold():
+        ages = [int(value) for value in re.findall(r"(?<!\d)(\d{1,3})(?=\s*tuổi)", relevant_text)]
+        age_ok = any(0 < value <= 120 for value in ages)
+    best["marker_ok"],best["age_value_present"] = marker_ok,age_ok
+    actor_support = bool(DIRECT_ACTOR.search(question)) and best["coverage"] >= 0.80
+    best["strong"] = (len(terms) >= 3 and best["coverage"] >= threshold
+                      and best["longest_phrase"] >= 3 and (best["anchor_match"] or actor_support)
+                      and marker_ok and age_ok)
+    return best
 
 
 def refusal_evidence_support(question, contexts, threshold=0.65):
-    """Audit whether the first-ranked context strongly covers a refused question."""
-    terms = list(dict.fromkeys(token for token in re.findall(r"[^\W_]+", question.casefold(), re.UNICODE)
-                              if len(token) > 1 and token not in QUESTION_STOPWORDS))
-    if not terms or not contexts:
-        return {"strong": False, "coverage": 0.0, "matched_terms": 0, "question_terms": len(terms)}
-    top_terms = set(re.findall(r"[^\W_]+", contexts[0].get("text", "").casefold(), re.UNICODE))
-    matched = sum(term in top_terms for term in terms)
-    coverage = matched/len(terms)
-    return {"strong": len(terms) >= 3 and coverage >= threshold,
-            "coverage": coverage, "matched_terms": matched, "question_terms": len(terms)}
+    # Kept as a public compatibility name; V8 deliberately requires a stricter local match.
+    return localized_evidence_support(question, contexts, max(0.78,threshold))
+
+
+def citation_context_conflict(question, answer, contexts, min_phrase=8):
+    """Catch a direct-actor answer that cites one document but copies another document."""
+    result = {"conflict":False,"conflicting_context_index":None,"copied_phrase_words":0}
+    if not DIRECT_ACTOR.search(question):
+        return result
+    cited = legal_numbers(answer)
+    if not cited:
+        return result
+    cited_indices = [index for index,context in enumerate(contexts) if legal_numbers(
+        " ".join([context.get("number", ""),context.get("heading", ""),context.get("text", "")])) & cited]
+    if not cited_indices:
+        return result
+    cited_text = "\n".join(contexts[index].get("text", "") for index in cited_indices)
+    for index,context in enumerate(contexts):
+        if index in cited_indices:
+            continue
+        copied = longest_shared_phrase(answer,context.get("text", ""),maximum=12,minimum=min_phrase)
+        supported = longest_shared_phrase(answer,cited_text,maximum=12,minimum=min_phrase)
+        if copied >= min_phrase and copied > supported:
+            return {"conflict":True,"conflicting_context_index":index,
+                    "copied_phrase_words":copied}
+    return result
 
 
 def complete_truncated_answer(answer):
@@ -176,10 +275,26 @@ def complete_truncated_answer(answer):
     return ""
 
 
-def extractive_fallback(contexts):
-    # An honest source excerpt, not a fabricated answer, and never just an article heading.
-    for context in contexts:
-        lines = context["text"].splitlines()
-        if len(context["text"].split()) >= 24 and (len(lines)>1 or len(context["text"].split()) >= 50):
-            return clean_answer(context["text"])
+def extractive_fallback(question, contexts, support=None, max_words=420):
+    """Return a bounded verbatim excerpt around the strongest local evidence window."""
+    support = support or localized_evidence_support(question,contexts)
+    index = support.get("context_index")
+    if index is not None:
+        context = contexts[index]
+        text = context.get("text", "")
+        matches = list(WORD.finditer(text))
+        if len(matches) >= 24:
+            if len(matches) <= max_words:
+                excerpt = text
+            else:
+                # Keep the beginning of the winning evidence window. Centering a short
+                # excerpt on a broad window could otherwise cut off the exact clause.
+                start = max(0,support["window_start"]-max_words//4)
+                end = min(len(matches),start+max_words)
+                start = max(0,end-max_words)
+                excerpt = text[matches[start].start():matches[end-1].end()]
+            prefix = " ".join(value for value in [context.get("number"),context.get("heading")] if value)
+            if prefix and prefix not in excerpt:
+                excerpt = prefix+"\n"+excerpt
+            return clean_answer(excerpt)
     return "Chưa đủ căn cứ trong tài liệu được cung cấp để trả lời câu hỏi này."

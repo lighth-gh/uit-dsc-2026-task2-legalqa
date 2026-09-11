@@ -7,12 +7,31 @@ from .prompts import pack_prompt
 from .retrieval import read_retrieval
 
 
+def select_training_questions(questions, c):
+    maximum = int(c["training"].get("max_examples",len(questions)))
+    if maximum <= 0:
+        raise ValueError("training.max_examples must be positive")
+    ordered = sorted(questions,key=lambda key:digest({"seed":c["seed"],"id":key}))[:maximum]
+    return {key:questions[key] for key in ordered}
+
+
+def prepare_training_subset(c, train_path, output):
+    questions = select_training_questions(load_questions(train_path,answers=True),c)
+    output = Path(output)
+    question_path = output.with_name(output.stem+".questions.json")
+    write_json(output,questions)
+    write_json(question_path,{key:{"question":item["question"]} for key,item in questions.items()})
+    return {"samples":len(questions),"train":str(output),"questions":str(question_path)}
+
+
 def training_examples(questions, records, tokenizer, c):
     samples, skipped, stats = [], [], []
     limit = c["training"]["max_sequence_tokens"]
+    training_prompt_limit = c["training"].get("max_prompt_tokens",c["generation"]["max_input_tokens"])
     for key,item in questions.items():
         answer_ids = tokenizer(item["answer"],add_special_tokens=False)["input_ids"]+[tokenizer.eos_token_id]
-        prompt_budget = min(c["generation"]["max_input_tokens"],limit-len(answer_ids))
+        prompt_budget = min(c["generation"]["max_input_tokens"],training_prompt_limit,
+                            limit-len(answer_ids))
         if prompt_budget < c["generation"]["min_context_tokens"]+256:
             skipped.append({"id":key,"reason":"full reference does not fit without losing the context", "answer_tokens":len(answer_ids)})
             continue
@@ -32,13 +51,15 @@ def training_examples(questions, records, tokenizer, c):
 
 
 def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=None):
+    if not c["generation"].get("load_in_4bit"):
+        raise ValueError("QLoRA is required: generation.load_in_4bit must be true")
     import torch
     from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
     from transformers import Trainer, TrainingArguments, set_seed
     if torch.cuda.device_count()!=1:
         raise ValueError("Train in a subprocess with CUDA_VISIBLE_DEVICES=0 (one visible GPU); do not use Trainer DataParallel with this QLoRA model")
     set_seed(c["seed"])
-    questions = load_questions(train_path,answers=True)
+    questions = select_training_questions(load_questions(train_path,answers=True),c)
     records,retrieval_id = read_retrieval(retrieval_path,questions,c,root)
     output = Path(output)
     if output.exists() and any(output.iterdir()) and not resume:
@@ -57,12 +78,8 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
             raise ValueError("Resume training fingerprint differs")
     write_json(output/"training_manifest.json",manifest)
     write_json(output/"training_data_report.json",report)
-    if c["generation"]["load_in_4bit"]:
-        model = prepare_model_for_kbit_training(model,use_gradient_checkpointing=True,
-                                                gradient_checkpointing_kwargs={"use_reentrant":False})
-    else:
-        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
-        model.enable_input_require_grads()
+    model = prepare_model_for_kbit_training(model,use_gradient_checkpointing=True,
+                                            gradient_checkpointing_kwargs={"use_reentrant":False})
     model = get_peft_model(model,LoraConfig(task_type=TaskType.CAUSAL_LM,r=t["lora_rank"],lora_alpha=t["lora_alpha"],
                     lora_dropout=t["lora_dropout"],target_modules=t["target_modules"],bias="none"))
     model.config.use_cache=False
@@ -82,7 +99,7 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
         per_device_train_batch_size=t["batch_size"],gradient_accumulation_steps=t["gradient_accumulation"],
         warmup_ratio=t["warmup_ratio"],lr_scheduler_type="cosine",fp16=True,bf16=False,
         gradient_checkpointing=True,gradient_checkpointing_kwargs={"use_reentrant":False},
-        optim="paged_adamw_8bit" if c["generation"]["load_in_4bit"] else "adamw_torch",
+        optim="paged_adamw_8bit",
         max_grad_norm=.3,save_strategy="epoch",save_total_limit=2,logging_steps=10,
         eval_strategy="no",report_to="none",remove_unused_columns=False,seed=c["seed"],data_seed=c["seed"],
         dataloader_num_workers=0)

@@ -291,7 +291,15 @@ class Retriever:
         scored = [(key, score, retrieval_adjustment(question, chunks[key], rc, newest_year))
                   for key,score in zip(pool,scores)]
         ranked = sorted(scored, key=lambda row: (-(row[1]+row[2]), row[0]))
-        selected, seen = [], set()
+        selected = self._materialize(ranked,chunks)
+        return {"question": question, "contexts": selected,
+                "stages": {"bm25": bm, "bm25_phrases": phrase_bm, "bm25_precise": precise_bm,
+                           "dense": dense_ids, "rrf": fusion, "reranked": [row[0] for row in ranked]},
+                "seconds": {"bm25": bm_seconds, "rerank": time.perf_counter()-t}}
+
+    def _materialize(self, ranked, chunks):
+        rc = self.c["retrieval"]
+        selected,seen = [],set()
         for key, score, adjustment in ranked:
             child = chunks[key]
             if child["parent_id"] in seen:
@@ -310,26 +318,51 @@ class Retriever:
                              "retrieval_adjustment": adjustment, "final_score": score+adjustment})
             if len(selected) == rc["parents_k"]:
                 break
-        return {"question": question, "contexts": selected,
-                "stages": {"bm25": bm, "bm25_phrases": phrase_bm, "bm25_precise": precise_bm,
-                           "dense": dense_ids, "rrf": fusion, "reranked": [row[0] for row in ranked]},
-                "seconds": {"bm25": bm_seconds, "rerank": time.perf_counter()-t}}
+        return selected
+
+    def retrieve_one_lexical(self, question):
+        """Fast question-only retrieval for QLoRA training examples; no GPU models."""
+        start = time.perf_counter()
+        bm = self.bm25(question)
+        phrase_bm = self.bm25_phrases(question)
+        precise_bm = self.bm25_precise(question)
+        rc = self.c["retrieval"]
+        fusion = rrf([bm, phrase_bm, precise_bm], rc["rrf_constant"])
+        chunks = self.chunks(fusion)
+        pool_k = self.c.get("training",{}).get("lexical_pool_k",rc["pool_k"])
+        pool = diversified(fusion,chunks,pool_k,rc["max_children_per_parent"])
+        years = [document_year(chunks[key]["header"]) for key in pool]
+        newest_year = max((year for year in years if year),default=None)
+        ranked = []
+        for rank,key in enumerate(pool):
+            rank_score = 4.0/(1.0+rank/8.0)
+            adjustment = retrieval_adjustment(question,chunks[key],rc,newest_year)
+            ranked.append((key,rank_score,adjustment))
+        ranked.sort(key=lambda row:(-(row[1]+row[2]),row[0]))
+        return {"question":question,"contexts":self._materialize(ranked,chunks),
+                "stages":{"bm25":bm,"bm25_phrases":phrase_bm,"bm25_precise":precise_bm,
+                          "dense":[],"rrf":fusion,"reranked":[row[0] for row in ranked]},
+                "seconds":{"bm25":time.perf_counter()-start,"rerank":0.0,"dense_amortized":0.0}}
 
 
-def retrieve(c, questions_path, root, index_dir, output, device):
-    import numpy as np
+def retrieve(c, questions_path, root, index_dir, output, device, mode="full"):
+    if mode not in {"full","lexical"}:
+        raise ValueError("Retrieval mode must be full or lexical")
     lock = model_lock(c, root)
     questions = load_questions(questions_path)
     engine = Retriever(c, index_dir)
     if engine.manifest["identity"]["embedding"] != lock["models"]["embedding"]:
         raise ValueError("Dense index was built with a different embedding checkpoint")
     identity = {"questions_hash": digest(questions), "index_hash": digest(engine.manifest),
-                "retrieval": c["retrieval"], "models": lock, "code": source_hash()}
+                "retrieval": c["retrieval"], "mode":mode,
+                "mode_config":c.get("training",{}).get("lexical_pool_k") if mode=="lexical" else None,
+                "models": lock, "code": source_hash()}
     output = Path(output)
     journal = Journal(output.with_suffix(".checkpoint.jsonl"),identity)
     records = journal.records
     keys = [k for k in questions if k not in records]
-    if keys:
+    if keys and mode == "full":
+        import numpy as np
         encoder = Encoder(root, device)
         start = time.perf_counter()
         query_vectors = encoder.encode([questions[k]["question"] for k in keys], kind="query",
@@ -348,6 +381,11 @@ def retrieve(c, questions_path, root, index_dir, output, device):
             if (position+1) % 10 == 0 or position+1 == len(keys):
                 print(f"Retrieved: {len(records)}/{len(questions)}", flush=True)
         release(reranker)
+    elif keys:
+        for position,key in enumerate(keys):
+            journal.append(key,engine.retrieve_one_lexical(questions[key]["question"]))
+            if (position+1) % 100 == 0 or position+1 == len(keys):
+                print(f"Retrieved lexical: {len(records)}/{len(questions)}",flush=True)
     engine.con.close()
     if set(records) != set(questions):
         raise ValueError("Retrieval cache ID mismatch")
