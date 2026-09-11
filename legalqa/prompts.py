@@ -13,6 +13,9 @@ SYSTEM = (
     "Ưu tiên độ bao phủ: nếu câu hỏi yêu cầu danh sách, hồ sơ, nhiệm vụ, điều kiện, mức phạt hoặc thời hạn, "
     "phải nêu đủ từng ý liên quan có trong trích đoạn thay vì chỉ tóm tắt kết luận. "
     "Giữ cả căn cứ pháp lý và biện pháp khắc phục hậu quả khi trích đoạn có nêu. "
+    "Các trích đoạn được xếp theo độ liên quan: ưu tiên trích đoạn đầu tiên. Khi nhiều trích đoạn nói về "
+    "cơ quan, tổ chức hoặc văn bản có tên gần giống nhau, chỉ dùng quy định thuộc đúng thực thể được hỏi; "
+    "không lấy quy định của một hội, cơ quan hoặc văn bản khác để suy ra câu trả lời. "
     "Nếu trích đoạn chỉ giải đáp được một phần, vẫn trả lời đầy đủ phần có căn cứ rồi mới nêu ngắn gọn phần còn thiếu. "
     "Nếu không có thông tin liên quan, nói rõ chưa đủ căn cứ trong tài liệu được cung cấp."
 )
@@ -57,16 +60,20 @@ def pack_prompt(question, parents, tokenizer, c, budget=None):
     count = max(1, len(parents))
     parent_cap = c["generation"]["parent_max_tokens"]
     floor = min(c["generation"]["min_context_tokens"], max(32, available//(count*2)))
-    caps = [floor] * count
+    # Cap by the real parent size first. Unused allowance from a short high-ranked
+    # parent is then redistributed instead of being lost while lower parents starve.
+    maximums = [min(parent_cap, len(tokenizer(parent["text"], add_special_tokens=False)["input_ids"]))
+                for parent in parents]
+    caps = [min(floor, maximum) for maximum in maximums]
     remaining = max(0, available-sum(caps))
     weights = [4, 2] + [1] * max(0, count-2)
-    while remaining and any(value < parent_cap for value in caps):
-        active = [i for i,value in enumerate(caps) if value < parent_cap]
+    while remaining and any(value < maximums[i] for i,value in enumerate(caps)):
+        active = [i for i,value in enumerate(caps) if value < maximums[i]]
         weight_sum = sum(weights[i] for i in active)
         changed = 0
         for i in active:
             share = max(1, remaining*weights[i]//weight_sum)
-            add = min(share, parent_cap-caps[i], remaining-changed)
+            add = min(share, maximums[i]-caps[i], remaining-changed)
             caps[i] += add
             changed += add
             if changed == remaining:
@@ -122,14 +129,33 @@ def answer_flags(answer, evidence):
 
     supported_numbers = legal_numbers(evidence)
     output_numbers = legal_numbers(answer)
-    words = answer.split()
-    # Only a short answer whose opening is a refusal is rejected. Legal provisions can
-    # legitimately contain phrases such as "không đủ thông tin" in a substantive answer.
-    refusal = len(words) <= 80 and bool(REFUSAL.search(answer))
+    # REFUSAL is anchored at the opening, so long refusal-plus-speculation answers are
+    # caught without rejecting substantive provisions that contain the same words later.
+    refusal = bool(REFUSAL.search(answer))
     return {"empty": not bool(answer.strip()),
             "unsupported_document_numbers": sorted(output_numbers-supported_numbers),
             "refusal": refusal,
             "artifact": bool(re.search(r"<\||<think>|```|https?://|(?m:^\s*#{1,6}\s)",answer))}
+
+
+QUESTION_STOPWORDS = frozenset({
+    "ai", "bao", "bằng", "các", "cho", "có", "của", "được", "gì", "hay", "khi",
+    "là", "một", "nào", "như", "những", "phải", "quy", "sao", "sẽ", "theo", "thế",
+    "thì", "tại", "trong", "và", "về", "với", "đối", "định",
+})
+
+
+def refusal_evidence_support(question, contexts, threshold=0.65):
+    """Audit whether the first-ranked context strongly covers a refused question."""
+    terms = list(dict.fromkeys(token for token in re.findall(r"[^\W_]+", question.casefold(), re.UNICODE)
+                              if len(token) > 1 and token not in QUESTION_STOPWORDS))
+    if not terms or not contexts:
+        return {"strong": False, "coverage": 0.0, "matched_terms": 0, "question_terms": len(terms)}
+    top_terms = set(re.findall(r"[^\W_]+", contexts[0].get("text", "").casefold(), re.UNICODE))
+    matched = sum(term in top_terms for term in terms)
+    coverage = matched/len(terms)
+    return {"strong": len(terms) >= 3 and coverage >= threshold,
+            "coverage": coverage, "matched_terms": matched, "question_terms": len(terms)}
 
 
 def complete_truncated_answer(answer):

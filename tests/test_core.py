@@ -12,7 +12,8 @@ from legalqa.generation import package_submission
 from legalqa.io import Journal, ROOT, config, group_key, read_json, validate_predictions, write_json
 from legalqa.models import require_approved
 from legalqa.metrics import select_reports
-from legalqa.prompts import answer_flags, clean_answer, complete_truncated_answer, pack_prompt, window_around_seed
+from legalqa.prompts import (SYSTEM, answer_flags, clean_answer, complete_truncated_answer, pack_prompt,
+                             refusal_evidence_support, window_around_seed)
 from legalqa.retrieval import Retriever, diversified, retrieval_adjustment, rrf
 from legalqa.training import training_examples
 
@@ -70,6 +71,8 @@ class CoreTests(unittest.TestCase):
         c = config()
         require_approved(c)
         self.assertEqual(c["models"]["generator"],"AITeamVN/Vi-Qwen2-3B-RAG")
+        self.assertEqual(c["retrieval"]["pool_k"],32)
+        self.assertEqual(c["generation"]["max_new_tokens"],1536)
         c["models"]["generator"] = "Qwen/Qwen3-4B"
         with self.assertRaises(ValueError):require_approved(c)
 
@@ -185,6 +188,20 @@ class CoreTests(unittest.TestCase):
         self.assertGreater(sizes[1],sizes[2])
         self.assertGreaterEqual(sizes[-1],32)
 
+    def test_prompt_redistributes_budget_from_short_top_context(self):
+        c = config();tok = TinyTokenizer()
+        c["generation"].update({"max_input_tokens":900,"parent_max_tokens":400,"min_context_tokens":80})
+        parents = [
+            {"parent_id":"short","text":" ".join(f"short{j}" for j in range(40)),"seed_start":0,"seed_end":20},
+            *[{"parent_id":str(i),"text":" ".join(f"p{i}w{j}" for j in range(500)),
+               "seed_start":0,"seed_end":20} for i in range(1,4)],
+        ]
+        _,packed = pack_prompt("câu hỏi pháp luật",parents,tok,c)
+        sizes = [len(tok(item["text"])["input_ids"]) for item in packed]
+        self.assertEqual(sizes[0],40)
+        self.assertGreater(sizes[1],sizes[2])
+        self.assertGreater(sizes[2],80)
+
     def test_cleaning_preserves_law_numbers_and_money(self):
         text = "**Trả lời:**\n- Theo Điều 2 Nghị định 12/2020/NĐ-CP, phạt 1.000.000 đồng."
         clean = clean_answer(text)
@@ -200,6 +217,17 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(answer_flags(answer,evidence)["unsupported_document_numbers"])
         self.assertFalse(answer_flags(answer,evidence)["refusal"])
         self.assertTrue(answer_flags("Không có thông tin để trả lời.",evidence)["refusal"])
+        long_refusal = "Không có thông tin cụ thể để trả lời. " + "nội dung " * 100
+        self.assertTrue(answer_flags(long_refusal,evidence)["refusal"])
+
+    def test_refusal_fallback_requires_strong_top_context(self):
+        question = "Cơ quan hải quan từ chối hưởng ưu đãi thuế quan trong trường hợp nào?"
+        strong = [{"text":"Cơ quan hải quan từ chối hưởng ưu đãi thuế quan trong hai trường hợp sau."}]
+        weak = [{"text":"Quy định chung về hồ sơ và thủ tục hành chính."}]
+        self.assertTrue(refusal_evidence_support(question,strong)["strong"])
+        self.assertFalse(refusal_evidence_support(question,weak)["strong"])
+        self.assertIn("ưu tiên trích đoạn đầu tiên",SYSTEM)
+        self.assertIn("đúng thực thể được hỏi",SYSTEM)
 
     def test_complete_truncated_answer_drops_incomplete_tail(self):
         completed = " ".join(["nội dung"]*24)+"."
@@ -225,6 +253,8 @@ class CoreTests(unittest.TestCase):
             self.assertIn(artifact,source,name)
             self.assertIn(dataset,source,name)
             self.assertIn("CODE / 'config.json'",source,name)
+            self.assertIn("quality_v7",source,name)
+            self.assertNotIn("quality_v6",source,name)
             self.assertNotIn("['retrieval'].update",source,name)
             self.assertNotIn("['generation'].update",source,name)
 

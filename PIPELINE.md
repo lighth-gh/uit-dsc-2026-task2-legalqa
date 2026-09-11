@@ -39,7 +39,7 @@ flowchart TD
     Q["Câu hỏi"] --> B["BM25 Top 100"]
     Q --> P["BM25 cụm từ/chính xác Top 40"]
     Q --> D["E5 small Top 100"]
-    B --> F["RRF và pool 40 đoạn"]
+    B --> F["RRF và pool 32 đoạn"]
     P --> F
     D --> F
     F --> R["Vietnamese Reranker + legal boosts"]
@@ -64,9 +64,9 @@ Tài liệu đọc được cả ZIP và thư mục lồng `selected-contexts/se
 
 Tách parent theo dòng mở đầu “Điều …”. Tài liệu không có cấu trúc điều luật vẫn được giữ và có cửa sổ văn bản để truy xuất. Trong mỗi parent, child mặc định dài 320 token E5, overlap 64; phần số hiệu/tiêu đề tối đa 48 token. Phần kiểm tra input đảm bảo không lén mất nửa child vì E5 chỉ nhận tối đa 512 token.
 
-BM25 dùng SQLite FTS5, giữ dấu và ưu tiên trường tiêu đề/số hiệu. Quality V6 bổ sung hai nhánh nhẹ trên cùng FTS index: cụm 3–4 từ và truy vấn AND các từ nội dung, giúp các cụm đặc thù như tên biểu mẫu, chức danh hoặc mặt hàng không bị chìm trong truy vấn OR. Dense dùng E5 với tiền tố `query: ` cho câu hỏi, `passage: ` cho văn bản, mean pooling có attention mask và L2 normalization. FAISS dùng inner product trên các vector đã chuẩn hóa. Không có thêm model học tham số.
+BM25 dùng SQLite FTS5, giữ dấu và ưu tiên trường tiêu đề/số hiệu. Quality V7 giữ hai nhánh nhẹ trên cùng FTS index: cụm 3–4 từ và truy vấn AND các từ nội dung, giúp các cụm đặc thù như tên biểu mẫu, chức danh hoặc mặt hàng không bị chìm trong truy vấn OR. Dense dùng E5 với tiền tố `query: ` cho câu hỏi, `passage: ` cho văn bản, mean pooling có attention mask và L2 normalization. FAISS dùng inner product trên các vector đã chuẩn hóa. Không có thêm model học tham số.
 
-BM25 thường và dense lấy 100 child; hai nhánh chính xác lấy tối đa 40. RRF kết hợp thứ hạng với hằng số 60; tối đa hai child từ một parent vào pool 40 để giảm các đoạn chồng lấn chiếm hết chỗ. Reranker chấm cặp `(question, child)` với sequence classifier, batch 8, tối đa 768 token. Điểm cuối có các boost nhỏ, được ghi vào retrieval JSON: độ phủ từ nội dung, cụm từ, số hiệu/năm được nêu trực tiếp và ưu tiên năm mới nhất chỉ khi câu hỏi yêu cầu “mới nhất/hiện hành”. Không dùng reference hoặc answer để rerank.
+BM25 thường và dense lấy 100 child; hai nhánh chính xác lấy tối đa 40. RRF kết hợp thứ hạng với hằng số 60; tối đa hai child từ một parent vào pool 32 để giảm các đoạn chồng lấn chiếm hết chỗ. Reranker chấm cặp `(question, child)` với sequence classifier, batch 8, tối đa 768 token. Điểm cuối có các boost nhỏ, được ghi vào retrieval JSON: độ phủ từ nội dung, cụm từ, số hiệu/năm được nêu trực tiếp và ưu tiên năm mới nhất chỉ khi câu hỏi yêu cầu “mới nhất/hiện hành”. Không dùng reference hoặc answer để rerank.
 
 Sau rerank, lấy tối đa bốn parent khác nhau. Mở rộng quanh vị trí child tìm được, ưu tiên đoạn chứa căn cứ thay vì luôn lấy đầu văn bản. Cache giữ một cửa sổ nguyên văn tối đa 24.000 ký tự nếu parent quá lớn; bước đóng prompt tiếp tục giới hạn theo tokenizer của generator. Mỗi context được giữ tối thiểu 256 token, sau đó context hạng đầu nhận trọng số ngân sách 4, hạng hai nhận 2 và các context còn lại nhận 1, tối đa 1.400 token mỗi parent. Tổng prompt tối đa 4.096 token, tính cả role markers và câu hỏi.
 
@@ -94,7 +94,7 @@ Không mặc định chọn checkpoint có training loss thấp nhất. Sinh ans
 
 ## Sinh câu trả lời và kiểm soát lỗi
 
-Greedy decoding, một beam, không sampling. Quality V6 dùng `max_new_tokens=1536`, không có hard cap số từ hoặc quy tắc ép mọi câu về cùng độ dài. Prompt yêu cầu trả lời đủ từng mục của danh sách/hồ sơ/nhiệm vụ, giữ điều kiện, ngoại lệ, mức tiền, biện pháp khắc phục, thời hạn và thứ tự logic; phân biệt quy định cũ/sửa đổi khi corpus có cả hai. Không tra cứu pháp luật hiện hành bên ngoài corpus.
+Greedy decoding, một beam, không sampling. Quality V7 dùng `max_new_tokens=1536`, không có hard cap số từ hoặc quy tắc ép mọi câu về cùng độ dài. Prompt ưu tiên context đầu và cấm trộn quy định giữa các thực thể gần tên. Nếu model mở đầu bằng lời từ chối nhưng context đầu phủ ít nhất 65% từ nội dung của câu hỏi, pipeline dùng source fallback; nếu bằng chứng yếu thì giữ lời từ chối thay vì chép nguồn không liên quan. Ngân sách chưa dùng của parent ngắn được phân phối lại cho các parent sau. Không tra cứu pháp luật hiện hành bên ngoài corpus.
 
 Mọi câu đi qua cùng một route generation. Code không chép answer của hàng xóm KNN và không có classifier được học thêm để định tuyến. Bước cuối bỏ artifact trình bày cơ bản, giữ số hiệu và con số. Ngày dạng `01/08` không bị hiểu nhầm là số hiệu; cụm “không đủ thông tin” trong nội dung một điều kiện pháp lý không bị hiểu nhầm là refusal. Chỉ câu trả lời ngắn mở đầu bằng lời từ chối mới fallback. Nếu output chạm token limit nhưng có các câu hoàn chỉnh, giữ phần hoàn chỉnh với route `generated_truncated`; chỉ dùng đoạn nguồn khi output thật sự rỗng/lỗi/citation không được hỗ trợ hoặc không thể cứu phần hoàn chỉnh.
 

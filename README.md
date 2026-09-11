@@ -2,9 +2,9 @@
 
 Bộ code độc lập này được dựng từ 5 tệp người dùng gửi trong lượt yêu cầu ngày 09/09/2026. Không dùng mã nguồn, checkpoint, lựa chọn mô hình hay tiêu chí release từ lịch sử chat. Mục tiêu là tạo một hệ thống Task 2 có thể huấn luyện, đánh giá đúng mã BTC và xuất submission để tái lập.
 
-Cấu hình quality V6: BM25 thường + BM25 cụm từ/chính xác và multilingual-e5-small → RRF → Vietnamese_Reranker kèm lexical/legal/recency boosts → mở rộng ngữ cảnh theo điều luật → Vi-Qwen2-3B-RAG → kiểm tra đầu ra → JSON và ZIP. Fine-tune mô hình sinh bằng QLoRA trên câu hỏi và đáp án gốc của BTC, chọn checkpoint bằng METEOR của validation.
+Cấu hình quality V7: BM25 thường + BM25 cụm từ/chính xác và multilingual-e5-small → RRF → Vietnamese_Reranker kèm lexical/legal/recency boosts → mở rộng ngữ cảnh theo điều luật → Vi-Qwen2-3B-RAG → fallback chọn lọc theo độ phủ bằng chứng → JSON và ZIP. Fine-tune mô hình sinh bằng QLoRA trên câu hỏi và đáp án gốc của BTC, chọn checkpoint bằng METEOR của validation.
 
-**Trạng thái:** pipeline V5 đã chạy thành công trên 100 câu với artifacts Version 3; quality V6 sửa các lỗi tìm kiếm/hậu xử lý rút ra từ diagnostics và cần được đo lại trên cùng dev100 trước khi chạy full dev. Kiểm định CPU bao phủ dữ liệu, chia tập, BM25 chính xác/cụm từ, legal boosts, ghép ngữ cảnh, mask nhãn SFT, cache và đóng gói. Xem `VALIDATION.md`.
+**Trạng thái:** V6 chạy thành công trên 100 câu nhưng giảm còn METEOR 0,42585 và ROUGE-L 0,48897 do một số câu từ chối dài không kích hoạt fallback. Quality V7 sửa đúng regression này, ưu tiên thực thể của context đầu, phân bổ lại ngân sách context và giảm rerank pool xuống 32; cần chạy lại smoke30/dev100 trước full dev. Xem `VALIDATION.md`.
 
 ## Mô hình và ngân sách
 
@@ -105,7 +105,7 @@ Bỏ `--adapter` nếu chọn baseline. ZIP mặc định chứa `submission.jso
 | RAG chưa SFT | Không có adapter | Mốc so sánh cho chính pipeline mới |
 | SFT epoch 1 và epoch 2 | Một adapter tại một thời điểm | Học độ đầy đủ, thuật ngữ và cách diễn đạt của BTC |
 | Ngữ cảnh 3, 4, 5 parent | `retrieval.parents_k` | Kiểm tra thêm bằng chứng có lợi hay làm nhiễu |
-| Pool 24 và 40 | `retrieval.pool_k` | Xem reranker có bỏ lỡ đoạn liên quan |
+| Pool 24 và 32 | `retrieval.pool_k` | Đo trade-off recall và thời gian reranker |
 | Output 1536, 2048, 3072 token | `generation.max_new_tokens` | Đo thiếu ý và chi phí; giữ tổng input/output ≤8192 |
 
 Các con số là điểm xuất phát để đo, không phải cấu hình đã được tối ưu trên dữ liệu này. Nếu đổi tham số retrieval, tạo cache retrieval mới. Giữ nguyên IDs, reference và metric để so sánh. Không sử dụng Public Test làm validation có đáp án.
