@@ -362,6 +362,7 @@ class CoreTests(unittest.TestCase):
         source = "\n".join("".join(cell.get("source",[])) for cell in notebook["cells"])
         self.assertIn("RUN_SFT = True",source)
         self.assertNotIn("RUN_SFT = False",source)
+        self.assertIn("RUN_SUBMISSION = True",source)
         self.assertIn("prepare-sft",source)
         self.assertIn("load_in_4bit",source)
         self.assertIn("training']['retrieval_mode'",source)
@@ -373,6 +374,10 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("reports = [BASE_REPORT]",source)
         self.assertIn("Main run bắt buộc dùng checkpoint QLoRA",source)
         self.assertIn("'--adapter', SELECTED_ADAPTER",source)
+        self.assertIn("legalqa_main_quality_v8_",source)
+        self.assertIn("diagnostics_manifest.json",source)
+        self.assertIn("trainer_state.json",source)
+        self.assertIn("weights_included': False",source)
 
     def test_submission_rejects_wrong_id_set_even_same_length(self):
         with self.assertRaises(ValueError):validate_predictions({"x":{"answer":"a"}},{"y":{}})

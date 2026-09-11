@@ -41,9 +41,10 @@ Ba notebook mặc định dùng `USE_REPO_DATA = False` và đường dẫn `/ka
 | 8 Fine tune | Bắt buộc QLoRA hai epoch | `training_result.json`, `training_data_report.json`, checkpoint mỗi epoch |
 | 9 Chọn checkpoint trên dev100 | Sinh từ từng checkpoint và so với baseline | Chọn METEOR cao nhất; ROUGE-L chỉ phá hòa |
 | 10 Holdout | Đánh giá một lần trên tập đã giữ riêng | Kiểm tra khả năng tổng quát |
-| 11 Public hoặc private submission | Dùng đúng cấu hình và checkpoint đã chọn | ZIP chứa đúng một JSON |
+| 11 Public hoặc private submission | Dùng đúng cấu hình và checkpoint đã chọn | `submission.zip` chứa đúng một JSON |
+| 12 Đóng gói diagnostics | Gom config, dev100, QLoRA/checkpoint state và submission audit; không kèm weights | `legalqa_main_quality_v8_public_diagnostics.zip` |
 
-Main run đặt `RUN_SFT = True` và sẽ dừng nếu QLoRA bị tắt, không tạo được `training_result.json`, không có checkpoint để đánh giá, hoặc checkpoint được chọn không có adapter. Baseline chỉ là mốc so sánh; holdout và submission bắt buộc dùng checkpoint QLoRA có METEOR cao nhất. Chỉ `RUN_HOLDOUT` và `RUN_SUBMISSION` mặc định tắt. Khi chạy lại, cache đúng fingerprint được tiếp tục; thay cấu hình làm fingerprint khác thì dùng tên output mới. Không bỏ kiểm tra fingerprint để dùng lại kết quả khác mô hình.
+Main run đặt `RUN_SFT = True`, `RUN_SUBMISSION = True` và sẽ dừng nếu QLoRA bị tắt, không tạo được `training_result.json`, không có checkpoint để đánh giá, hoặc checkpoint được chọn không có adapter. Baseline chỉ là mốc so sánh; submission bắt buộc dùng checkpoint QLoRA có METEOR cao nhất. Chỉ `RUN_HOLDOUT` mặc định tắt. Khi chạy lại, cache đúng fingerprint được tiếp tục; thay cấu hình làm fingerprint khác thì dùng tên output mới. Không bỏ kiểm tra fingerprint để dùng lại kết quả khác mô hình.
 
 Notebook dùng một GPU cho mỗi subprocess; đặc biệt QLoRA chỉ thấy GPU 0. Nếu có hai T4, không mặc định coi chúng là một GPU có VRAM cộng gộp. Retrieval hoàn tất và nhả model trước khi generation bắt đầu. Chưa có benchmark tốc độ/VRAM thực tế của cấu hình này.
 
