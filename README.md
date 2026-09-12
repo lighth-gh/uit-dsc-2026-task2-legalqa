@@ -46,6 +46,16 @@ Ba notebook mặc định dùng `USE_REPO_DATA = False` và đường dẫn `/ka
 
 Main run đặt `RUN_SFT = True`, `RUN_SUBMISSION = True` và sẽ dừng nếu QLoRA bị tắt, không tạo được `training_result.json`, không có checkpoint để đánh giá, hoặc checkpoint được chọn không có adapter. Baseline chỉ là mốc so sánh; submission bắt buộc dùng checkpoint QLoRA có METEOR cao nhất. Chỉ `RUN_HOLDOUT` mặc định tắt. Khi chạy lại, cache đúng fingerprint được tiếp tục; thay cấu hình làm fingerprint khác thì dùng tên output mới. Không bỏ kiểm tra fingerprint để dùng lại kết quả khác mô hình.
 
+### Main run chia ba phiên Kaggle
+
+`legalqa_main_run.ipynb` vẫn được giữ nguyên để tái lập toàn bộ pipeline trong một notebook. Vì full run không vừa giới hạn 12 giờ với tốc độ T4x2 đã đo, có thêm ba notebook chạy tuần tự:
+
+1. `legalqa_main_01_qlora_train.ipynb`: chuẩn bị cache lexical và train QLoRA; output phải có `stage1_manifest.json` cùng toàn bộ thư mục `sft/`.
+2. `legalqa_main_02_select_retrieve.ipynb`: Add Input output Stage 1; đánh giá checkpoint bằng dev100 METEOR, chép checkpoint tốt nhất vào `selected_adapter/`, rồi tạo `public.retrieval.json` và `stage2_manifest.json`.
+3. `legalqa_main_03_generate_submit.ipynb`: Add Input output Stage 2; generate 1000 câu từ cache, kiểm tra schema và tạo cả `submission.zip` lẫn `legalqa_main_quality_v8_public_diagnostics.zip`.
+
+Sau mỗi Stage, dùng **Save & Run All** thành công rồi vào notebook kế tiếp chọn **Add Input → Notebook Output Files**; cũng có thể tạo Kaggle Dataset từ output. Stage 2 và Stage 3 tự tìm manifest trong `/kaggle/input`, nhưng sẽ dừng nếu có không đúng một bản input phù hợp. Khi có nhiều version cùng được gắn, đặt rõ `STAGE1_INPUT_ROOT` hoặc `STAGE2_INPUT_ROOT` tại cell cấu hình. Cả ba stage kiểm tra Git commit, SHA-256 của `config.json` và hash retrieval để không trộn artifact giữa các lần chạy.
+
 Notebook dùng một GPU cho mỗi subprocess; đặc biệt QLoRA chỉ thấy GPU 0. Nếu có hai T4, không mặc định coi chúng là một GPU có VRAM cộng gộp. Retrieval hoàn tất và nhả model trước khi generation bắt đầu. Chưa có benchmark tốc độ/VRAM thực tế của cấu hình này.
 
 ## Chạy bằng dòng lệnh
