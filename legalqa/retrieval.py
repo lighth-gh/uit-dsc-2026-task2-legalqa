@@ -9,6 +9,7 @@ from pathlib import Path
 from .data import DOC_NUMBER, iter_documents, legal_parents, token_children
 from .io import Journal, digest, file_hash, load_questions, read_json, source_hash, write_json
 from .models import Encoder, Reranker, model_lock, release
+from .runtime import should_pause
 
 
 QUESTION_STOPWORDS = frozenset({
@@ -374,6 +375,8 @@ def retrieve(c, questions_path, root, index_dir, output, device, mode="full"):
         release(encoder)
         reranker = Reranker(root, device, c["retrieval"]["reranker_batch"], c["retrieval"]["reranker_max_tokens"])
         for position,key in enumerate(keys):
+            if should_pause(position):
+                break
             ids = [int(x) for x in neighbours[position] if x >= 0]
             record = engine.retrieve_one(questions[key]["question"], ids, reranker)
             record["seconds"]["dense_amortized"] = dense_seconds
@@ -383,10 +386,14 @@ def retrieve(c, questions_path, root, index_dir, output, device, mode="full"):
         release(reranker)
     elif keys:
         for position,key in enumerate(keys):
+            if should_pause(position):
+                break
             journal.append(key,engine.retrieve_one_lexical(questions[key]["question"]))
             if (position+1) % 100 == 0 or position+1 == len(keys):
                 print(f"Retrieved lexical: {len(records)}/{len(questions)}",flush=True)
     engine.con.close()
+    if set(records) < set(questions):
+        return {"status":"paused", "records":len(records), "total":len(questions)}
     if set(records) != set(questions):
         raise ValueError("Retrieval cache ID mismatch")
     payload = {"identity": identity, "records": {k: records[k] for k in questions}}
@@ -394,7 +401,7 @@ def retrieve(c, questions_path, root, index_dir, output, device, mode="full"):
     return {"records": len(records), "output": str(output), "fingerprint": digest(identity)}
 
 
-def read_retrieval(path, questions, c, root):
+def read_retrieval(path, questions, c, root, expected_mode=None, expected_index_hash=None):
     payload = read_json(path)
     records = payload["records"]
     if not set(questions).issubset(records):
@@ -406,4 +413,14 @@ def read_retrieval(path, questions, c, root):
         raise ValueError("Retrieval cache uses different model revisions")
     if payload["identity"]["retrieval"] != c["retrieval"]:
         raise ValueError("Retrieval cache uses different retrieval settings")
+    identity = payload["identity"]
+    if identity.get("code") != source_hash():
+        raise ValueError("Retrieval cache uses different pipeline code; rebuild the cache")
+    if expected_mode and identity.get("mode") != expected_mode:
+        raise ValueError("Retrieval cache mode differs from the requested pipeline stage")
+    if identity.get("mode") == "lexical" and identity.get("mode_config") != c["training"].get("lexical_pool_k"):
+        raise ValueError("Lexical retrieval cache uses different training settings")
+    expected_index_hash = expected_index_hash or os.environ.get("LEGALQA_INDEX_HASH")
+    if expected_index_hash and identity.get("index_hash") != expected_index_hash:
+        raise ValueError("Retrieval cache uses a different index")
     return {k: records[k] for k in questions}, payload["identity"]

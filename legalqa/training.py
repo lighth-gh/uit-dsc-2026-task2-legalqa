@@ -1,10 +1,12 @@
 import math
+import os
 from pathlib import Path
 
-from .io import digest, file_hash, load_questions, source_hash, write_json
+from .io import copy_file, digest, file_hash, load_questions, source_hash, write_json
 from .models import load_generator, model_lock
 from .prompts import pack_prompt
 from .retrieval import read_retrieval
+from .runtime import should_pause
 
 
 def select_training_questions(questions, c):
@@ -55,12 +57,12 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
         raise ValueError("QLoRA is required: generation.load_in_4bit must be true")
     import torch
     from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
-    from transformers import Trainer, TrainingArguments, set_seed
+    from transformers import Trainer, TrainingArguments, TrainerCallback, set_seed
     if torch.cuda.device_count()!=1:
         raise ValueError("Train in a subprocess with CUDA_VISIBLE_DEVICES=0 (one visible GPU); do not use Trainer DataParallel with this QLoRA model")
     set_seed(c["seed"])
     questions = select_training_questions(load_questions(train_path,answers=True),c)
-    records,retrieval_id = read_retrieval(retrieval_path,questions,c,root)
+    records,retrieval_id = read_retrieval(retrieval_path,questions,c,root,expected_mode=c["training"]["retrieval_mode"])
     output = Path(output)
     if output.exists() and any(output.iterdir()) and not resume:
         raise ValueError("Training directory is nonempty. Choose a new directory or --resume an exact checkpoint.")
@@ -73,7 +75,8 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
                 "policy":"One original BTC question/answer per example. No synthetic targets or data augmentation."}
     from .io import read_json
     if resume:
-        previous = read_json(output/"training_manifest.json")
+        resume = Path(resume)
+        previous = read_json(resume.parent/"training_manifest.json")
         if previous!=manifest:
             raise ValueError("Resume training fingerprint differs")
     write_json(output/"training_manifest.json",manifest)
@@ -95,16 +98,49 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
             values[key] = torch.tensor([row[key]+[pad]*(length-len(row[key])) for row in batch],dtype=torch.long)
         return values
 
+    bounded = bool(os.environ.get("LEGALQA_DEADLINE"))
+
+    class BudgetCallback(TrainerCallback):
+        saved_step = -1
+
+        def on_step_end(self, args, state, control, **kwargs):
+            if should_pause():
+                control.should_save = True
+                control.should_training_stop = True
+            return control
+
+        def on_epoch_end(self, args, state, control, **kwargs):
+            # An interrupted epoch also triggers this hook: save it for resume,
+            # but never advertise it as a completed epoch for model selection.
+            control.should_save = state.global_step != self.saved_step
+            return control
+
+        def on_save(self, args, state, control, **kwargs):
+            epoch = float(state.epoch or 0)
+            if epoch >= 1 and abs(epoch-round(epoch)) < 1e-6:
+                checkpoint = output/f"checkpoint-{state.global_step}"
+                target = output/f"epoch-{int(round(epoch)):02d}"
+                target.mkdir(exist_ok=True)
+                for name in ("adapter_config.json", "adapter_model.safetensors", "trainer_state.json"):
+                    copy_file(checkpoint/name,target/name)
+                write_json(target/"epoch_complete.json", {"epoch":epoch,"step":state.global_step,
+                    "adapter":{name:file_hash(target/name) for name in ("adapter_config.json","adapter_model.safetensors")}})
+            self.saved_step = state.global_step
+            return control
+
     args = TrainingArguments(output_dir=str(output),num_train_epochs=t["epochs"],learning_rate=t["learning_rate"],
         per_device_train_batch_size=t["batch_size"],gradient_accumulation_steps=t["gradient_accumulation"],
         warmup_ratio=t["warmup_ratio"],lr_scheduler_type="cosine",fp16=True,bf16=False,
         gradient_checkpointing=True,gradient_checkpointing_kwargs={"use_reentrant":False},
         optim="paged_adamw_8bit",
-        max_grad_norm=.3,save_strategy="epoch",save_total_limit=2,logging_steps=10,
+        max_grad_norm=.3,save_strategy="steps" if bounded else "epoch",save_steps=10,save_total_limit=2,logging_steps=10,
         eval_strategy="no",report_to="none",remove_unused_columns=False,seed=c["seed"],data_seed=c["seed"],
         dataloader_num_workers=0)
-    trainer = Trainer(model=model,args=args,train_dataset=samples,data_collator=collate,processing_class=tokenizer)
+    trainer = Trainer(model=model,args=args,train_dataset=samples,data_collator=collate,processing_class=tokenizer,
+                      callbacks=[BudgetCallback()] if bounded else None)
     trainer.train(resume_from_checkpoint=resume)
+    if trainer.state.global_step < trainer.state.max_steps:
+        return {"status":"paused", "step":trainer.state.global_step,"total_steps":trainer.state.max_steps}
     final = output/"adapter_last"
     trainer.save_model(str(final))
     tokenizer.save_pretrained(final)

@@ -46,15 +46,27 @@ Ba notebook mặc định dùng `USE_REPO_DATA = False` và đường dẫn `/ka
 
 Main run đặt `RUN_SFT = True`, `RUN_SUBMISSION = True` và sẽ dừng nếu QLoRA bị tắt, không tạo được `training_result.json`, không có checkpoint để đánh giá, hoặc checkpoint được chọn không có adapter. Baseline chỉ là mốc so sánh; submission bắt buộc dùng checkpoint QLoRA có METEOR cao nhất. Chỉ `RUN_HOLDOUT` mặc định tắt. Khi chạy lại, cache đúng fingerprint được tiếp tục; thay cấu hình làm fingerprint khác thì dùng tên output mới. Không bỏ kiểm tra fingerprint để dùng lại kết quả khác mô hình.
 
-### Main run chia ba phiên Kaggle
+### Main run chia ba notebook, mỗi notebook có thể chạy nhiều phiên
 
 `legalqa_main_run.ipynb` vẫn được giữ nguyên để tái lập toàn bộ pipeline trong một notebook. Vì full run không vừa giới hạn 12 giờ với tốc độ T4x2 đã đo, có thêm ba notebook chạy tuần tự:
 
 1. `legalqa_main_01_qlora_train.ipynb`: chuẩn bị cache lexical và train QLoRA; output phải có `stage1_manifest.json` cùng toàn bộ thư mục `sft/`.
 2. `legalqa_main_02_select_retrieve.ipynb`: Add Input output Stage 1; đánh giá checkpoint bằng dev100 METEOR, chép checkpoint tốt nhất vào `selected_adapter/`, rồi tạo `public.retrieval.json` và `stage2_manifest.json`.
-3. `legalqa_main_03_generate_submit.ipynb`: Add Input output Stage 2; generate 1000 câu từ cache, kiểm tra schema và tạo cả `submission.zip` lẫn `legalqa_main_quality_v8_public_diagnostics.zip`.
+3. `legalqa_main_03_generate_submit.ipynb`: Add Input output Stage 2; mỗi phiên generate tối đa **200 câu mới** từ cache và journal tích lũy. Chỉ khi đủ toàn bộ ID public mới tạo `submissions/public/submission.json` và `submission.zip`. Partial JSON không được đóng gói để nộp.
 
-Sau mỗi Stage, dùng **Save & Run All** thành công rồi vào notebook kế tiếp chọn **Add Input → Notebook Output Files**; cũng có thể tạo Kaggle Dataset từ output. Stage 2 và Stage 3 tự tìm manifest trong `/kaggle/input`, nhưng sẽ dừng nếu có không đúng một bản input phù hợp. Khi có nhiều version cùng được gắn, đặt rõ `STAGE1_INPUT_ROOT` hoặc `STAGE2_INPUT_ROOT` tại cell cấu hình. Cả ba stage kiểm tra Git commit, SHA-256 của `config.json` và hash retrieval để không trộn artifact giữa các lần chạy.
+Cả ba mặc định `WORK_HOURS = 9.0`, tính cả clone/cài đặt từ cell đầu. Worker chủ động dừng sớm để ghi checkpoint; supervisor dừng toàn bộ nhóm subprocess nếu chạm ngân sách. Export có ngân sách riêng tối đa 10 phút, để lại khoảng đệm trước mốc 12 giờ. Đây là giới hạn công việc mỗi phiên, **không phải cam kết hoàn tất một stage trong một phiên**; sự cố GPU/Kaggle hoặc hệ thống lưu trữ vẫn có thể kết thúc phiên sớm. Không giảm retrieval top-k, prompt budget hay độ dài generation để đạt thời gian này.
+
+Sau **Save & Run All**, xem `STATUS` và `stageN_manifest.json`:
+
+- `paused`: gắn output vừa lưu vào **cùng notebook** và chạy tiếp. `PREVIOUS_OUTPUT` là thư mục chứa manifest của chính stage đó. Stage 2 cũng có thể cần nhiều phiên; Stage 3 cần ít nhất 5 phiên cho 1.000 câu khi giới hạn 200 câu/phiên.
+- `complete`: mới chuyển sang notebook kế tiếp; `UPSTREAM_OUTPUT` là output hoàn tất của stage trước.
+- `failed`: xem lỗi và diagnostics, không coi là hoàn tất. Không sửa config/hash để ép dùng lại artifact.
+
+`None` tự tìm đúng một manifest trong `/kaggle/input`; khi gắn nhiều version, điền ROOT cụ thể hoặc bỏ các input cũ. Tiếp tục gắn `ver3-smoke-output` để đọc model/index, và dataset train cho Stage 1. Snapshot tích lũy đã mang dữ liệu/chia tập nên Stage 2/3 không chia lại. Các phiên sau khóa đúng Git SHA từ input thay vì tự cập nhật `main`; luôn push toàn bộ thay đổi Python và notebook lên GitHub **trước phiên Stage 1 đầu tiên**.
+
+QLoRA lưu resume mỗi 10 optimizer steps, gồm optimizer/scheduler/scaler/RNG; adapter hoàn tất mỗi epoch được giữ riêng, không mất do xoay checkpoint. Retrieval và generation ghi journal từng câu. Hash file, config, model lock, index và adapter được kiểm tra khi bàn giao. Nếu bị dừng cưỡng bức giữa một câu hoặc giữa hai checkpoint thì phần đang xử lý phải chạy lại. Mỗi stage xuất `legalqa_main_stageN_v8_diagnostics.zip` cả khi `paused`; giữ **toàn bộ thư mục output**, không chỉ ZIP diagnostics, để resume vì ZIP không chứa weights.
+
+Muốn tận dụng QLoRA từ main-run cũ, dùng Stage 1 mới với `LEGACY_INPUT_ROOT` trỏ tới `legalqa_quality_v8_full`. Chỉ nhận run đã hoàn tất đủ hai epoch, còn checkpoint epoch 1/2, và khớp config/model/index/split; giữ nguyên provenance training cũ. Không nhập lại cache/evaluation/submission cũ: chúng cần chạy lại với code sửa lỗi. Không đặt đồng thời legacy input và `PREVIOUS_OUTPUT`. Nếu bị ngắt trong lúc nhập legacy, phiên sau đặt `PREVIOUS_OUTPUT`, để `LEGACY_INPUT_ROOT = None` nhưng vẫn gắn nguồn legacy ở cùng đường dẫn: notebook tự nhận phần nhập còn dở, không tự train thay thế.
 
 Notebook dùng một GPU cho mỗi subprocess; đặc biệt QLoRA chỉ thấy GPU 0. Nếu có hai T4, không mặc định coi chúng là một GPU có VRAM cộng gộp. Retrieval hoàn tất và nhả model trước khi generation bắt đầu. Chưa có benchmark tốc độ/VRAM thực tế của cấu hình này.
 

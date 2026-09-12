@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import unicodedata
 from pathlib import Path
 
@@ -31,6 +32,16 @@ def write_json(path, data):
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
+
+
+def copy_file(source, destination):
+    """Expose a copied file only after all bytes have arrived."""
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name+".copying.tmp")
+    shutil.copy2(source, temporary)
+    os.replace(temporary, destination)
+    return str(destination)
 
 
 def digest(data):

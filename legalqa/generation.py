@@ -9,6 +9,7 @@ from .prompts import (answer_flags, clean_answer, complete_truncated_answer,
                       citation_context_conflict, extractive_fallback, pack_prompt,
                       refusal_evidence_support)
 from .retrieval import read_retrieval
+from .runtime import should_pause
 
 
 def adapter_identity(path):
@@ -25,7 +26,7 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
     from transformers import AutoTokenizer, set_seed
     set_seed(c["seed"])
     questions = load_questions(questions_path)
-    records, retrieval_id = read_retrieval(retrieval_path, questions, c, root)
+    records, retrieval_id = read_retrieval(retrieval_path, questions, c, root, expected_mode="full")
     identity = {"questions_hash": digest(questions), "retrieval": retrieval_id,
                 "retrieval_file_hash": file_hash(retrieval_path), "models": model_lock(c,root),
                 "config": c, "code": source_hash(), "adapter": adapter_identity(adapter), "mode": mode}
@@ -38,6 +39,8 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
         else:
             tokenizer = AutoTokenizer.from_pretrained(Path(root)/"generator",local_files_only=True)
         for pos,key in enumerate(keys):
+            if should_pause(pos):
+                break
             start = time.perf_counter()
             prompt_ids, packed = pack_prompt(questions[key]["question"], records[key]["contexts"], tokenizer,c)
             hit_limit = False
@@ -62,7 +65,10 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
                 invalid = flags["empty"] or flags["artifact"] or bool(flags["unsupported_document_numbers"])
                 # Preserve a grounded, complete prefix when the token budget is reached. A raw
                 # parent dump is reserved for invalid output or a refusal despite strong evidence.
-                if hit_limit and not invalid and not flags["refusal"]:
+                if entity_conflict["conflict"]:
+                    answer = extractive_fallback(questions[key]["question"],packed,refusal_support)
+                    route = "entity_guard_fallback"
+                elif hit_limit and not invalid and not flags["refusal"]:
                     completed = complete_truncated_answer(answer)
                     if completed:
                         answer = completed
@@ -70,9 +76,6 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
                     else:
                         answer = extractive_fallback(questions[key]["question"],packed,refusal_support)
                         route = "source_fallback"
-                elif entity_conflict["conflict"]:
-                    answer = extractive_fallback(questions[key]["question"],packed,refusal_support)
-                    route = "entity_guard_fallback"
                 elif invalid or (flags["refusal"] and refusal_support["strong"]):
                     answer = extractive_fallback(questions[key]["question"],packed,refusal_support)
                     route = "source_fallback"
@@ -97,6 +100,9 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
             if (pos+1)%10 == 0 or pos+1==len(keys):
                 print(f"Answered: {len(journal.records)}/{len(questions)}",flush=True)
     predictions = {k:value["prediction"] for k,value in journal.records.items()}
+    if set(predictions) != set(questions):
+        write_json(out.with_suffix(".partial.json"), predictions)
+        return {"status":"paused", "samples":len(predictions), "total":len(questions)}
     validate_predictions(predictions,questions)
     predictions = {k: predictions[k] for k in questions}
     write_json(out,predictions)
