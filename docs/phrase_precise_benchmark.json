@@ -1,0 +1,2137 @@
+{
+  "questions": 100,
+  "baseline": "bm25-cache",
+  "seconds": {
+    "original": 14.03460980017553,
+    "cached": 12.844009599968558
+  },
+  "branches": {
+    "bm25_query": {
+      "original": 9.438289499754319,
+      "cached": 9.030211799807148,
+      "speedup": 1.045190268954255
+    },
+    "bm25_phrases_query": {
+      "original": 3.7178325002023485,
+      "cached": 3.579107200028375,
+      "speedup": 1.038759749965822
+    },
+    "bm25_precise_query": {
+      "original": 0.8756658000638708,
+      "cached": 0.23284879999118857,
+      "speedup": 3.7606627137310036
+    }
+  },
+  "speedup": 1.0926969254375118,
+  "identical_rankings": true,
+  "cached_median_seconds": 0.09212504999595694,
+  "cache_bytes": 30936944,
+  "phrase_cache_bytes": 1204608,
+  "records": [
+    {
+      "id": "15545",
+      "original": {
+        "bm25_query": 0.4658822999917902,
+        "bm25_phrases_query": 0.018439000006765127,
+        "bm25_precise_query": 0.004728600004455075,
+        "total": 0.48907599999802187
+      },
+      "cached": {
+        "bm25_query": 0.18282909999834374,
+        "bm25_phrases_query": 0.0807498000212945,
+        "bm25_precise_query": 0.0009502999891992658,
+        "total": 0.2645450000127312
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "146417",
+      "original": {
+        "bm25_query": 0.14699919999111444,
+        "bm25_phrases_query": 0.01132980000693351,
+        "bm25_precise_query": 0.004619600018486381,
+        "total": 0.16296659997897223
+      },
+      "cached": {
+        "bm25_query": 0.15551329997833818,
+        "bm25_phrases_query": 0.013612099981401116,
+        "bm25_precise_query": 0.0011003999970853329,
+        "total": 0.17023809999227524
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "34629",
+      "original": {
+        "bm25_query": 0.49144839998916723,
+        "bm25_phrases_query": 0.028404200013028458,
+        "bm25_precise_query": 0.012333299993770197,
+        "total": 0.5322068000095896
+      },
+      "cached": {
+        "bm25_query": 0.45961479999823496,
+        "bm25_phrases_query": 0.03167860000394285,
+        "bm25_precise_query": 0.003091499995207414,
+        "total": 0.4944030000187922
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "143437",
+      "original": {
+        "bm25_query": 0.17957720000413246,
+        "bm25_phrases_query": 0.019288299983600155,
+        "bm25_precise_query": 0.007759600004646927,
+        "total": 0.206646600010572
+      },
+      "cached": {
+        "bm25_query": 0.16769900001236238,
+        "bm25_phrases_query": 0.02135599998291582,
+        "bm25_precise_query": 0.0018257999909110367,
+        "total": 0.19089479997637682
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "70591",
+      "original": {
+        "bm25_query": 0.5916247999994084,
+        "bm25_phrases_query": 0.03370160001213662,
+        "bm25_precise_query": 0.003132699988782406,
+        "total": 0.6284839000145439
+      },
+      "cached": {
+        "bm25_query": 0.6700405000010505,
+        "bm25_phrases_query": 0.03798679998726584,
+        "bm25_precise_query": 0.0011812000011559576,
+        "total": 0.7092606999794953
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "150245",
+      "original": {
+        "bm25_query": 0.4767184999946039,
+        "bm25_phrases_query": 0.028600399993592873,
+        "bm25_precise_query": 0.008973599993623793,
+        "total": 0.5143156000121962
+      },
+      "cached": {
+        "bm25_query": 0.3287902000010945,
+        "bm25_phrases_query": 0.025853700004518032,
+        "bm25_precise_query": 0.0017727999947965145,
+        "total": 0.35642969998298213
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "92697",
+      "original": {
+        "bm25_query": 0.39306909998413175,
+        "bm25_phrases_query": 0.015698800008976832,
+        "bm25_precise_query": 0.0018626000091899186,
+        "total": 0.41064479999477044
+      },
+      "cached": {
+        "bm25_query": 0.33327529998496175,
+        "bm25_phrases_query": 0.017753299995092675,
+        "bm25_precise_query": 0.001378599990857765,
+        "total": 0.35241960000712425
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "8449",
+      "original": {
+        "bm25_query": 0.11912129999836907,
+        "bm25_phrases_query": 0.03710210000281222,
+        "bm25_precise_query": 0.008345000009285286,
+        "total": 0.1645896999980323
+      },
+      "cached": {
+        "bm25_query": 0.15176459998474456,
+        "bm25_phrases_query": 0.03963109999313019,
+        "bm25_precise_query": 0.0026406999968457967,
+        "total": 0.1940525000100024
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "83017",
+      "original": {
+        "bm25_query": 0.003964600007748231,
+        "bm25_phrases_query": 0.012567800004035234,
+        "bm25_precise_query": 0.00589090000721626,
+        "total": 0.022447499999543652
+      },
+      "cached": {
+        "bm25_query": 0.004003599984571338,
+        "bm25_phrases_query": 0.01586929999757558,
+        "bm25_precise_query": 0.0010913000151049346,
+        "total": 0.020996500010369346
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "38259",
+      "original": {
+        "bm25_query": 0.35045840000384487,
+        "bm25_phrases_query": 0.06643750000512227,
+        "bm25_precise_query": 0.01583550000214018,
+        "total": 0.43275510001694784
+      },
+      "cached": {
+        "bm25_query": 0.38148199999704957,
+        "bm25_phrases_query": 0.05289639998227358,
+        "bm25_precise_query": 0.002473400003509596,
+        "total": 0.43686760001583025
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "149029",
+      "original": {
+        "bm25_query": 0.2900939999963157,
+        "bm25_phrases_query": 0.04133499998715706,
+        "bm25_precise_query": 0.013816399994539097,
+        "total": 0.3452679000038188
+      },
+      "cached": {
+        "bm25_query": 0.3476717000012286,
+        "bm25_phrases_query": 0.0397575999959372,
+        "bm25_precise_query": 0.0022715000086463988,
+        "total": 0.3897154000005685
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "92729",
+      "original": {
+        "bm25_query": 0.23946340000838973,
+        "bm25_phrases_query": 0.035719100007554516,
+        "bm25_precise_query": 0.00628039997536689,
+        "total": 0.2814873000024818
+      },
+      "cached": {
+        "bm25_query": 0.20871780000743456,
+        "bm25_phrases_query": 0.030554000026313588,
+        "bm25_precise_query": 0.002275999984703958,
+        "total": 0.24156009999569505
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "151497",
+      "original": {
+        "bm25_query": 0.3162931999831926,
+        "bm25_phrases_query": 0.04015929999877699,
+        "bm25_precise_query": 0.007709199999226257,
+        "total": 0.3641829999978654
+      },
+      "cached": {
+        "bm25_query": 0.3139216999989003,
+        "bm25_phrases_query": 0.05416410000179894,
+        "bm25_precise_query": 0.004046100017149001,
+        "total": 0.37214740001945756
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "93199",
+      "original": {
+        "bm25_query": 0.2698701999906916,
+        "bm25_phrases_query": 0.015566599991871044,
+        "bm25_precise_query": 0.005148599972017109,
+        "total": 0.2906067999720108
+      },
+      "cached": {
+        "bm25_query": 0.24609989998862147,
+        "bm25_phrases_query": 0.017360800004098564,
+        "bm25_precise_query": 0.0013154000043869019,
+        "total": 0.26478909997968003
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "140311",
+      "original": {
+        "bm25_query": 0.08378679997986183,
+        "bm25_phrases_query": 0.03290600000764243,
+        "bm25_precise_query": 0.003931499988539144,
+        "total": 0.12064859998645261
+      },
+      "cached": {
+        "bm25_query": 0.11061390000395477,
+        "bm25_phrases_query": 0.026535200013313442,
+        "bm25_precise_query": 0.0016937000036705285,
+        "total": 0.1388569999835454
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "44441",
+      "original": {
+        "bm25_query": 0.10163350001676008,
+        "bm25_phrases_query": 0.02614419997553341,
+        "bm25_precise_query": 0.0038166000158526003,
+        "total": 0.13161839998792857
+      },
+      "cached": {
+        "bm25_query": 0.07750730001134798,
+        "bm25_phrases_query": 0.025063299981411546,
+        "bm25_precise_query": 0.0010442999773658812,
+        "total": 0.10363289999077097
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "76597",
+      "original": {
+        "bm25_query": 0.10612319997744635,
+        "bm25_phrases_query": 0.023202699987450615,
+        "bm25_precise_query": 0.010382000007666647,
+        "total": 0.13972999999532476
+      },
+      "cached": {
+        "bm25_query": 0.11741750000510365,
+        "bm25_phrases_query": 0.02157090001855977,
+        "bm25_precise_query": 0.0019894999859388918,
+        "total": 0.1409910999936983
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "60999",
+      "original": {
+        "bm25_query": 0.19930700000259094,
+        "bm25_phrases_query": 0.03527010002289899,
+        "bm25_precise_query": 0.00936949998140335,
+        "total": 0.24396579997846857
+      },
+      "cached": {
+        "bm25_query": 0.2254407999862451,
+        "bm25_phrases_query": 0.039180299994768575,
+        "bm25_precise_query": 0.0026131999911740422,
+        "total": 0.26724849999300204
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "118291",
+      "original": {
+        "bm25_query": 0.06604700000025332,
+        "bm25_phrases_query": 0.02544210001360625,
+        "bm25_precise_query": 0.0077597000054083765,
+        "total": 0.09926899999845773
+      },
+      "cached": {
+        "bm25_query": 0.05822440001065843,
+        "bm25_phrases_query": 0.031609199999365956,
+        "bm25_precise_query": 0.0018625000084284693,
+        "total": 0.09171969999442808
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "59437",
+      "original": {
+        "bm25_query": 0.135317699983716,
+        "bm25_phrases_query": 0.046944000001531094,
+        "bm25_precise_query": 0.00729100001626648,
+        "total": 0.18957860002410598
+      },
+      "cached": {
+        "bm25_query": 0.16257519999635406,
+        "bm25_phrases_query": 0.03434829998877831,
+        "bm25_precise_query": 0.0009713000035844743,
+        "total": 0.19790570001350716
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "30913",
+      "original": {
+        "bm25_query": 0.07547619999968447,
+        "bm25_phrases_query": 0.019948000001022592,
+        "bm25_precise_query": 0.0035124999994877726,
+        "total": 0.09895839999080636
+      },
+      "cached": {
+        "bm25_query": 0.07340009999461472,
+        "bm25_phrases_query": 0.020747500006109476,
+        "bm25_precise_query": 0.0011143000156152993,
+        "total": 0.09527359998901375
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "85727",
+      "original": {
+        "bm25_query": 0.4794058999978006,
+        "bm25_phrases_query": 0.057972999988123775,
+        "bm25_precise_query": 0.01034900001832284,
+        "total": 0.5477525000169408
+      },
+      "cached": {
+        "bm25_query": 0.47611349998624064,
+        "bm25_phrases_query": 0.05142790000536479,
+        "bm25_precise_query": 0.0032208000193350017,
+        "total": 0.5307771999796387
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "10999",
+      "original": {
+        "bm25_query": 0.11808500002371147,
+        "bm25_phrases_query": 0.03343420001328923,
+        "bm25_precise_query": 0.011187900003278628,
+        "total": 0.16272890000254847
+      },
+      "cached": {
+        "bm25_query": 0.11420999999972992,
+        "bm25_phrases_query": 0.026213600009214133,
+        "bm25_precise_query": 0.0014675999991595745,
+        "total": 0.14190369998686947
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "82331",
+      "original": {
+        "bm25_query": 0.05752139998367056,
+        "bm25_phrases_query": 0.044717100012348965,
+        "bm25_precise_query": 0.0064780000247992575,
+        "total": 0.10874490000423975
+      },
+      "cached": {
+        "bm25_query": 0.05283000000054017,
+        "bm25_phrases_query": 0.032991700019920245,
+        "bm25_precise_query": 0.002550900011556223,
+        "total": 0.08839219997753389
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "75695",
+      "original": {
+        "bm25_query": 0.029296399996383116,
+        "bm25_phrases_query": 0.023340799991274253,
+        "bm25_precise_query": 0.004908100003376603,
+        "total": 0.057598099985625595
+      },
+      "cached": {
+        "bm25_query": 0.042718399985460564,
+        "bm25_phrases_query": 0.03557510001701303,
+        "bm25_precise_query": 0.001873200002592057,
+        "total": 0.08018429999356158
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "6073",
+      "original": {
+        "bm25_query": 0.06993629998760298,
+        "bm25_phrases_query": 0.03596430001198314,
+        "bm25_precise_query": 0.006801699986681342,
+        "total": 0.11272460001055151
+      },
+      "cached": {
+        "bm25_query": 0.0599283000046853,
+        "bm25_phrases_query": 0.0328970999980811,
+        "bm25_precise_query": 0.001814799994463101,
+        "total": 0.09465699997963384
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "157235",
+      "original": {
+        "bm25_query": 0.09232530000736006,
+        "bm25_phrases_query": 0.0238911000196822,
+        "bm25_precise_query": 0.0022920000192243606,
+        "total": 0.11853430001065135
+      },
+      "cached": {
+        "bm25_query": 0.11962139999377541,
+        "bm25_phrases_query": 0.022829399997135624,
+        "bm25_precise_query": 0.0010089999996125698,
+        "total": 0.14347280000220053
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "23211",
+      "original": {
+        "bm25_query": 0.03706549998605624,
+        "bm25_phrases_query": 0.03432559999055229,
+        "bm25_precise_query": 0.008476699993479997,
+        "total": 0.07989049999741837
+      },
+      "cached": {
+        "bm25_query": 0.04067399998893961,
+        "bm25_phrases_query": 0.031733699986943975,
+        "bm25_precise_query": 0.0023606000177096575,
+        "total": 0.07478480000281706
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "83939",
+      "original": {
+        "bm25_query": 0.2308515000040643,
+        "bm25_phrases_query": 0.052376000006916,
+        "bm25_precise_query": 0.02046709999558516,
+        "total": 0.3037168000009842
+      },
+      "cached": {
+        "bm25_query": 0.22079789999406785,
+        "bm25_phrases_query": 0.041418900014832616,
+        "bm25_precise_query": 0.0040972999995574355,
+        "total": 0.2663287000032142
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "53533",
+      "original": {
+        "bm25_query": 0.09539849997963756,
+        "bm25_phrases_query": 0.030302200000733137,
+        "bm25_precise_query": 0.00867029998335056,
+        "total": 0.13439459999790415
+      },
+      "cached": {
+        "bm25_query": 0.08851880001020618,
+        "bm25_phrases_query": 0.02795960000366904,
+        "bm25_precise_query": 0.002716799994232133,
+        "total": 0.11921070000971667
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "503",
+      "original": {
+        "bm25_query": 0.05300999997416511,
+        "bm25_phrases_query": 0.03619669997715391,
+        "bm25_precise_query": 0.018302800017409027,
+        "total": 0.107535299990559
+      },
+      "cached": {
+        "bm25_query": 0.06270930002210662,
+        "bm25_phrases_query": 0.035214099974837154,
+        "bm25_precise_query": 0.002724499994656071,
+        "total": 0.10066780002671294
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "109767",
+      "original": {
+        "bm25_query": 0.15024419999099337,
+        "bm25_phrases_query": 0.04491060000145808,
+        "bm25_precise_query": 0.0067186999949626625,
+        "total": 0.20189480000408366
+      },
+      "cached": {
+        "bm25_query": 0.12385740000172518,
+        "bm25_phrases_query": 0.04434710001805797,
+        "bm25_precise_query": 0.0016812999965623021,
+        "total": 0.16989980000653304
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "63525",
+      "original": {
+        "bm25_query": 0.025093100004596636,
+        "bm25_phrases_query": 0.048357600026065484,
+        "bm25_precise_query": 0.0028799000137951225,
+        "total": 0.07635489999665879
+      },
+      "cached": {
+        "bm25_query": 0.029728699999395758,
+        "bm25_phrases_query": 0.04508480001823045,
+        "bm25_precise_query": 0.0011076999944634736,
+        "total": 0.0759377000213135
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "85643",
+      "original": {
+        "bm25_query": 0.08815349999349564,
+        "bm25_phrases_query": 0.021177000016905367,
+        "bm25_precise_query": 0.007496299978811294,
+        "total": 0.11684699999750592
+      },
+      "cached": {
+        "bm25_query": 0.08834980000392534,
+        "bm25_phrases_query": 0.021687100001145154,
+        "bm25_precise_query": 0.0014516999945044518,
+        "total": 0.11150209998595528
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "2969",
+      "original": {
+        "bm25_query": 0.051791500009130687,
+        "bm25_phrases_query": 0.028573400020832196,
+        "bm25_precise_query": 0.002949399990029633,
+        "total": 0.08334000001195818
+      },
+      "cached": {
+        "bm25_query": 0.05423890001839027,
+        "bm25_phrases_query": 0.028779499989468604,
+        "bm25_precise_query": 0.0015402999997604638,
+        "total": 0.08457149998866953
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "26739",
+      "original": {
+        "bm25_query": 0.009614400012651458,
+        "bm25_phrases_query": 0.0264407999929972,
+        "bm25_precise_query": 0.006968800007598475,
+        "total": 0.04305209999438375
+      },
+      "cached": {
+        "bm25_query": 0.009429500001715496,
+        "bm25_phrases_query": 0.0231649000197649,
+        "bm25_precise_query": 0.0014796000032220036,
+        "total": 0.03408879999187775
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "100117",
+      "original": {
+        "bm25_query": 0.06335380001110025,
+        "bm25_phrases_query": 0.02660079998895526,
+        "bm25_precise_query": 0.00899629999184981,
+        "total": 0.09897650001221336
+      },
+      "cached": {
+        "bm25_query": 0.06377069998416118,
+        "bm25_phrases_query": 0.02512969999224879,
+        "bm25_precise_query": 0.0011892000038642436,
+        "total": 0.09010189998662099
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "15875",
+      "original": {
+        "bm25_query": 0.09481000000960194,
+        "bm25_phrases_query": 0.04267810002784245,
+        "bm25_precise_query": 0.0037739000108558685,
+        "total": 0.14129700002376921
+      },
+      "cached": {
+        "bm25_query": 0.09521400000085123,
+        "bm25_phrases_query": 0.03268850001040846,
+        "bm25_precise_query": 0.001117900013923645,
+        "total": 0.1290343999862671
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "167323",
+      "original": {
+        "bm25_query": 0.04419499999494292,
+        "bm25_phrases_query": 0.022441300010541454,
+        "bm25_precise_query": 0.004064499982632697,
+        "total": 0.07072150000021793
+      },
+      "cached": {
+        "bm25_query": 0.026172000012593344,
+        "bm25_phrases_query": 0.022136299987323582,
+        "bm25_precise_query": 0.0023167000035755336,
+        "total": 0.050661299988860264
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "18553",
+      "original": {
+        "bm25_query": 0.0405204999842681,
+        "bm25_phrases_query": 0.03705810001702048,
+        "bm25_precise_query": 0.014238499978091568,
+        "total": 0.0918396000051871
+      },
+      "cached": {
+        "bm25_query": 0.03907480000634678,
+        "bm25_phrases_query": 0.029136099998140708,
+        "bm25_precise_query": 0.0027953000098932534,
+        "total": 0.07103729998925701
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "91719",
+      "original": {
+        "bm25_query": 0.005229700007475913,
+        "bm25_phrases_query": 0.056129699980374426,
+        "bm25_precise_query": 0.013359500007936731,
+        "total": 0.07474020001245663
+      },
+      "cached": {
+        "bm25_query": 0.005129500001203269,
+        "bm25_phrases_query": 0.0425223000056576,
+        "bm25_precise_query": 0.002438900002744049,
+        "total": 0.050104099995223805
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "84987",
+      "original": {
+        "bm25_query": 0.1075031999789644,
+        "bm25_phrases_query": 0.036556200007908046,
+        "bm25_precise_query": 0.00537820000317879,
+        "total": 0.14945900000748225
+      },
+      "cached": {
+        "bm25_query": 0.14787789998808876,
+        "bm25_phrases_query": 0.04131790000246838,
+        "bm25_precise_query": 0.0030085999751463532,
+        "total": 0.19225270001334138
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "50037",
+      "original": {
+        "bm25_query": 0.1303634000068996,
+        "bm25_phrases_query": 0.03878569998778403,
+        "bm25_precise_query": 0.00805550001678057,
+        "total": 0.17722420001518913
+      },
+      "cached": {
+        "bm25_query": 0.1138894000032451,
+        "bm25_phrases_query": 0.03661949999514036,
+        "bm25_precise_query": 0.0026137999957427382,
+        "total": 0.15313799999421462
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "42211",
+      "original": {
+        "bm25_query": 0.0462085000181105,
+        "bm25_phrases_query": 0.046844600001350045,
+        "bm25_precise_query": 0.0056573000038042665,
+        "total": 0.09874429999035783
+      },
+      "cached": {
+        "bm25_query": 0.05386329998145811,
+        "bm25_phrases_query": 0.043143599992617965,
+        "bm25_precise_query": 0.002071900002192706,
+        "total": 0.09909740000148304
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "154059",
+      "original": {
+        "bm25_query": 0.0911103000107687,
+        "bm25_phrases_query": 0.042287099990062416,
+        "bm25_precise_query": 0.008609900018200278,
+        "total": 0.14202860000659712
+      },
+      "cached": {
+        "bm25_query": 0.10064240000792779,
+        "bm25_phrases_query": 0.03355130000272766,
+        "bm25_precise_query": 0.002461099997162819,
+        "total": 0.1366703999810852
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "137459",
+      "original": {
+        "bm25_query": 0.014245500002289191,
+        "bm25_phrases_query": 0.06725249998271465,
+        "bm25_precise_query": 0.022624499979428947,
+        "total": 0.10414979999768548
+      },
+      "cached": {
+        "bm25_query": 0.011277400015387684,
+        "bm25_phrases_query": 0.05801680000149645,
+        "bm25_precise_query": 0.0072791000129655,
+        "total": 0.07659060001606122
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "96799",
+      "original": {
+        "bm25_query": 0.13981689998763613,
+        "bm25_phrases_query": 0.028253500000573695,
+        "bm25_precise_query": 0.0051420000090729445,
+        "total": 0.17323829999077134
+      },
+      "cached": {
+        "bm25_query": 0.14607359998626634,
+        "bm25_phrases_query": 0.036442400014493614,
+        "bm25_precise_query": 0.0017940000107046217,
+        "total": 0.1843496000219602
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "149039",
+      "original": {
+        "bm25_query": 0.002805099997203797,
+        "bm25_phrases_query": 0.05983270000433549,
+        "bm25_precise_query": 0.014358799991896376,
+        "total": 0.07701959999394603
+      },
+      "cached": {
+        "bm25_query": 0.002040899998974055,
+        "bm25_phrases_query": 0.05062789999647066,
+        "bm25_precise_query": 0.004284199996618554,
+        "total": 0.05697020000661723
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "95649",
+      "original": {
+        "bm25_query": 0.06521770000108518,
+        "bm25_phrases_query": 0.021060300001408905,
+        "bm25_precise_query": 0.004461300006369129,
+        "total": 0.09076829999685287
+      },
+      "cached": {
+        "bm25_query": 0.06711369997356087,
+        "bm25_phrases_query": 0.02351030000136234,
+        "bm25_precise_query": 0.0010445000079926103,
+        "total": 0.09169460000703111
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "20917",
+      "original": {
+        "bm25_query": 0.004978700017090887,
+        "bm25_phrases_query": 0.06254470002022572,
+        "bm25_precise_query": 0.014396500017028302,
+        "total": 0.08194869998260401
+      },
+      "cached": {
+        "bm25_query": 0.0045298000040929765,
+        "bm25_phrases_query": 0.06947690001106821,
+        "bm25_precise_query": 0.0026369999977760017,
+        "total": 0.07666049999534152
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "40531",
+      "original": {
+        "bm25_query": 0.0251222999941092,
+        "bm25_phrases_query": 0.04495640000095591,
+        "bm25_precise_query": 0.006970499991439283,
+        "total": 0.0770720999862533
+      },
+      "cached": {
+        "bm25_query": 0.0257430000056047,
+        "bm25_phrases_query": 0.04506110001238994,
+        "bm25_precise_query": 0.002031699987128377,
+        "total": 0.07285609998507425
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "138041",
+      "original": {
+        "bm25_query": 0.03415990000939928,
+        "bm25_phrases_query": 0.03110339998966083,
+        "bm25_precise_query": 0.011113799992017448,
+        "total": 0.07640489999903366
+      },
+      "cached": {
+        "bm25_query": 0.03539079998154193,
+        "bm25_phrases_query": 0.03350660001160577,
+        "bm25_precise_query": 0.0027151999820489436,
+        "total": 0.07163040002342314
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "126777",
+      "original": {
+        "bm25_query": 0.08944609999889508,
+        "bm25_phrases_query": 0.035150400013662875,
+        "bm25_precise_query": 0.004517299996223301,
+        "total": 0.12913849999313243
+      },
+      "cached": {
+        "bm25_query": 0.0894933000090532,
+        "bm25_phrases_query": 0.03800649999175221,
+        "bm25_precise_query": 0.0020750000257976353,
+        "total": 0.12959100000443868
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "118857",
+      "original": {
+        "bm25_query": 0.05113480001455173,
+        "bm25_phrases_query": 0.03425169998081401,
+        "bm25_precise_query": 0.015061599988257512,
+        "total": 0.10047529998701066
+      },
+      "cached": {
+        "bm25_query": 0.054165400011697784,
+        "bm25_phrases_query": 0.0420715999789536,
+        "bm25_precise_query": 0.0035866000107489526,
+        "total": 0.09984539999277331
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "101303",
+      "original": {
+        "bm25_query": 0.08338319999165833,
+        "bm25_phrases_query": 0.021649699978297576,
+        "bm25_precise_query": 0.005847599997650832,
+        "total": 0.11091250000754371
+      },
+      "cached": {
+        "bm25_query": 0.07808780000777915,
+        "bm25_phrases_query": 0.024595199996838346,
+        "bm25_precise_query": 0.002129700005752966,
+        "total": 0.10487240002839826
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "40927",
+      "original": {
+        "bm25_query": 0.018888099992182106,
+        "bm25_phrases_query": 0.03906380000989884,
+        "bm25_precise_query": 0.011208500014618039,
+        "total": 0.06918760002008639
+      },
+      "cached": {
+        "bm25_query": 0.01656289998209104,
+        "bm25_phrases_query": 0.03864179999800399,
+        "bm25_precise_query": 0.003712000005180016,
+        "total": 0.058934700005920604
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "211",
+      "original": {
+        "bm25_query": 0.07164310000371188,
+        "bm25_phrases_query": 0.019153100001858547,
+        "bm25_precise_query": 0.0026842000079341233,
+        "total": 0.09355740001774393
+      },
+      "cached": {
+        "bm25_query": 0.07022799999685958,
+        "bm25_phrases_query": 0.024525599990738556,
+        "bm25_precise_query": 0.0009365000005345792,
+        "total": 0.09570370000437833
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "55341",
+      "original": {
+        "bm25_query": 0.029260699986480176,
+        "bm25_phrases_query": 0.03676570000243373,
+        "bm25_precise_query": 0.01089129998581484,
+        "total": 0.07705490000080317
+      },
+      "cached": {
+        "bm25_query": 0.027330000011716038,
+        "bm25_phrases_query": 0.032939700002316386,
+        "bm25_precise_query": 0.0022361000010278076,
+        "total": 0.06252459998358972
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "149083",
+      "original": {
+        "bm25_query": 0.0023609999916516244,
+        "bm25_phrases_query": 0.001499100006185472,
+        "bm25_precise_query": 5.140001303516328e-05,
+        "total": 0.0039357000205200166
+      },
+      "cached": {
+        "bm25_query": 0.0020892999891657382,
+        "bm25_phrases_query": 0.009293000010075048,
+        "bm25_precise_query": 3.630001447163522e-05,
+        "total": 0.011430000013206154
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "41947",
+      "original": {
+        "bm25_query": 0.014326199976494536,
+        "bm25_phrases_query": 0.03082939999876544,
+        "bm25_precise_query": 0.006741599994711578,
+        "total": 0.05193159999907948
+      },
+      "cached": {
+        "bm25_query": 0.011372899985872209,
+        "bm25_phrases_query": 0.039953800005605444,
+        "bm25_precise_query": 0.002122100006090477,
+        "total": 0.05346819999977015
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "19451",
+      "original": {
+        "bm25_query": 0.0013979999930597842,
+        "bm25_phrases_query": 0.025189200008753687,
+        "bm25_precise_query": 0.014700900006573647,
+        "total": 0.04131470000720583
+      },
+      "cached": {
+        "bm25_query": 0.0014059999957680702,
+        "bm25_phrases_query": 0.0335579999955371,
+        "bm25_precise_query": 0.006126099993707612,
+        "total": 0.041110699996352196
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "104775",
+      "original": {
+        "bm25_query": 0.04942329999175854,
+        "bm25_phrases_query": 0.08011500001884997,
+        "bm25_precise_query": 0.021575399994617328,
+        "total": 0.1511445999785792
+      },
+      "cached": {
+        "bm25_query": 0.04626350000035018,
+        "bm25_phrases_query": 0.06350200000451878,
+        "bm25_precise_query": 0.0067171000118833035,
+        "total": 0.11650340000051074
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "15133",
+      "original": {
+        "bm25_query": 0.016166199988219887,
+        "bm25_phrases_query": 0.033104300004197285,
+        "bm25_precise_query": 0.01794819999486208,
+        "total": 0.06729790000827052
+      },
+      "cached": {
+        "bm25_query": 0.01584430001094006,
+        "bm25_phrases_query": 0.03254529999685474,
+        "bm25_precise_query": 0.003813799994532019,
+        "total": 0.05222660000436008
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "156089",
+      "original": {
+        "bm25_query": 0.003625100012868643,
+        "bm25_phrases_query": 0.058584700018400326,
+        "bm25_precise_query": 0.011017000011634082,
+        "total": 0.07330459999502636
+      },
+      "cached": {
+        "bm25_query": 0.004370499984361231,
+        "bm25_phrases_query": 0.0503657000081148,
+        "bm25_precise_query": 0.003589800006011501,
+        "total": 0.05835999999544583
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "91993",
+      "original": {
+        "bm25_query": 0.023947999987285584,
+        "bm25_phrases_query": 0.03735230001620948,
+        "bm25_precise_query": 0.007640800002263859,
+        "total": 0.06896730000153184
+      },
+      "cached": {
+        "bm25_query": 0.02300169999944046,
+        "bm25_phrases_query": 0.03957940000691451,
+        "bm25_precise_query": 0.0024326999846380204,
+        "total": 0.06503229998634197
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "71877",
+      "original": {
+        "bm25_query": 0.08688690001145005,
+        "bm25_phrases_query": 0.04228449999936856,
+        "bm25_precise_query": 0.0064894999959506094,
+        "total": 0.13569240001379512
+      },
+      "cached": {
+        "bm25_query": 0.08333660001517273,
+        "bm25_phrases_query": 0.03617479998501949,
+        "bm25_precise_query": 0.001175700017483905,
+        "total": 0.12070359999779612
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "37661",
+      "original": {
+        "bm25_query": 0.09156770000117831,
+        "bm25_phrases_query": 0.09511840000050142,
+        "bm25_precise_query": 0.016106099996250123,
+        "total": 0.2028258999926038
+      },
+      "cached": {
+        "bm25_query": 0.08285590002196841,
+        "bm25_phrases_query": 0.06750959999044426,
+        "bm25_precise_query": 0.006915099977049977,
+        "total": 0.15730030002305284
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "9605",
+      "original": {
+        "bm25_query": 0.02053329997579567,
+        "bm25_phrases_query": 0.042375999997602776,
+        "bm25_precise_query": 0.00282100000185892,
+        "total": 0.06575559999328107
+      },
+      "cached": {
+        "bm25_query": 0.018922899995232,
+        "bm25_phrases_query": 0.040336100006243214,
+        "bm25_precise_query": 0.0014764000079594553,
+        "total": 0.06078109997906722
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "118803",
+      "original": {
+        "bm25_query": 0.1301800000073854,
+        "bm25_phrases_query": 0.04541690001497045,
+        "bm25_precise_query": 0.010354500001994893,
+        "total": 0.1859798000077717
+      },
+      "cached": {
+        "bm25_query": 0.13634389999788254,
+        "bm25_phrases_query": 0.054258699994534254,
+        "bm25_precise_query": 0.0023689999943599105,
+        "total": 0.19299140002112836
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "128941",
+      "original": {
+        "bm25_query": 0.08558640000410378,
+        "bm25_phrases_query": 0.05989110001246445,
+        "bm25_precise_query": 0.01089869998395443,
+        "total": 0.15640020000864752
+      },
+      "cached": {
+        "bm25_query": 0.06855039999936707,
+        "bm25_phrases_query": 0.048375100013799965,
+        "bm25_precise_query": 0.0030427000019699335,
+        "total": 0.11998610000591725
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "153745",
+      "original": {
+        "bm25_query": 0.016671699995640665,
+        "bm25_phrases_query": 0.0327953000087291,
+        "bm25_precise_query": 0.009195899998303503,
+        "total": 0.058691399986855686
+      },
+      "cached": {
+        "bm25_query": 0.009038899996085092,
+        "bm25_phrases_query": 0.02860839999630116,
+        "bm25_precise_query": 0.002263699978357181,
+        "total": 0.03992959999595769
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "88149",
+      "original": {
+        "bm25_query": 0.007014899980276823,
+        "bm25_phrases_query": 0.06298099999548867,
+        "bm25_precise_query": 0.02022840001154691,
+        "total": 0.09024970000609756
+      },
+      "cached": {
+        "bm25_query": 0.004585199989378452,
+        "bm25_phrases_query": 0.04468409999390133,
+        "bm25_precise_query": 0.006308799987891689,
+        "total": 0.055594999983441085
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "131479",
+      "original": {
+        "bm25_query": 0.10804089999874122,
+        "bm25_phrases_query": 0.04573129999334924,
+        "bm25_precise_query": 0.016363899980206043,
+        "total": 0.17015960000571795
+      },
+      "cached": {
+        "bm25_query": 0.09853249997831881,
+        "bm25_phrases_query": 0.032862699998077005,
+        "bm25_precise_query": 0.002592599979834631,
+        "total": 0.1340028000122402
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "32303",
+      "original": {
+        "bm25_query": 0.011931899993214756,
+        "bm25_phrases_query": 0.03715270000975579,
+        "bm25_precise_query": 0.01483820000430569,
+        "total": 0.06394649998401292
+      },
+      "cached": {
+        "bm25_query": 0.011349300009896979,
+        "bm25_phrases_query": 0.037172499985899776,
+        "bm25_precise_query": 0.002217299974290654,
+        "total": 0.050754600000800565
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "145759",
+      "original": {
+        "bm25_query": 0.002964100014651194,
+        "bm25_phrases_query": 0.06525429998873733,
+        "bm25_precise_query": 0.00537379999877885,
+        "total": 0.073610399995232
+      },
+      "cached": {
+        "bm25_query": 0.003118199994787574,
+        "bm25_phrases_query": 0.04473860000143759,
+        "bm25_precise_query": 0.0021610000112559646,
+        "total": 0.05003480002051219
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "31789",
+      "original": {
+        "bm25_query": 0.019225000025471672,
+        "bm25_phrases_query": 0.028425700002117082,
+        "bm25_precise_query": 0.004239200003212318,
+        "total": 0.05190670001320541
+      },
+      "cached": {
+        "bm25_query": 0.023092000017641112,
+        "bm25_phrases_query": 0.04434709998895414,
+        "bm25_precise_query": 0.0006037999992258847,
+        "total": 0.06805359999998473
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "163565",
+      "original": {
+        "bm25_query": 0.03895909999846481,
+        "bm25_phrases_query": 0.03798120000283234,
+        "bm25_precise_query": 0.010069400013890117,
+        "total": 0.08703460000106134
+      },
+      "cached": {
+        "bm25_query": 0.03037719998974353,
+        "bm25_phrases_query": 0.04149810000672005,
+        "bm25_precise_query": 0.002605399989988655,
+        "total": 0.0744946000049822
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "162617",
+      "original": {
+        "bm25_query": 0.073173200013116,
+        "bm25_phrases_query": 0.07037909998325631,
+        "bm25_precise_query": 0.0019746999896597117,
+        "total": 0.14555080002173781
+      },
+      "cached": {
+        "bm25_query": 0.060085600009188056,
+        "bm25_phrases_query": 0.049465699994470924,
+        "bm25_precise_query": 0.0013137000205460936,
+        "total": 0.11087880001286976
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "101355",
+      "original": {
+        "bm25_query": 0.05373809998854995,
+        "bm25_phrases_query": 0.02553250000346452,
+        "bm25_precise_query": 0.0031746999884489924,
+        "total": 0.082468600012362
+      },
+      "cached": {
+        "bm25_query": 0.04875519999768585,
+        "bm25_phrases_query": 0.025930600007995963,
+        "bm25_precise_query": 0.0014876000059302896,
+        "total": 0.0762059000262525
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "161661",
+      "original": {
+        "bm25_query": 0.0629659999976866,
+        "bm25_phrases_query": 0.025719800003571436,
+        "bm25_precise_query": 0.006321499997284263,
+        "total": 0.09504139999626204
+      },
+      "cached": {
+        "bm25_query": 0.06842129997676238,
+        "bm25_phrases_query": 0.024463500012643635,
+        "bm25_precise_query": 0.0009931999957188964,
+        "total": 0.09389119999832474
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "57291",
+      "original": {
+        "bm25_query": 0.005558000004384667,
+        "bm25_phrases_query": 0.04663080000318587,
+        "bm25_precise_query": 0.010254399996483698,
+        "total": 0.062463900016155094
+      },
+      "cached": {
+        "bm25_query": 0.0036426000006031245,
+        "bm25_phrases_query": 0.04790299999876879,
+        "bm25_precise_query": 0.002062499988824129,
+        "total": 0.05362239998066798
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "81065",
+      "original": {
+        "bm25_query": 0.02096009999513626,
+        "bm25_phrases_query": 0.038716599985491484,
+        "bm25_precise_query": 0.0029855000029783696,
+        "total": 0.06269029999384657
+      },
+      "cached": {
+        "bm25_query": 0.018355199979851022,
+        "bm25_phrases_query": 0.035452499985694885,
+        "bm25_precise_query": 0.001552600006107241,
+        "total": 0.055372800008626655
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "142825",
+      "original": {
+        "bm25_query": 0.040435100003378466,
+        "bm25_phrases_query": 0.03810139998677187,
+        "bm25_precise_query": 0.015099600015673786,
+        "total": 0.09365520000574179
+      },
+      "cached": {
+        "bm25_query": 0.03624769998714328,
+        "bm25_phrases_query": 0.03095219997339882,
+        "bm25_precise_query": 0.004602200002409518,
+        "total": 0.07181819999823347
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "141091",
+      "original": {
+        "bm25_query": 0.0243561000097543,
+        "bm25_phrases_query": 0.025325900001917034,
+        "bm25_precise_query": 0.00622859998838976,
+        "total": 0.05593380000209436
+      },
+      "cached": {
+        "bm25_query": 0.026683000003686175,
+        "bm25_phrases_query": 0.02642730000661686,
+        "bm25_precise_query": 0.0021185000077821314,
+        "total": 0.055246800009626895
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "88865",
+      "original": {
+        "bm25_query": 0.003835099982097745,
+        "bm25_phrases_query": 0.01752279998618178,
+        "bm25_precise_query": 0.006725600018398836,
+        "total": 0.028103899996494874
+      },
+      "cached": {
+        "bm25_query": 0.005007200001273304,
+        "bm25_phrases_query": 0.019046800007345155,
+        "bm25_precise_query": 0.0018350000027567148,
+        "total": 0.025907799979904667
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "69377",
+      "original": {
+        "bm25_query": 0.01061259998823516,
+        "bm25_phrases_query": 0.0766756999946665,
+        "bm25_precise_query": 0.020120500004850328,
+        "total": 0.1074328999966383
+      },
+      "cached": {
+        "bm25_query": 0.009966999990865588,
+        "bm25_phrases_query": 0.06389930000295863,
+        "bm25_precise_query": 0.003327300015371293,
+        "total": 0.0772092999832239
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "66165",
+      "original": {
+        "bm25_query": 0.0020844000100623816,
+        "bm25_phrases_query": 0.028065199992852286,
+        "bm25_precise_query": 0.0034533999860286713,
+        "total": 0.03362990001915023
+      },
+      "cached": {
+        "bm25_query": 0.0015680999786127359,
+        "bm25_phrases_query": 0.029347999981837347,
+        "bm25_precise_query": 0.001156799989985302,
+        "total": 0.032086400024127215
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "63345",
+      "original": {
+        "bm25_query": 0.011075499991420656,
+        "bm25_phrases_query": 0.015246299997670576,
+        "bm25_precise_query": 0.002251600002637133,
+        "total": 0.02859959998750128
+      },
+      "cached": {
+        "bm25_query": 0.01057559999753721,
+        "bm25_phrases_query": 0.01649479998741299,
+        "bm25_precise_query": 0.0008156999829225242,
+        "total": 0.027899800013983622
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "81593",
+      "original": {
+        "bm25_query": 0.08455229998799041,
+        "bm25_phrases_query": 0.021402700018370524,
+        "bm25_precise_query": 0.006554899999173358,
+        "total": 0.11253499999293126
+      },
+      "cached": {
+        "bm25_query": 0.06423170000198297,
+        "bm25_phrases_query": 0.023857699998188764,
+        "bm25_precise_query": 0.0017245000053662807,
+        "total": 0.0898287000018172
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "112351",
+      "original": {
+        "bm25_query": 0.04512179997982457,
+        "bm25_phrases_query": 0.025181000004522502,
+        "bm25_precise_query": 0.01031780001358129,
+        "total": 0.08067319999099709
+      },
+      "cached": {
+        "bm25_query": 0.04765980000956915,
+        "bm25_phrases_query": 0.023722399986581877,
+        "bm25_precise_query": 0.002747799997450784,
+        "total": 0.0741412999923341
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "75335",
+      "original": {
+        "bm25_query": 0.06693560001440346,
+        "bm25_phrases_query": 0.04511039998033084,
+        "bm25_precise_query": 0.011428900004830211,
+        "total": 0.12349880000692792
+      },
+      "cached": {
+        "bm25_query": 0.06194750001304783,
+        "bm25_phrases_query": 0.0380390000063926,
+        "bm25_precise_query": 0.001567700004670769,
+        "total": 0.10156730000744574
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "167835",
+      "original": {
+        "bm25_query": 0.026290599984349683,
+        "bm25_phrases_query": 0.058915100002195686,
+        "bm25_precise_query": 0.014365400013048202,
+        "total": 0.09959359999629669
+      },
+      "cached": {
+        "bm25_query": 0.021499199996469542,
+        "bm25_phrases_query": 0.04995129999588244,
+        "bm25_precise_query": 0.002971100009744987,
+        "total": 0.0744354999915231
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "34973",
+      "original": {
+        "bm25_query": 0.05184869997901842,
+        "bm25_phrases_query": 0.03772450002725236,
+        "bm25_precise_query": 0.01786350001930259,
+        "total": 0.10747030001948588
+      },
+      "cached": {
+        "bm25_query": 0.057151999993948266,
+        "bm25_phrases_query": 0.03242239999235608,
+        "bm25_precise_query": 0.002940799982752651,
+        "total": 0.0925303999974858
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "101277",
+      "original": {
+        "bm25_query": 0.014488199987681583,
+        "bm25_phrases_query": 0.03656870001577772,
+        "bm25_precise_query": 0.009177400002954528,
+        "total": 0.060256199998548254
+      },
+      "cached": {
+        "bm25_query": 0.014175799995427951,
+        "bm25_phrases_query": 0.03825359998154454,
+        "bm25_precise_query": 0.002304299996467307,
+        "total": 0.05475439998554066
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "59881",
+      "original": {
+        "bm25_query": 0.032701400021323934,
+        "bm25_phrases_query": 0.05308020001393743,
+        "bm25_precise_query": 0.010257099987939,
+        "total": 0.09606320000602864
+      },
+      "cached": {
+        "bm25_query": 0.0322518999746535,
+        "bm25_phrases_query": 0.05872219998855144,
+        "bm25_precise_query": 0.0033764000108931214,
+        "total": 0.09436489999643527
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "56837",
+      "original": {
+        "bm25_query": 0.0035253999812994152,
+        "bm25_phrases_query": 0.02733420001459308,
+        "bm25_precise_query": 0.00819180000689812,
+        "total": 0.03907630001776852
+      },
+      "cached": {
+        "bm25_query": 0.0026228000060655177,
+        "bm25_phrases_query": 0.023195200017653406,
+        "bm25_precise_query": 0.0021087999921292067,
+        "total": 0.02793999999994412
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "17691",
+      "original": {
+        "bm25_query": 0.026146900025196373,
+        "bm25_phrases_query": 0.026129300007596612,
+        "bm25_precise_query": 0.005230500013567507,
+        "total": 0.05753409999306314
+      },
+      "cached": {
+        "bm25_query": 0.02839659998426214,
+        "bm25_phrases_query": 0.026529000024311244,
+        "bm25_precise_query": 0.001506200002040714,
+        "total": 0.056450000003678724
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "124333",
+      "original": {
+        "bm25_query": 0.0064968999940901995,
+        "bm25_phrases_query": 0.031106900016311556,
+        "bm25_precise_query": 0.007358799979556352,
+        "total": 0.04500790001475252
+      },
+      "cached": {
+        "bm25_query": 0.008059599989792332,
+        "bm25_phrases_query": 0.030317000026116148,
+        "bm25_precise_query": 0.001573899993672967,
+        "total": 0.03996610001195222
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "126531",
+      "original": {
+        "bm25_query": 0.0024908999912440777,
+        "bm25_phrases_query": 0.04410909998114221,
+        "bm25_precise_query": 0.006667700014077127,
+        "total": 0.053288400027668104
+      },
+      "cached": {
+        "bm25_query": 0.0016819000011309981,
+        "bm25_phrases_query": 0.040747999999439344,
+        "bm25_precise_query": 0.002018400002270937,
+        "total": 0.04446039997856133
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    },
+    {
+      "id": "51669",
+      "original": {
+        "bm25_query": 0.09462190000340343,
+        "bm25_phrases_query": 0.03456539998296648,
+        "bm25_precise_query": 0.004151000001002103,
+        "total": 0.1333788000047207
+      },
+      "cached": {
+        "bm25_query": 0.09277410001959652,
+        "bm25_phrases_query": 0.031332300015492365,
+        "bm25_precise_query": 0.0018994999991264194,
+        "total": 0.1260240999981761
+      },
+      "identical_rankings": true,
+      "identical_by_branch": {
+        "bm25": true,
+        "phrases": true,
+        "precise": true
+      }
+    }
+  ],
+  "fixture": {
+    "source": "diagnostics parent windows; 180 words, stride 150",
+    "chunks": 27343,
+    "database_bytes": 57704448
+  }
+}

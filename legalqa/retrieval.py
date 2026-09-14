@@ -284,6 +284,130 @@ class Retriever:
             seconds[name+"_query"] = time.perf_counter()-start
         return rankings, seconds
 
+    @staticmethod
+    def _rank_sparse(ids, scores, limit):
+        import numpy as np
+        if limit <= 0:
+            return []
+        if len(ids) > limit:
+            keep = scores <= np.partition(scores, limit-1)[limit-1]
+            ids, scores = ids[keep], scores[keep]
+        return [int(key) for key in ids[np.lexsort((ids, scores))][:limit]]
+
+    def _init_phrase_cache(self):
+        if not hasattr(self, "_phrase_cache"):
+            self._phrase_cache = OrderedDict()
+            self._phrase_bytes = 0
+            # Phrase evaluation revisits posting/position pages repeatedly.
+            # A per-connection page cache avoids churning SQLite's small
+            # default cache; this does not write or rebuild the source index.
+            self.con.execute("PRAGMA cache_size=-65536")
+
+    def _phrase_scores(self, phrase):
+        """Independent phrase-group scores; never evict the word cache."""
+        self._init_phrase_cache()
+        cached = self._phrase_cache.pop(phrase, None)
+        if cached is not None:
+            self._phrase_cache[phrase] = cached
+            return cached
+        postings = self._read_phrase_scores(self.con, phrase)
+        self._remember_phrase(phrase, postings)
+        return postings
+
+    @staticmethod
+    def _read_phrase_scores(con, phrase):
+        import numpy as np
+        group = phrase if isinstance(phrase, tuple) else (phrase,)
+        query = ' OR '.join('"'+part+'"' for part in group)
+        cursor = con.execute("SELECT rowid,bm25(search,2.5,1.0) FROM search WHERE search MATCH ?",
+                             (query,))
+        try:
+            return np.fromiter((tuple(row) for row in cursor),
+                               dtype=[("id", "<i8"), ("score", "<f8")])
+        finally:
+            cursor.close()
+
+    def _remember_phrase(self, phrase, postings):
+        budget = int(self.c["retrieval"].get("phrase_cache_mb", 64)*1024*1024)
+        if budget > 0 and postings.nbytes <= budget:
+            # Bound key overhead too, including phrases with no matches.
+            while self._phrase_cache and (self._phrase_bytes+postings.nbytes > budget
+                                          or len(self._phrase_cache) >= 4096):
+                _, expired = self._phrase_cache.popitem(last=False)
+                self._phrase_bytes -= expired.nbytes
+            self._phrase_cache[phrase] = postings
+            self._phrase_bytes += postings.nbytes
+
+    def _phrase_contributions(self, phrases):
+        """Score independent phrases on separate read-only SQLite connections."""
+        from concurrent.futures import ThreadPoolExecutor
+        self._init_phrase_cache()
+        cache = self._phrase_cache
+        missing = [phrase for phrase in phrases if phrase not in cache]
+        workers = min(2, max(1, int(self.c["retrieval"].get("phrase_workers", 2))))
+        database = next((row[2] for row in self.con.execute('PRAGMA database_list') if row[1] == 'main'), '') if missing and workers > 1 else ''
+        if not database or len(missing) < 2:
+            return [self._phrase_scores(phrase) for phrase in phrases]
+
+        def read_batch(batch):
+            # Connections are created, used and closed in their worker thread.
+            con = sqlite3.connect(Path(database).resolve().as_uri()+'?mode=ro', uri=True)
+            try:
+                con.execute('PRAGMA cache_size=-32768')
+                return [(phrase, self._read_phrase_scores(con, phrase)) for phrase in batch]
+            finally:
+                con.close()
+
+        computed = {}
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for batch in pool.map(read_batch, [missing[i::workers] for i in range(workers)]):
+                computed.update(batch)
+        result = []
+        for phrase in phrases:
+            postings = cache.pop(phrase, None)
+            if postings is not None:
+                cache[phrase] = postings
+            else:
+                postings = computed[phrase]
+            result.append(postings)
+        # Defer evictions until all references needed for this query are held.
+        for phrase, postings in computed.items():
+            self._remember_phrase(phrase, postings)
+        return result
+
+    def _cached_conjunction(self, terms, limit):
+        """Intersect all matching IDs, then sum term scores in query order.
+
+        Missing postings fall back to SQL, without populating or reordering the
+        broad BM25 cache. Phrase/precise optimizations must not displace it.
+        """
+        import numpy as np
+        cache = getattr(self, "_bm25_terms", {})
+        if any(term not in cache for term in terms):
+            return None
+        postings = [cache[term] for term in terms]
+        if any(not len(p) for p in postings):
+            return []
+        # FTS5 currently enumerates rowids ascending. Fail back safely if an
+        # alternate SQLite implementation gives an unordered posting list.
+        if any(np.any(p["id"][1:] < p["id"][:-1]) for p in postings):
+            return None
+        smallest = min(postings, key=len)
+        hits = smallest["id"]
+        for p in sorted(postings, key=len):
+            if p is smallest:
+                continue
+            positions = np.searchsorted(p["id"], hits)
+            hits = hits[positions < len(p)]
+            positions = positions[positions < len(p)]
+            hits = hits[p["id"][positions] == hits]
+            if not len(hits):
+                return []
+        scores = np.zeros(len(hits), dtype=np.float64)
+        for p in postings:
+            scores += p["score"][np.searchsorted(p["id"], hits)]
+        return self._rank_sparse(hits, scores, limit)
+
     def bm25_phrases(self, question):
         tokens = word_tokens(question)
         phrases = []
@@ -295,21 +419,42 @@ class Retriever:
         phrases = list(dict.fromkeys(phrases))[:24]
         if not phrases:
             return []
+        limit = self.c["retrieval"].get("precise_bm25_k", 40)
+        if self.c["retrieval"].get("fast_phrase_precise", False):
+            import numpy as np
+            if limit <= 0:
+                return []
+            workers = min(2, max(1, int(self.c["retrieval"].get("phrase_workers", 2))))
+            # Keep adjacent, overlapping phrases together to minimize duplicate
+            # row materialization. Two SQL groups run concurrently on file indexes.
+            width = (len(phrases)+workers-1)//workers
+            groups = [tuple(phrases[i:i+width]) for i in range(0,len(phrases),width)]
+            contributions = self._phrase_contributions(groups)
+            ids = np.concatenate([p["id"] for p in contributions])
+            scores = np.concatenate([p["score"] for p in contributions])
+            unique, inverse = np.unique(ids, return_inverse=True)
+            totals = np.zeros(len(unique), dtype=np.float64)
+            np.add.at(totals, inverse, scores)
+            return self._rank_sparse(unique, totals, limit)
         query = " OR ".join('"'+phrase+'"' for phrase in phrases)
-        return self._fts(query, self.c["retrieval"].get("precise_bm25_k", 40))
+        return self._fts(query, limit)
 
     def bm25_precise(self, question):
         terms = content_terms(question)
         if len(terms) < 3:
             return []
         limit = self.c["retrieval"].get("precise_bm25_k", 40)
+        if limit <= 0:
+            return []
         result = []
+        ordered = sorted(terms, key=lambda value: (-len(value), terms.index(value)))
         # Start strict and relax only when needed. Earlier rows remain ahead after deduplication.
         for count in dict.fromkeys([min(12, len(terms)), min(8, len(terms)), min(5, len(terms))]):
-            selected = sorted(terms, key=lambda value: (-len(value), terms.index(value)))[:count]
+            selected = ordered[:count]
             query = " AND ".join('"'+term+'"' for term in selected)
             try:
-                result.extend(self._fts(query, limit))
+                cached = self._cached_conjunction(selected, limit) if self.c["retrieval"].get("fast_phrase_precise", False) else None
+                result.extend(self._fts(query, limit) if cached is None else cached)
             except sqlite3.OperationalError:
                 continue
             if len(dict.fromkeys(result)) >= limit:
@@ -397,7 +542,10 @@ def retrieve(c, questions_path, root, index_dir, output, device, mode="full"):
     engine = Retriever(c, index_dir, load_dense=mode == "full")
     print(f"Retrieval mode={mode}, bm25_k={c['retrieval']['bm25_k']}, "
           f"precise_bm25_k={c['retrieval'].get('precise_bm25_k',40)}, "
-          f"bm25_cache_mb={c['retrieval'].get('bm25_cache_mb',0)}", flush=True)
+          f"bm25_cache_mb={c['retrieval'].get('bm25_cache_mb',0)}, "
+          f"fast_phrase_precise={c['retrieval'].get('fast_phrase_precise',False)}, "
+          f"phrase_workers={c['retrieval'].get('phrase_workers',2)}, "
+          f"phrase_cache_mb={c['retrieval'].get('phrase_cache_mb',64)}", flush=True)
     if engine.manifest["identity"]["embedding"] != lock["models"]["embedding"]:
         raise ValueError("Dense index was built with a different embedding checkpoint")
     identity = {"questions_hash": digest(questions), "index_hash": digest(engine.manifest),
