@@ -70,6 +70,25 @@ Muốn tận dụng QLoRA từ main-run cũ, dùng Stage 1 mới với `LEGACY_I
 
 Notebook dùng một GPU cho mỗi subprocess; đặc biệt QLoRA chỉ thấy GPU 0. Nếu có hai T4, không mặc định coi chúng là một GPU có VRAM cộng gộp. Retrieval hoàn tất và nhả model trước khi generation bắt đầu. Chưa có benchmark tốc độ/VRAM thực tế của cấu hình này.
 
+### Stage 4: hậu xử lý CPU sau khi Stage 3 hoàn tất
+
+Import `legalqa_main_04_repair_submit.ipynb` vào Kaggle, chọn **Accelerator: None**, bật Internet và Add Input output Stage 3 hoàn tất hoặc dataset chứa diagnostics. Notebook tự tìm đúng một `legalqa_main_stage3_v8_diagnostics.zip`; cũng hỗ trợ dataset đã giải nén có `stage3_manifest.json`. Khi có nhiều phiên, điền `DIAGNOSTICS` cụ thể. Code và scorer BTC được nhúng trong notebook, không cần clone/push GitHub.
+
+Stage 4 kiểm tra CRC/hash/ID/journal, loại các khối lặp nguyên văn liên tiếp từ ba bản trở lên và chấm lại dev100. Chỉ xuất `submission_repaired.zip` khi METEOR không giảm, có khối lặp được loại và số câu lặp nặng không tăng. Nếu không đạt thì xuất `submission_original.zip`. ZIP được chọn chứa đúng một `submission.json`; bản gốc, ứng viên, audit, metrics và manifest nằm riêng trong `/kaggle/working/legalqa_main_stage4_v8/`.
+
+Đã kiểm chứng trên diagnostics V8 ngày 14/09/2026: dev100 METEOR **0,56356 → 0,57095**, ROUGE-L **0,53082 → 0,54667**; cả 6 câu dev được sửa đều tăng hai chỉ số. Public có 52 câu được sửa, số câu bị heuristic gắn cờ lặp nặng giảm từ 51 xuống 11. Đây là kết quả dev100, chưa phải điểm public; việc xóa lặp không chứng minh mọi đáp án đã đủ ý.
+
+`repair.unresolved.json` là danh sách cần xem lại của bản được chọn, không phải danh sách tự động sinh lại. Cờ chạm token không mặc định là lỗi. V1 chạy CPU, chưa chạy GPU hoặc sửa retrieval; câu dẫn còn thiếu nội dung sau xóa lặp được giữ bản gốc và ghi lý do. Bước GPU sau cần đúng generator/tokenizer/selected adapter vì diagnostics ZIP không chứa trọng số. Thiết kế và giới hạn chi tiết nằm trong `STAGE4_REVIEW_PLAN.md`.
+
+Chạy local phần CPU bằng dependencies scorer (`numpy`, `nltk==3.9.1`, `absl-py==2.2.2`, `six==1.17.0`) và WordNet:
+
+```bash
+python -m nltk.downloader wordnet omw-1.4
+python -m legalqa.repair --diagnostics /path/legalqa_main_stage3_v8_diagnostics.zip --output runs/stage4
+```
+
+Thêm `--audit-only` nếu chỉ muốn kiểm tra và tạo bản ứng viên mà không chấm/đóng ZIP. Đổi input/code/chế độ phải chọn output mới; không xóa identity để ép dùng lại kết quả. Sau khi sửa code Stage 4 trong repo, chạy `python scripts/build_stage4_notebook.py` để cập nhật code nhúng. Kiểm thử: `python -m unittest discover -s tests -p test_repair.py -v`.
+
 ## Chạy bằng dòng lệnh
 
 Giải nén ZIP, mở terminal tại thư mục có `config.json`. Các dòng dưới đây chạy riêng biệt. Thay đường dẫn dữ liệu bằng đường dẫn thực tế.
