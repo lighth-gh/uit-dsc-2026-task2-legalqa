@@ -25,7 +25,7 @@
     "target_meteor": 0.65
   },
   "training": {
-    "required": true, "max_examples": 768, "max_prompt_tokens": 2048,
+    "required": true, "max_prompt_tokens": 2048,
     "retrieval_mode": "lexical", "lexical_pool_k": 24,
     "selection_split": "dev100",
     "lora_rank": 16, "lora_alpha": 32, "lora_dropout": 0.05,

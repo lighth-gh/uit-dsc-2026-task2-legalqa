@@ -17,7 +17,7 @@ from legalqa.prompts import (SYSTEM, answer_flags, citation_context_conflict, cl
                              localized_evidence_support, pack_prompt,
                              refusal_evidence_support, window_around_seed)
 from legalqa.retrieval import Retriever, diversified, retrieval_adjustment, rrf
-from legalqa.training import fit, prepare_training_subset, training_examples
+from legalqa.training import fit, prepare_training_subset, select_training_questions, training_examples
 
 
 class TinyTokenizer:
@@ -81,7 +81,9 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(c["evaluation"],{
             "primary_metric":"meteor", "secondary_metric":"rougeL", "target_meteor":.65})
         self.assertTrue(c["training"]["required"])
-        self.assertEqual(c["training"]["max_examples"],768)
+        self.assertNotIn("max_examples",c["training"])
+        qa = {str(i): {"question": str(i), "answer": str(i)} for i in range(5)}
+        self.assertEqual(set(select_training_questions(qa,c)),set(qa))
         self.assertEqual(c["training"]["max_prompt_tokens"],2048)
         self.assertEqual(c["training"]["retrieval_mode"],"lexical")
         self.assertEqual(c["training"]["selection_split"],"dev100")

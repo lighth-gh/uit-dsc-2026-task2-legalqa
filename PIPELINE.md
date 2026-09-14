@@ -88,12 +88,12 @@ Giữ encoder và reranker ở checkpoint được duyệt. Chỉ SFT Vi-Qwen2-3
 | Sequence training tối đa | 8.192 token |
 | Prompt SFT tối đa | 2.048 token; inference vẫn dùng tối đa 4.096 token |
 | Loss | Chỉ trên answer và EOS; toàn bộ prompt mask -100 |
-| Số mẫu main run | Tối đa 768 QA, chọn xác định bằng seed 2026 |
+| Số mẫu main run | Toàn bộ split train (5.600 QA với bộ dữ liệu hiện tại); giữ dev/holdout riêng |
 | Retrieval cho SFT | Lexical BM25/cụm từ/chính xác; không dùng answer, encoder hoặc reranker |
 
 Answer gốc được ưu tiên giữ đầy đủ; prompt có thể thu ngắn để vừa sequence. Nếu cả target và ngữ cảnh tối thiểu không vừa, ghi ID mẫu bị bỏ, không cắt target rồi gắn EOS như thể answer đã đầy đủ. Retrieval phục vụ training cũng chỉ dựa trên câu hỏi, nên không có bước “chọn passage tốt nhất bằng gold answer” rồi vô tình tạo train/inference mismatch. Các mẫu retrieval kém cần được phân tích và sửa ở retrieval, không chữa bằng thêm gold answer vào prompt.
 
-Main run bắt buộc hoàn tất QLoRA và phải có checkpoint epoch trước khi đi tiếp. Giới hạn 768 QA và prompt SFT 2.048 token là cấu hình thực dụng cho một phiên Kaggle; answer gốc vẫn không bị cắt. Không mặc định chọn checkpoint có training loss thấp nhất. Sinh answer của từng checkpoint trên cùng dev100, chấm đúng METEOR, rồi giữ checkpoint QLoRA có METEOR cao nhất; ROUGE-L chỉ phá hòa. Baseline chỉ là mốc kiểm soát trong báo cáo `compare`, không được âm thầm thay adapter ở holdout/submission. Nếu mọi adapter kém baseline, notebook cảnh báo để người chạy quyết định vòng tuning tiếp theo. So sánh cặp baseline/candidate có bootstrap theo câu hỏi để xem cải thiện có tập trung vào một ít ví dụ hay không; interval theo câu có thể lạc quan nếu còn near-duplicate.
+Main run bắt buộc hoàn tất QLoRA và phải có checkpoint epoch trước khi đi tiếp. Toàn bộ split train được dùng cho SFT; prompt tối đa 2.048 token và answer gốc vẫn không bị cắt. Lượt train có thể cần nhiều phiên Kaggle và phải resume từ checkpoint cùng fingerprint. Không mặc định chọn checkpoint có training loss thấp nhất. Sinh answer của từng checkpoint trên cùng dev100, chấm đúng METEOR, rồi giữ checkpoint QLoRA có METEOR cao nhất; ROUGE-L chỉ phá hòa. Baseline chỉ là mốc kiểm soát trong báo cáo `compare`, không được âm thầm thay adapter ở holdout/submission. Nếu mọi adapter kém baseline, notebook cảnh báo để người chạy quyết định vòng tuning tiếp theo. So sánh cặp baseline/candidate có bootstrap theo câu hỏi để xem cải thiện có tập trung vào một ít ví dụ hay không; interval theo câu có thể lạc quan nếu còn near-duplicate.
 
 ## Sinh câu trả lời và kiểm soát lỗi
 
