@@ -164,7 +164,7 @@ class StageTests(unittest.TestCase):
             root=Path(folder);qa=root/'qa.json';write_json(qa,{str(i):{'question':str(i)} for i in range(3)})
             lock={'models':{'embedding':{}}};engine=Mock()
             engine.manifest={'identity':{'embedding':{}}}
-            engine.retrieve_one_lexical.side_effect=lambda question:{'question':question,'contexts':[]}
+            engine.retrieve_one_lexical.side_effect=lambda question:{'question':question,'contexts':[],'seconds':{}}
             with patch('legalqa.retrieval.Retriever',return_value=engine), \
                  patch('legalqa.retrieval.model_lock',return_value=lock), \
                  patch.dict(os.environ,{'LEGALQA_MAX_ITEMS':'2','LEGALQA_DEADLINE':'0'}):
@@ -288,10 +288,11 @@ class StageTests(unittest.TestCase):
             for name in ('adapter_config.json','trainer_state.json'):
                 write_json(checkpoint/name,{'epoch':1.0,'global_step':96})
             (checkpoint/'adapter_model.safetensors').write_bytes(b'fixture')
-            ns={'TrainerCallback':object,'should_pause':lambda:True,'output':output,
+            ns={'TrainerCallback':object,'pause_training':lambda *args:True,'output':output,
+                'torch':None,'device':'cuda:0','world':2,
                 'copy_file':copy_file,'file_hash':file_hash,'write_json':write_json}
             exec(compile(ast.Module(body=[callback],type_ignores=[]),'<callback>','exec'),ns)
-            cb=ns['BudgetCallback']();state=types.SimpleNamespace(epoch=.5,global_step=50)
+            cb=ns['BudgetCallback']();state=types.SimpleNamespace(epoch=.5,global_step=50,is_world_process_zero=True)
             control=types.SimpleNamespace(should_save=False,should_training_stop=False)
             cb.on_step_end(None,state,control)
             self.assertTrue(control.should_save and control.should_training_stop)
@@ -304,6 +305,68 @@ class StageTests(unittest.TestCase):
             self.assertTrue(control.should_save)
             cb.on_save(None,state,control)
             self.assertEqual(read_json(output/'epoch-01/epoch_complete.json')['step'],96)
+            state.is_world_process_zero=False;state.epoch=2.0;state.global_step=192
+            cb.on_save(None,state,control)
+            self.assertFalse((output/'epoch-02').exists())
+            self.assertEqual(cb.saved_step,192)
+
+    def test_training_uses_two_workers_with_unchanged_effective_batch(self):
+        from legalqa.training import training_layout
+        settings=config()['training']
+        for rank in (0,1):
+            env={'WORLD_SIZE':'2','RANK':str(rank),'LOCAL_RANK':str(rank)}
+            self.assertEqual(training_layout(settings,env,2),(2,rank,rank,4))
+        for env,gpus in [({},2),({'WORLD_SIZE':'2'},1),({'WORLD_SIZE':'2','LOCAL_RANK':'2'},2)]:
+            with self.assertRaises(ValueError):training_layout(settings,env,gpus)
+        with self.assertRaisesRegex(ValueError,'divisible'):
+            training_layout({**settings,'gradient_accumulation':7},{'WORLD_SIZE':'2'},2)
+
+    def test_stage_launches_torchrun_only_for_fit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            stage=Stage.__new__(Stage);stage.c=config();stage.cfg=Path(folder)/'config.json'
+            stage.models=Path(folder)/'models';stage.root=Path(folder);stage.index_hash='index'
+            with patch('legalqa.stages.should_pause',return_value=False),patch('legalqa.stages.subprocess.run') as run:
+                stage.command('fit','--output',Path(folder)/'sft')
+                command=run.call_args.args[0]
+                self.assertEqual(command[1:3],['-m','torch.distributed.run'])
+                self.assertIn('--nproc_per_node=2',command)
+                self.assertEqual(command[command.index('--module')+1],'legalqa')
+                self.assertNotIn('--gpu',command)
+                stage.command('retrieve')
+                self.assertNotIn('torch.distributed.run',run.call_args.args[0])
+
+    def test_fit_cli_does_not_hide_second_gpu_in_torchrun_worker(self):
+        from legalqa.cli import main
+        argv=['legalqa','fit','--train','train','--retrieval','cache','--output','sft']
+        with patch('sys.argv',argv),patch('legalqa.training.fit',return_value={}) as fit, \
+             patch.dict(os.environ,{'WORLD_SIZE':'2','RANK':'1','LOCAL_RANK':'1','CUDA_VISIBLE_DEVICES':'0,1'}):
+            main()
+            self.assertEqual(os.environ['CUDA_VISIBLE_DEVICES'],'0,1')
+            fit.assert_called_once()
+
+    def test_pause_request_from_other_rank_stops_every_worker(self):
+        from legalqa.training import pause_training
+        flag=Mock();flag.item.return_value=1
+        torch=Mock();torch.tensor.return_value=flag
+        with patch('legalqa.training.should_pause',return_value=False):
+            self.assertTrue(pause_training(torch,'cuda:1',2))
+        torch.tensor.assert_called_once_with(0,device='cuda:1')
+        torch.distributed.all_reduce.assert_called_once_with(flag,op=torch.distributed.ReduceOp.MAX)
+
+    def test_ddp_resume_requires_rng_state_for_both_workers(self):
+        from legalqa.stages import RESUME_FILES
+        with tempfile.TemporaryDirectory() as folder:
+            sft=Path(folder);checkpoint=sft/'checkpoint-10';checkpoint.mkdir()
+            write_json(sft/'training_manifest.json',{'config':{'training':{'world_size':2}}})
+            for name in RESUME_FILES:
+                (checkpoint/name).write_bytes(b'fixture')
+            write_json(checkpoint/'trainer_state.json',{'global_step':10})
+            (checkpoint/'rng_state_0.pth').write_bytes(b'fixture')
+            self.assertFalse(valid_resume(checkpoint))
+            (checkpoint/'rng_state_1.pth').write_bytes(b'fixture')
+            self.assertTrue(valid_resume(checkpoint))
+            (checkpoint/'rng_state_1.pth').write_bytes(b'')
+            self.assertFalse(valid_resume(checkpoint))
 
     def test_external_training_resume_reads_checkpoint_parent_manifest(self):
         tree=ast.parse((ROOT/'legalqa/training.py').read_text(encoding='utf-8'))

@@ -45,11 +45,11 @@ def main():
     args = parser.parse_args()
     c = config(args.config)
     cmd = args.command
-    if cmd == "fit":
-        # Before any torch import. QLoRA Trainer runs on exactly one visible GPU.
+    if cmd == "fit" and int(os.environ.get("WORLD_SIZE", "1")) == 1:
+        # A torchrun worker must retain the launcher's GPU visibility.
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
         args.device = "cuda:0"
-    if cmd in {"build-index","retrieve","generate","fit","audit-models"}:
+    if cmd in {"build-index","retrieve","generate","audit-models"}:
         from .models import audit_models
         audit = audit_models(c,args.models)
     if cmd == "audit-models":
@@ -90,4 +90,5 @@ def main():
     elif cmd == "package":
         from .generation import package_submission
         result = package_submission(args.predictions,args.questions,args.output,args.filename or c["submission_filename"])
-    print(json.dumps(result,ensure_ascii=False,indent=2,allow_nan=False))
+    if int(os.environ.get("RANK", "0")) == 0:
+        print(json.dumps(result,ensure_ascii=False,indent=2,allow_nan=False))

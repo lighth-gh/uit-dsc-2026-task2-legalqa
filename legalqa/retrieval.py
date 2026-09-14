@@ -3,7 +3,7 @@ import os
 import re
 import sqlite3
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from pathlib import Path
 
 from .data import DOC_NUMBER, iter_documents, legal_parents, token_children
@@ -206,8 +206,7 @@ def build_index(c, corpus_path, root, output, device):
 
 
 class Retriever:
-    def __init__(self, c, index_dir):
-        import faiss
+    def __init__(self, c, index_dir, load_dense=True):
         self.c = c
         self.out = Path(index_dir)
         self.manifest = read_json(self.out/"index_manifest.json")
@@ -218,24 +217,72 @@ class Retriever:
         if file_hash(self.out/"dense.faiss") != self.manifest["faiss_sha256"]:
             raise ValueError("FAISS index hash mismatch")
         self.con = connect(self.out/"corpus.sqlite")
-        self.index = faiss.read_index(str(self.out/"dense.faiss"))
+        self._bm25_size = self.con.execute("SELECT coalesce(max(chunk_id),-1)+1 FROM chunks").fetchone()[0]
+        self.index = None
+        if load_dense:
+            import faiss
+            self.index = faiss.read_index(str(self.out/"dense.faiss"))
 
     def bm25(self, question):
-        tokens = list(dict.fromkeys(re.findall(r"[^\W_]+", question.casefold(), re.UNICODE)))[:48]
+        tokens = list(dict.fromkeys(word_tokens(question)))[:48]
         if not tokens:
             return []
-        query = " OR ".join('"'+t+'"' for t in tokens)
-        # FTS5 bm25() is lower-is-better; do not reverse it.
-        rows = self.con.execute("SELECT rowid FROM search WHERE search MATCH ? ORDER BY bm25(search,2.5,1.0),rowid LIMIT ?",
-                                (query, self.c["retrieval"]["bm25_k"])).fetchall()
-        return [row[0] for row in rows]
+        limit = self.c["retrieval"]["bm25_k"]
+        if self.c["retrieval"].get("bm25_cache_mb", 0) <= 0:
+            return self._fts(" OR ".join('"'+t+'"' for t in tokens), limit)
+        if limit <= 0:
+            return []
+        import numpy as np
+        if not hasattr(self, "_bm25_terms"):
+            self._bm25_terms = OrderedDict()
+            self._bm25_bytes = 0
+        if not hasattr(self, "_bm25_size"):
+            self._bm25_size = self.con.execute("SELECT coalesce(max(rowid),-1)+1 FROM search").fetchone()[0]
+        scores = np.zeros(self._bm25_size, dtype=np.float64)
+        budget = int(self.c["retrieval"]["bm25_cache_mb"]*1024*1024)
+        for token in tokens:
+            postings = self._bm25_terms.pop(token, None)
+            if postings is None:
+                # FTS5 OR BM25 is the sum of its term contributions, including
+                # global IDF, document length normalization and column weights.
+                # Cache these exact float64 contributions, not approximations.
+                cursor = self.con.execute(
+                    "SELECT rowid,bm25(search,2.5,1.0) FROM search WHERE search MATCH ?",
+                    ('"'+token+'"',))
+                try:
+                    postings = np.fromiter((tuple(row) for row in cursor),
+                                           dtype=[("id", "<i8"), ("score", "<f8")])
+                finally:
+                    cursor.close()
+                if postings.nbytes <= budget:
+                    while self._bm25_terms and self._bm25_bytes+postings.nbytes > budget:
+                        _, expired = self._bm25_terms.popitem(last=False)
+                        self._bm25_bytes -= expired.nbytes
+                    self._bm25_bytes += postings.nbytes
+            if postings.nbytes <= budget:
+                self._bm25_terms[token] = postings
+            scores[postings["id"]] += postings["score"]
+        hits = np.flatnonzero(scores < 0)
+        if len(hits) > limit:
+            cutoff = np.partition(scores[hits], limit-1)[limit-1]
+            hits = hits[scores[hits] <= cutoff]
+        return [int(key) for key in hits[np.lexsort((hits, scores[hits]))][:limit]]
 
     def _fts(self, query, limit):
+        if limit <= 0:
+            return []
         rows = self.con.execute(
             "SELECT rowid FROM search WHERE search MATCH ? "
-            "ORDER BY bm25(search,2.5,1.0),rowid LIMIT ?", (query, limit)
-        ).fetchall()
+            "ORDER BY bm25(search,2.5,1.0),rowid LIMIT ?", (query, limit)).fetchall()
         return [row[0] for row in rows]
+
+    def lexical_rankings(self, question):
+        rankings, seconds = [], {}
+        for name in ("bm25", "bm25_phrases", "bm25_precise"):
+            start = time.perf_counter()
+            rankings.append(getattr(self, name)(question))
+            seconds[name+"_query"] = time.perf_counter()-start
+        return rankings, seconds
 
     def bm25_phrases(self, question):
         tokens = word_tokens(question)
@@ -277,9 +324,7 @@ class Retriever:
 
     def retrieve_one(self, question, dense_ids, reranker):
         start = time.perf_counter()
-        bm = self.bm25(question)
-        phrase_bm = self.bm25_phrases(question)
-        precise_bm = self.bm25_precise(question)
+        (bm, phrase_bm, precise_bm), timings = self.lexical_rankings(question)
         bm_seconds = time.perf_counter()-start
         rc = self.c["retrieval"]
         fusion = rrf([bm, phrase_bm, precise_bm, dense_ids], rc["rrf_constant"])
@@ -296,7 +341,7 @@ class Retriever:
         return {"question": question, "contexts": selected,
                 "stages": {"bm25": bm, "bm25_phrases": phrase_bm, "bm25_precise": precise_bm,
                            "dense": dense_ids, "rrf": fusion, "reranked": [row[0] for row in ranked]},
-                "seconds": {"bm25": bm_seconds, "rerank": time.perf_counter()-t}}
+                "seconds": {**timings, "bm25": bm_seconds, "rerank": time.perf_counter()-t}}
 
     def _materialize(self, ranked, chunks):
         rc = self.c["retrieval"]
@@ -324,9 +369,7 @@ class Retriever:
     def retrieve_one_lexical(self, question):
         """Fast question-only retrieval for QLoRA training examples; no GPU models."""
         start = time.perf_counter()
-        bm = self.bm25(question)
-        phrase_bm = self.bm25_phrases(question)
-        precise_bm = self.bm25_precise(question)
+        (bm, phrase_bm, precise_bm), timings = self.lexical_rankings(question)
         rc = self.c["retrieval"]
         fusion = rrf([bm, phrase_bm, precise_bm], rc["rrf_constant"])
         chunks = self.chunks(fusion)
@@ -343,7 +386,7 @@ class Retriever:
         return {"question":question,"contexts":self._materialize(ranked,chunks),
                 "stages":{"bm25":bm,"bm25_phrases":phrase_bm,"bm25_precise":precise_bm,
                           "dense":[],"rrf":fusion,"reranked":[row[0] for row in ranked]},
-                "seconds":{"bm25":time.perf_counter()-start,"rerank":0.0,"dense_amortized":0.0}}
+                "seconds":{**timings,"bm25":time.perf_counter()-start,"rerank":0.0,"dense_amortized":0.0}}
 
 
 def retrieve(c, questions_path, root, index_dir, output, device, mode="full"):
@@ -351,7 +394,10 @@ def retrieve(c, questions_path, root, index_dir, output, device, mode="full"):
         raise ValueError("Retrieval mode must be full or lexical")
     lock = model_lock(c, root)
     questions = load_questions(questions_path)
-    engine = Retriever(c, index_dir)
+    engine = Retriever(c, index_dir, load_dense=mode == "full")
+    print(f"Retrieval mode={mode}, bm25_k={c['retrieval']['bm25_k']}, "
+          f"precise_bm25_k={c['retrieval'].get('precise_bm25_k',40)}, "
+          f"bm25_cache_mb={c['retrieval'].get('bm25_cache_mb',0)}", flush=True)
     if engine.manifest["identity"]["embedding"] != lock["models"]["embedding"]:
         raise ValueError("Dense index was built with a different embedding checkpoint")
     identity = {"questions_hash": digest(questions), "index_hash": digest(engine.manifest),
@@ -388,9 +434,10 @@ def retrieve(c, questions_path, root, index_dir, output, device, mode="full"):
         for position,key in enumerate(keys):
             if should_pause(position):
                 break
-            journal.append(key,engine.retrieve_one_lexical(questions[key]["question"]))
-            if (position+1) % 100 == 0 or position+1 == len(keys):
-                print(f"Retrieved lexical: {len(records)}/{len(questions)}",flush=True)
+            record = engine.retrieve_one_lexical(questions[key]["question"])
+            journal.append(key,record)
+            if (position+1) % 10 == 0 or position == 0 or position+1 == len(keys):
+                print(f"Retrieved lexical: {len(records)}/{len(questions)}; seconds={record['seconds']}",flush=True)
     engine.con.close()
     if set(records) < set(questions):
         return {"status":"paused", "records":len(records), "total":len(questions)}

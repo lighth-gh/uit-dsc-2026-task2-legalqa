@@ -7,3 +7,4 @@ __pycache__/
 # Kết quả sinh trong lúc chạy local/Kaggle không thuộc mã nguồn.
 runs/
 legalqa_under4b_run/
+MAIN_01_REVIEW.md

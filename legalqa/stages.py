@@ -20,7 +20,7 @@ from .runtime import should_pause
 
 SCHEMA = 2
 RESUME_FILES = {"adapter_config.json", "adapter_model.safetensors", "trainer_state.json",
-                "optimizer.pt", "scheduler.pt", "scaler.pt", "rng_state.pth"}
+                "optimizer.pt", "scheduler.pt", "scaler.pt"}
 
 
 def safe_path(root, relative):
@@ -81,9 +81,14 @@ def copy_artifacts(source, destination, manifest, predicate=lambda relative: Tru
 
 def valid_resume(path):
     path = Path(path)
-    if not all((path/name).is_file() and (path/name).stat().st_size for name in RESUME_FILES):
-        return False
     try:
+        manifest = path.parent/"training_manifest.json"
+        world = int(read_json(manifest).get("config",{}).get("training",{}).get("world_size",1)) if manifest.is_file() else 1
+        if world < 1:
+            return False
+        rng_files = {f"rng_state_{rank}.pth" for rank in range(world)} if world > 1 else {"rng_state.pth"}
+        if not all((path/name).is_file() and (path/name).stat().st_size for name in RESUME_FILES | rng_files):
+            return False
         return read_json(path/"trainer_state.json")["global_step"] > 0
     except (ValueError, KeyError):
         return False
@@ -313,6 +318,10 @@ class Stage:
                "PYTHONUNBUFFERED":"1"}
         command = [sys.executable, "-m", "legalqa", "--config", str(self.cfg),
                    "--models", str(self.models), *map(str,args)]
+        if args and args[0] == "fit":
+            command = [sys.executable, "-m", "torch.distributed.run", "--standalone",
+                       "--nnodes=1", f"--nproc_per_node={self.c['training'].get('world_size', 2)}",
+                       "--module", *command[2:]]
         print("Running:", " ".join(command), flush=True)
         subprocess.run(command, cwd=ROOT, env=env, check=True)
         audit = self.models/"parameter_audit.json"
@@ -368,7 +377,7 @@ class Stage:
         if not cache.exists() or should_pause():
             self.progress(complete=False, phase="train_retrieval")
             return
-        args = ["fit", "--train",train,"--retrieval",cache,"--output",sft,"--gpu","0"]
+        args = ["fit", "--train",train,"--retrieval",cache,"--output",sft]
         checkpoints = [p for p in sft.glob("checkpoint-*") if valid_resume(p)]
         if checkpoints:
             latest = max(checkpoints,key=lambda p:read_json(p/"trainer_state.json")["global_step"])

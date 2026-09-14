@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from .io import copy_file, digest, file_hash, load_questions, source_hash, write_json
-from .models import load_generator, model_lock
+from .models import audit_models, load_generator, model_lock
 from .prompts import pack_prompt
 from .retrieval import read_retrieval
 from .runtime import should_pause
@@ -52,22 +52,57 @@ def training_examples(questions, records, tokenizer, c):
     return samples,{"used":len(samples),"skipped":skipped,"lengths":stats}
 
 
+def training_layout(settings, environ, visible_gpus):
+    world = int(environ.get("WORLD_SIZE", "1"))
+    rank = int(environ.get("RANK", "0"))
+    local_rank = int(environ.get("LOCAL_RANK", "0"))
+    expected = int(settings.get("world_size", 2))
+    if world != expected or visible_gpus < world or not 0 <= rank < world or not 0 <= local_rank < world:
+        raise ValueError(f"QLoRA requires {expected} GPU workers; got world_size={world}, "
+                         f"visible_gpus={visible_gpus}. Use torchrun --standalone "
+                         f"--nproc_per_node={expected} --module legalqa ... fit ...")
+    accumulation = int(settings["gradient_accumulation"])
+    if accumulation < world or accumulation % world:
+        raise ValueError("training.gradient_accumulation must be divisible by world_size to preserve effective batch")
+    return world, rank, local_rank, accumulation // world
+
+
+def pause_training(torch, device, world):
+    stop = torch.tensor(int(should_pause()), device=device)
+    if world > 1:
+        torch.distributed.all_reduce(stop, op=torch.distributed.ReduceOp.MAX)
+    return bool(stop.item())
+
+
 def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=None):
     if not c["generation"].get("load_in_4bit"):
         raise ValueError("QLoRA is required: generation.load_in_4bit must be true")
     import torch
     from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
     from transformers import Trainer, TrainingArguments, TrainerCallback, set_seed
-    if torch.cuda.device_count()!=1:
-        raise ValueError("Train in a subprocess with CUDA_VISIBLE_DEVICES=0 (one visible GPU); do not use Trainer DataParallel with this QLoRA model")
+    t = c["training"]
+    world, rank, local_rank, accumulation = training_layout(t, os.environ, torch.cuda.device_count())
+    device = f"cuda:{local_rank}"
+    torch.cuda.set_device(local_rank)
+    if world > 1:
+        torch.distributed.init_process_group(backend="nccl")
+    if rank == 0:
+        audit_models(c, root)
+    if world > 1:
+        torch.distributed.barrier()
+    print(f"QLoRA rank={rank}/{world} local_rank={local_rank} device={device} "
+          f"GPU={torch.cuda.get_device_name(local_rank)} accumulation={accumulation} "
+          f"effective_batch={t['batch_size']*accumulation*world}", flush=True)
     set_seed(c["seed"])
     questions = select_training_questions(load_questions(train_path,answers=True),c)
     records,retrieval_id = read_retrieval(retrieval_path,questions,c,root,expected_mode=c["training"]["retrieval_mode"])
     output = Path(output)
     if output.exists() and any(output.iterdir()) and not resume:
         raise ValueError("Training directory is nonempty. Choose a new directory or --resume an exact checkpoint.")
+    # Every rank checks the empty directory before rank 0 creates reports.
+    if world > 1:
+        torch.distributed.barrier()
     model,tokenizer = load_generator(c,root,device,training=True)
-    t = c["training"]
     samples,report = training_examples(questions,records,tokenizer,c)
     output.mkdir(parents=True,exist_ok=True)
     manifest = {"train_file_sha256":file_hash(train_path),"qa_hash":digest(questions),"qa_ids":list(questions),
@@ -79,8 +114,9 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
         previous = read_json(resume.parent/"training_manifest.json")
         if previous!=manifest:
             raise ValueError("Resume training fingerprint differs")
-    write_json(output/"training_manifest.json",manifest)
-    write_json(output/"training_data_report.json",report)
+    if rank == 0:
+        write_json(output/"training_manifest.json",manifest)
+        write_json(output/"training_data_report.json",report)
     model = prepare_model_for_kbit_training(model,use_gradient_checkpointing=True,
                                             gradient_checkpointing_kwargs={"use_reentrant":False})
     model = get_peft_model(model,LoraConfig(task_type=TaskType.CAUSAL_LM,r=t["lora_rank"],lora_alpha=t["lora_alpha"],
@@ -104,7 +140,7 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
         saved_step = -1
 
         def on_step_end(self, args, state, control, **kwargs):
-            if should_pause():
+            if pause_training(torch, device, world):
                 control.should_save = True
                 control.should_training_stop = True
             return control
@@ -116,6 +152,9 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
             return control
 
         def on_save(self, args, state, control, **kwargs):
+            self.saved_step = state.global_step
+            if not state.is_world_process_zero:
+                return control
             epoch = float(state.epoch or 0)
             if epoch >= 1 and abs(epoch-round(epoch)) < 1e-6:
                 checkpoint = output/f"checkpoint-{state.global_step}"
@@ -129,23 +168,49 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
             return control
 
     args = TrainingArguments(output_dir=str(output),num_train_epochs=t["epochs"],learning_rate=t["learning_rate"],
-        per_device_train_batch_size=t["batch_size"],gradient_accumulation_steps=t["gradient_accumulation"],
+        per_device_train_batch_size=t["batch_size"],gradient_accumulation_steps=accumulation,
         warmup_ratio=t["warmup_ratio"],lr_scheduler_type="cosine",fp16=True,bf16=False,
         gradient_checkpointing=True,gradient_checkpointing_kwargs={"use_reentrant":False},
         optim="paged_adamw_8bit",
         max_grad_norm=.3,save_strategy="steps" if bounded else "epoch",save_steps=10,save_total_limit=2,logging_steps=10,
         eval_strategy="no",report_to="none",remove_unused_columns=False,seed=c["seed"],data_seed=c["seed"],
-        dataloader_num_workers=0)
+        dataloader_num_workers=0,local_rank=local_rank if world > 1 else -1,
+        ddp_find_unused_parameters=False,ddp_broadcast_buffers=False,
+        average_tokens_across_devices=True)
     trainer = Trainer(model=model,args=args,train_dataset=samples,data_collator=collate,processing_class=tokenizer,
-                      callbacks=[BudgetCallback()] if bounded else None)
+                      callbacks=[BudgetCallback()])
+    if trainer.accelerator.num_processes != world or trainer.accelerator.device.index != local_rank:
+        raise RuntimeError("Trainer did not bind every QLoRA worker to its assigned GPU")
     trainer.train(resume_from_checkpoint=resume)
+    if world > 1:
+        if not isinstance(trainer.model_wrapped, torch.nn.parallel.DistributedDataParallel):
+            raise RuntimeError("QLoRA completed without the required DDP model wrapper")
+        # Confirm that both replicas actually completed optimizer steps.
+        proof = [None] * world
+        torch.distributed.all_gather_object(proof, {"rank":rank,"device":device,
+            "gpu":torch.cuda.get_device_name(local_rank),"global_step":trainer.state.global_step,
+            "peak_allocated_bytes":torch.cuda.max_memory_allocated(local_rank)})
+        if {p['rank'] for p in proof} != set(range(world)) or len({p['global_step'] for p in proof}) != 1:
+            raise RuntimeError("QLoRA workers did not complete the same optimizer steps")
+    else:
+        proof = [{"rank":rank,"device":device,"global_step":trainer.state.global_step}]
+    if rank == 0:
+        write_json(output/"distributed_training.json", {"world_size":world,"workers":proof,
+            "effective_batch_size":t["batch_size"]*accumulation*world})
     if trainer.state.global_step < trainer.state.max_steps:
+        if world > 1:
+            torch.distributed.barrier()
+            torch.distributed.destroy_process_group()
         return {"status":"paused", "step":trainer.state.global_step,"total_steps":trainer.state.max_steps}
     final = output/"adapter_last"
     trainer.save_model(str(final))
-    tokenizer.save_pretrained(final)
-    write_json(final/"training_manifest.json",manifest)
-    write_json(output/"training_result.json",{"trained_examples":len(samples),"trainable_parameters":adapter_parameters,
-        "epochs":t["epochs"],"final_adapter":str(final),
-        "selection":"Evaluate epoch checkpoints by generated dev METEOR. adapter_last is not automatically best."})
+    if rank == 0:
+        tokenizer.save_pretrained(final)
+        write_json(final/"training_manifest.json",manifest)
+        write_json(output/"training_result.json",{"trained_examples":len(samples),"trainable_parameters":adapter_parameters,
+            "epochs":t["epochs"],"final_adapter":str(final),"world_size":world,
+            "selection":"Evaluate epoch checkpoints by generated dev METEOR. adapter_last is not automatically best."})
+    if world > 1:
+        torch.distributed.barrier()
+        torch.distributed.destroy_process_group()
     return {"trained_examples":len(samples),"skipped":len(report["skipped"]),"final_adapter":str(final)}

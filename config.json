@@ -8,6 +8,7 @@
   },
   "chunking": {"child_tokens": 320, "overlap_tokens": 64, "header_tokens": 48},
   "retrieval": {
+    "bm25_cache_mb": 1024,
     "bm25_k": 100, "dense_k": 100, "rrf_constant": 60,
     "precise_bm25_k": 40, "pool_k": 32, "max_children_per_parent": 2, "parents_k": 4,
     "lexical_score_weight": 2.0, "phrase_match_bonus": 1.0,
@@ -25,6 +26,7 @@
     "target_meteor": 0.65
   },
   "training": {
+    "world_size": 2,
     "required": true, "max_prompt_tokens": 2048,
     "retrieval_mode": "lexical", "lexical_pool_k": 24,
     "selection_split": "dev100",
