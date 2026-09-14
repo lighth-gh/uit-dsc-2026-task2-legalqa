@@ -50,7 +50,7 @@ def benchmark(database, questions, settings, baseline="bm25-cache"):
                 'phrase_cache_bytes':getattr(engines[1],'_phrase_bytes',0),'records':rows}
     finally:
         for engine in engines:
-            engine.con.close()
+            engine.close()
 
 
 def main():

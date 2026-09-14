@@ -132,5 +132,5 @@ class PhrasePreciseTests(unittest.TestCase):
                     with self.assertRaisesRegex(sqlite3.OperationalError,'test worker error'):
                         engine._phrase_contributions(['thuế thu nhập','missing phrase a','missing phrase b'])
             finally:
-                con.close()
+                engine.close()
             self.assertEqual(file_hash(database),original_hash)

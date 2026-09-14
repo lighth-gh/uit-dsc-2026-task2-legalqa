@@ -87,7 +87,8 @@ Chưa chạy QLoRA thực tế trên hai T4 trong môi trường sửa code này
 - `phrase_cache_mb=64` giữ tối đa 64 MiB postings của các nhóm phrase, giới hạn
   thêm 4.096 key. Cache riêng này không loại bỏ hay thay thứ tự cache BM25 từng từ.
   SQLite dùng page cache tối đa khoảng 64 MiB ở kết nối chính và 32 MiB mỗi worker.
-  Mảng trung gian của truy vấn cần thêm RAM; kết nối worker đóng sau mỗi truy vấn.
+  Mảng trung gian của truy vấn cần thêm RAM. Bản mới tái sử dụng kết nối worker
+  và bật memory mapping; xem [cập nhật I/O phrase](phrase_io.md).
   Với SQLite trong RAM hoặc chỉ một nhóm cache miss, dùng kết nối hiện có.
 
 Benchmark cuối trên **100 câu, 27.343 đoạn, SQLite file 57.704.448 byte**, tính cả

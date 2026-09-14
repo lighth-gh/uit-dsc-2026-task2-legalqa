@@ -206,6 +206,13 @@ def build_index(c, corpus_path, root, output, device):
 
 
 class Retriever:
+    def close(self):
+        readers = getattr(self, '_phrase_readers', None)
+        if readers is not None:
+            readers.close()
+            self._phrase_readers = None
+        self.con.close()
+
     def __init__(self, c, index_dir, load_dense=True):
         self.c = c
         self.out = Path(index_dir)
@@ -359,9 +366,21 @@ class Retriever:
                 con.close()
 
         computed = {}
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            for batch in pool.map(read_batch, [missing[i::workers] for i in range(workers)]):
+        batches = [missing[i::workers] for i in range(workers)]
+        if self.c['retrieval'].get('phrase_reuse_readers', True):
+            if getattr(self, '_phrase_readers', None) is None:
+                from .phrase_sqlite import PhraseReaders
+                self._phrase_readers = PhraseReaders(database, workers,
+                    self.c['retrieval'].get('phrase_mmap_mb', 1024))
+                print(f'Phrase SQLite: reusable_readers={workers}, '
+                      f'mmap_bytes={self._phrase_readers.mmap_bytes}', flush=True)
+            for batch in self._phrase_readers.read(batches, self._read_phrase_scores):
                 computed.update(batch)
+        else:
+            # Exact pre-optimization path, retained for A/B verification.
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for batch in pool.map(read_batch, batches):
+                    computed.update(batch)
         result = []
         for phrase in phrases:
             postings = cache.pop(phrase, None)
@@ -556,37 +575,39 @@ def retrieve(c, questions_path, root, index_dir, output, device, mode="full"):
     journal = Journal(output.with_suffix(".checkpoint.jsonl"),identity)
     records = journal.records
     keys = [k for k in questions if k not in records]
-    if keys and mode == "full":
-        import numpy as np
-        encoder = Encoder(root, device)
-        start = time.perf_counter()
-        query_vectors = encoder.encode([questions[k]["question"] for k in keys], kind="query",
-                                       batch_size=c["retrieval"]["embedding_batch"])
-        # Batched search amortizes the corpus scan. -1 padding is filtered for small corpora.
-        _, neighbours = engine.index.search(np.ascontiguousarray(query_vectors),
-                                             min(c["retrieval"]["dense_k"], engine.index.ntotal))
-        dense_seconds = (time.perf_counter()-start)/len(keys)
-        release(encoder)
-        reranker = Reranker(root, device, c["retrieval"]["reranker_batch"], c["retrieval"]["reranker_max_tokens"])
-        for position,key in enumerate(keys):
-            if should_pause(position):
-                break
-            ids = [int(x) for x in neighbours[position] if x >= 0]
-            record = engine.retrieve_one(questions[key]["question"], ids, reranker)
-            record["seconds"]["dense_amortized"] = dense_seconds
-            journal.append(key,record)
-            if (position+1) % 10 == 0 or position+1 == len(keys):
-                print(f"Retrieved: {len(records)}/{len(questions)}", flush=True)
-        release(reranker)
-    elif keys:
-        for position,key in enumerate(keys):
-            if should_pause(position):
-                break
-            record = engine.retrieve_one_lexical(questions[key]["question"])
-            journal.append(key,record)
-            if (position+1) % 10 == 0 or position == 0 or position+1 == len(keys):
-                print(f"Retrieved lexical: {len(records)}/{len(questions)}; seconds={record['seconds']}",flush=True)
-    engine.con.close()
+    try:
+        if keys and mode == "full":
+            import numpy as np
+            encoder = Encoder(root, device)
+            start = time.perf_counter()
+            query_vectors = encoder.encode([questions[k]["question"] for k in keys], kind="query",
+                                           batch_size=c["retrieval"]["embedding_batch"])
+            # Batched search amortizes the corpus scan. -1 padding is filtered for small corpora.
+            _, neighbours = engine.index.search(np.ascontiguousarray(query_vectors),
+                                                 min(c["retrieval"]["dense_k"], engine.index.ntotal))
+            dense_seconds = (time.perf_counter()-start)/len(keys)
+            release(encoder)
+            reranker = Reranker(root, device, c["retrieval"]["reranker_batch"], c["retrieval"]["reranker_max_tokens"])
+            for position,key in enumerate(keys):
+                if should_pause(position):
+                    break
+                ids = [int(x) for x in neighbours[position] if x >= 0]
+                record = engine.retrieve_one(questions[key]["question"], ids, reranker)
+                record["seconds"]["dense_amortized"] = dense_seconds
+                journal.append(key,record)
+                if (position+1) % 10 == 0 or position+1 == len(keys):
+                    print(f"Retrieved: {len(records)}/{len(questions)}", flush=True)
+            release(reranker)
+        elif keys:
+            for position,key in enumerate(keys):
+                if should_pause(position):
+                    break
+                record = engine.retrieve_one_lexical(questions[key]["question"])
+                journal.append(key,record)
+                if (position+1) % 10 == 0 or position == 0 or position+1 == len(keys):
+                    print(f"Retrieved lexical: {len(records)}/{len(questions)}; seconds={record['seconds']}",flush=True)
+    finally:
+        engine.close()
     if set(records) < set(questions):
         return {"status":"paused", "records":len(records), "total":len(questions)}
     if set(records) != set(questions):
