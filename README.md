@@ -37,7 +37,7 @@ Ba notebook mặc định dùng `USE_REPO_DATA = False` và đường dẫn `/ka
 | 4 Chia tập và khóa mô hình | Tạo train/dev/holdout, dùng model lock Version 3 | `parameter_audit.json` dưới 4B |
 | 5 Xác nhận chỉ mục | Kiểm tra SQLite/FAISS Version 3 | Đúng 8.507 tài liệu và 407.107 chunks |
 | 6 Smoke 30 câu | Truy xuất, sinh chưa SFT và chấm đúng BTC | Xem trực tiếp đáp án và audit |
-| 7 Baseline và truy xuất tập phát triển | Baseline dev100; chọn 768 QA và tạo lexical retrieval cho train | Báo cáo baseline và cache train không dùng answer để truy xuất |
+| 7 Baseline và truy xuất tập phát triển | Baseline dev100; dùng toàn bộ 5.600 QA của split train và tạo lexical retrieval | Báo cáo baseline và cache train không dùng answer để truy xuất |
 | 8 Fine tune | Bắt buộc QLoRA hai epoch | `training_result.json`, `training_data_report.json`, checkpoint mỗi epoch |
 | 9 Chọn checkpoint trên dev100 | Sinh từ từng checkpoint và so với baseline | Chọn METEOR cao nhất; ROUGE-L chỉ phá hòa |
 | 10 Holdout | Đánh giá một lần trên tập đã giữ riêng | Kiểm tra khả năng tổng quát |
@@ -62,11 +62,19 @@ Sau **Save & Run All**, xem `STATUS` và `stageN_manifest.json`:
 - `complete`: mới chuyển sang notebook kế tiếp; `UPSTREAM_OUTPUT` là output hoàn tất của stage trước.
 - `failed`: xem lỗi và diagnostics, không coi là hoàn tất. Không sửa config/hash để ép dùng lại artifact.
 
+Để Stage 1 tự chạy qua nhiều phiên mà không phải bấm Save/Add Input, chạy controller **trên máy ngoài Kaggle** (máy cần giữ chạy, hoặc chạy lại cùng lệnh sau khi máy nghỉ). Cài `python -m pip install kaggle`, đăng nhập một lần bằng `kaggle auth login`, rồi đẩy commit cấu hình/notebook hiện tại lên GitHub trước khi chạy:
+
+```bash
+python scripts/auto_stage1.py --owner TEN_TAI_KHOAN_KAGGLE
+```
+
+Controller tạo một notebook Kaggle riêng tư cho mỗi phiên với GPU T4, tự gắn hai dataset đầu vào và output Stage 1 vừa hoàn tất của phiên trước. Mỗi phiên Kaggle tự lưu **toàn bộ `/kaggle/working`** trong notebook version; controller chỉ tải manifest nhỏ về để xem `paused`/`complete`, không tải checkpoint về máy. Trạng thái controller nằm ở `runs/auto_stage1/state.json`; chạy lại đúng lệnh để tiếp tục theo dõi nếu controller bị ngắt. Nếu dataset không thuộc `lighth`, truyền `--dataset-source owner/ver3-smoke-output --dataset-source owner/uit-dsc-2026-task2-legalqa-train`. Khi `complete`, gắn output notebook được in ra vào Stage 2. Runner dừng khi Kaggle báo lỗi hoặc không có manifest hợp lệ, thay vì tự khởi động lượt mới từ dữ liệu thiếu.
+
 `None` tự tìm đúng một manifest trong `/kaggle/input`; khi gắn nhiều version, điền ROOT cụ thể hoặc bỏ các input cũ. Tiếp tục gắn `ver3-smoke-output` để đọc model/index, và dataset train cho Stage 1. Snapshot tích lũy đã mang dữ liệu/chia tập nên Stage 2/3 không chia lại. Các phiên sau khóa đúng Git SHA từ input thay vì tự cập nhật `main`; luôn push toàn bộ thay đổi Python và notebook lên GitHub **trước phiên Stage 1 đầu tiên**.
 
-QLoRA lưu resume mỗi 10 optimizer steps, gồm optimizer/scheduler/scaler/RNG; adapter hoàn tất mỗi epoch được giữ riêng, không mất do xoay checkpoint. Retrieval và generation ghi journal từng câu. Hash file, config, model lock, index và adapter được kiểm tra khi bàn giao. Nếu bị dừng cưỡng bức giữa một câu hoặc giữa hai checkpoint thì phần đang xử lý phải chạy lại. Mỗi stage xuất `legalqa_main_stageN_v8_diagnostics.zip` cả khi `paused`; giữ **toàn bộ thư mục output**, không chỉ ZIP diagnostics, để resume vì ZIP không chứa weights.
+QLoRA lưu resume mỗi 10 optimizer steps, gồm optimizer/scheduler/scaler/RNG; adapter hoàn tất mỗi epoch được giữ riêng, không mất do xoay checkpoint. Retrieval và generation ghi journal từng câu. Hash file, config, model lock, index và adapter được kiểm tra khi bàn giao. Nếu bị dừng cưỡng bức giữa một câu hoặc giữa hai checkpoint thì phần đang xử lý phải chạy lại. Mỗi stage xuất `legalqa_main_stageN_v8_diagnostics.zip` cả khi `paused`; giữ **toàn bộ thư mục output**, không chỉ ZIP diagnostics, để resume vì ZIP không chứa weights. Khi chuyển từ 768 sang toàn bộ split train, bắt đầu Stage 1 mới; checkpoint 768 QA không khớp fingerprint để resume.
 
-Muốn tận dụng QLoRA từ main-run cũ, dùng Stage 1 mới với `LEGACY_INPUT_ROOT` trỏ tới `legalqa_quality_v8_full`. Chỉ nhận run đã hoàn tất đủ hai epoch, còn checkpoint epoch 1/2, và khớp config/model/index/split; giữ nguyên provenance training cũ. Không nhập lại cache/evaluation/submission cũ: chúng cần chạy lại với code sửa lỗi. Không đặt đồng thời legacy input và `PREVIOUS_OUTPUT`. Nếu bị ngắt trong lúc nhập legacy, phiên sau đặt `PREVIOUS_OUTPUT`, để `LEGACY_INPUT_ROOT = None` nhưng vẫn gắn nguồn legacy ở cùng đường dẫn: notebook tự nhận phần nhập còn dở, không tự train thay thế.
+Chỉ có thể nhập QLoRA cũ bằng `LEGACY_INPUT_ROOT` nếu run đó đã hoàn tất đủ hai epoch, còn checkpoint epoch 1/2 và khớp config/model/index/split. Run giới hạn 768 QA không khớp cấu hình toàn bộ split train hiện tại, nên không dùng legacy import cho lượt 5.600 QA.
 
 Notebook dùng một GPU cho mỗi subprocess; đặc biệt QLoRA chỉ thấy GPU 0. Nếu có hai T4, không mặc định coi chúng là một GPU có VRAM cộng gộp. Retrieval hoàn tất và nhả model trước khi generation bắt đầu. Chưa có benchmark tốc độ/VRAM thực tế của cấu hình này.
 
