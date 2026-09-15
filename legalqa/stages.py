@@ -372,6 +372,10 @@ class Stage:
         questions = self.data/"train.sft.questions.json"
         cache = self.root/"train.sft.lexical.retrieval.json"
         prepare_training_subset(self.c,self.data/"train.json",train)
+        if not cache.exists() and self.o.get('retrieval_input'):
+            from .retrieval_import import import_training_retrieval
+            import_training_retrieval(self.o['retrieval_input'], cache, load_questions(questions),
+                                      self.c, self.lock, self.index_hash)
         if not cache.exists():
             self.command("retrieve", "--questions", questions,"--index",self.index,"--output",cache,"--mode","lexical")
         if not cache.exists() or should_pause():

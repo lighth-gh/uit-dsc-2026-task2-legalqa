@@ -1,3 +1,4 @@
+import gc
 import math
 import os
 from pathlib import Path
@@ -7,6 +8,7 @@ from .models import audit_models, load_generator, model_lock
 from .prompts import pack_prompt
 from .retrieval import read_retrieval
 from .runtime import should_pause
+from .training_memory import compact_samples, enable_fused_loss, padded_batch
 
 
 def select_training_questions(questions, c):
@@ -117,8 +119,14 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
     if rank == 0:
         write_json(output/"training_manifest.json",manifest)
         write_json(output/"training_data_report.json",report)
+    # Each DDP worker otherwise retains the entire retrieval JSON and Python
+    # token lists throughout training. Neither is needed by the optimizer.
+    del records, questions
+    compact_samples(samples)
+    gc.collect()
     model = prepare_model_for_kbit_training(model,use_gradient_checkpointing=True,
                                             gradient_checkpointing_kwargs={"use_reentrant":False})
+    enable_fused_loss(model)
     model = get_peft_model(model,LoraConfig(task_type=TaskType.CAUSAL_LM,r=t["lora_rank"],lora_alpha=t["lora_alpha"],
                     lora_dropout=t["lora_dropout"],target_modules=t["target_modules"],bias="none"))
     model.config.use_cache=False
@@ -128,11 +136,7 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
         raise ValueError("Actual trainable LoRA size differs from the audited architecture")
 
     def collate(batch):
-        length = max(len(row["input_ids"]) for row in batch)
-        values = {}
-        for key,pad in [("input_ids",tokenizer.pad_token_id),("attention_mask",0),("labels",-100)]:
-            values[key] = torch.tensor([row[key]+[pad]*(length-len(row[key])) for row in batch],dtype=torch.long)
-        return values
+        return {key:torch.from_numpy(value) for key,value in padded_batch(batch,tokenizer.pad_token_id).items()}
 
     bounded = bool(os.environ.get("LEGALQA_DEADLINE"))
 

@@ -61,7 +61,7 @@ class StageTests(unittest.TestCase):
             block=code[:code.index('class BudgetPause')]
             ns={'WORK_HOURS':9,'SESSION_STARTED':0,'STAGE':2,'INPUT':root,
                 'PREVIOUS_OUTPUT':None,'UPSTREAM_OUTPUT':root,'LEGACY_INPUT_ROOT':None,
-                'REPO_REVISION':None,'Path':Path,'json':json}
+                'REPO_REVISION':None,'RETRIEVAL_INPUT':None,'Path':Path,'json':json}
             exec(block,ns)
             self.assertEqual(ns['PIN'],'a'*40)
             ns['WORK_HOURS']=12
