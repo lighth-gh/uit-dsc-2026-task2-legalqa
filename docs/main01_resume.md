@@ -16,8 +16,14 @@ prompt, target, LoRA, batch hiệu dụng hoặc schema submission.
    Để `INPUT_MODE='auto'`, `PREVIOUS_OUTPUT=None`, `RETRIEVAL_INPUT=None`.
    Nếu snapshot đã có split, không cần gắn lại dataset gốc. Input chỉ đọc;
    artifact được kiểm tra và copy sang `/kaggle/working` để tiếp tục ghi.
-5. Nhiều output/index/dataset phù hợp: notebook in danh sách và dừng, chỉ định
-   ROOT muốn dùng. Không tự chọn bản mới nhất bằng tên file hoặc mtime.
+5. Bộ dò resume bỏ qua manifest thiếu artifact trong inventory (ví dụ diagnostics
+   đã giải nén thiếu trọng số/optimizer). Nhiều output đầy đủ: ưu tiên nguồn trong
+   `PREFERRED_PREVIOUS_NOTEBOOK`, mặc định `lighth/legalqa-main-01-qlora-train`
+   theo notebook đã chọn. Đặt `None` để tắt ưu tiên. `PREVIOUS_OUTPUT` cụ thể luôn
+   thắng ưu tiên này và không quét nhầm diagnostics bên dưới ROOT đó.
+   Nếu vẫn có nhiều output, hoặc nhiều index/dataset, notebook dừng để chọn ROOT.
+   Không tự chọn bản mới nhất bằng tên file hoặc mtime. SHA256 vẫn được kiểm tra
+   đầy đủ khi restore; bước dò chỉ kiểm tra cấu trúc, sự tồn tại và kích thước.
 
 | INPUT_MODE | Hành vi |
 |---|---|
@@ -48,6 +54,45 @@ với commit cũ. Không tự thay loss/training code của optimizer cũ. Code 
 1 GPU bị chặn; chuyển sang `retrieval` sẽ giữ kết quả BM25 nhưng train lại với
 2 GPU, không phải resume optimizer cũ. Import cache khác commit chỉ chấp nhận
 các source hash đã audit và toàn bộ dependency retrieval còn khớp.
+
+### Lỗi resume trong log (12): bitsandbytes CUDA prefetch
+
+Log mới xác nhận chọn đúng output, khóa commit `6e1eb19`, tái sử dụng retrieval
+và gọi `fit --resume .../checkpoint-1218` với hai rank T4. Sau đó bitsandbytes
+thoát ở `/src/csrc/pythonInterface.cpp:400`. Trong
+[bitsandbytes 0.45.5](https://github.com/bitsandbytes-foundation/bitsandbytes/blob/0.45.5/csrc/pythonInterface.cpp#L393-L401),
+dòng này là `cudaMemPrefetchAsync`, không phải thông báo hết RAM.
+
+Nguyên nhân phù hợp với đường chạy resume: tensor optimizer được deserialize
+có thể giữ thuộc tính `is_paged`/`page_deviceid`, trong khi bộ nhớ mới là tensor
+CUDA thông thường. Hàm
+[load_state_dict](https://github.com/bitsandbytes-foundation/bitsandbytes/blob/0.45.5/bitsandbytes/optim/optimizer.py)
+không tái tạo allocation managed cho các tensor này; bước optimizer tiếp theo
+vẫn thử prefetch theo cờ đã lưu. Chưa kiểm chứng nguyên nhân trên checkpoint
+thực tế ở máy sửa code vì không có CUDA/checkpoint tải về.
+
+Notebook mới nhúng `scripts/bnb_resume_compat.py` thành `sitecustomize.py` riêng
+trong `/kaggle/working/legalqa_bnb_resume_runtime`. Chỉ worker torchrun cài hook,
+đúng bitsandbytes 0.45.5. Sau khi loader gốc kiểm tra/nạp optimizer, hook copy
+tensor còn cờ paged sang bộ nhớ CUDA thông thường ở GPU của parameter, giữ dtype,
+shape và giá trị; bỏ cờ paged lỗi. Moment 8-bit, quantization metadata, step,
+learning rate, scheduler, scaler và RNG không bị khởi tạo lại. State mới chưa
+từng được lưu vẫn do allocator gốc tạo. State phục hồi sẽ ở VRAM thay cho paging;
+số tensor/byte và GPU của từng rank được ghi trong log và
+`runtime_compat/bnb_resume_rank*.json`, kèm hash mã hook.
+
+Hook nằm ngoài package `legalqa` nên áp dụng được ngay cả khi notebook khóa
+commit cũ, không đổi code/config hash của checkpoint hoặc cache. Để sửa lỗi
+này, import lại **notebook mới** vào Kaggle, giữ output cũ và `INPUT_MODE='auto'`
+(hoặc `resume`); không cần bỏ checkpoint hay chuyển sang train mới.
+
+Trước khi nạp model lớn, notebook chạy `scripts/check_bnb_resume.py` trên hai GPU:
+optimizer paged nhỏ thực hiện một bước, save/load lên GPU như Trainer, thực hiện
+bước tiếp theo và so cả parameter lẫn state với nhánh chạy liên tục. Cần thấy
+`BNB_RESUME_SMOKE_OK` cho rank 0 và rank 1. Nếu kiểm tra CUDA này thất bại,
+notebook dừng sớm. Đây là kiểm tra optimizer nhỏ; vẫn cần xác nhận lượt train thật
+vượt step 1218. Kiểm thử CPU chỉ xác nhận routing, dữ liệu state và hook, không
+thay thế kiểm tra CUDA.
 
 ## RAM và hai GPU
 

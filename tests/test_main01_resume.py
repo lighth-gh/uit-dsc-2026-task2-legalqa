@@ -40,7 +40,8 @@ class Main01ResumeTests(unittest.TestCase):
         ns = dict(Path=Path, json=json, WORK_HOURS=9, SESSION_STARTED=0, INPUT=self.input,
                   STAGE=1, INPUT_MODE='auto', PREVIOUS_OUTPUT=None, UPSTREAM_OUTPUT=None,
                   LEGACY_INPUT_ROOT=None, RETRIEVAL_INPUT=None, VERSION3_ROOT=None,
-                  DATASET_ROOT=None, REPO_REVISION=None)
+                  DATASET_ROOT=None, REPO_REVISION=None,
+                  PREFERRED_PREVIOUS_NOTEBOOK='lighth/legalqa-main-01-qlora-train')
         ns.update(extra)
         exec(self.setup[:self.setup.index('def available_ram_mb')], ns)
         return ns
@@ -50,6 +51,19 @@ class Main01ResumeTests(unittest.TestCase):
         write_json(data/'train.json', {'train':'fixture'})
         write_json(data/'public-official.json', {'public':'fixture'})
         return data
+
+    def snapshot(self, root, commit='a'*40):
+        write_json(root/'config.json', self.c)
+        write_json(root/'session.json', {'code_commit':commit, 'source_hash':'fixture'})
+        write_json(root/'models.lock.json', self.lock)
+        write_json(root/'data/split_manifest.json', {})
+        write_json(root/'sft/training_manifest.json', {})
+        (root/'sft/optimizer.pt').write_bytes(b'optimizer fixture')
+        files = {p.relative_to(root).as_posix(): {'size':p.stat().st_size, 'sha256':file_hash(p)}
+                 for p in root.rglob('*') if p.is_file() and p.name != 'stage1_manifest.json'}
+        write_json(root/'stage1_manifest.json', {'schema':2, 'stage':1, 'status':'paused',
+                   'code_commit':commit, 'source_hash':'fixture', 'files':files})
+        return root
 
     def test_discovery_new_run_and_missing_or_ambiguous_files(self):
         with self.assertRaisesRegex(FileNotFoundError, 'dataset BTC'):
@@ -66,8 +80,7 @@ class Main01ResumeTests(unittest.TestCase):
 
     def test_discovery_resume_without_original_dataset_pins_commit(self):
         previous = self.input/'notebook-output'/'nested'/'run'
-        write_json(previous/'stage1_manifest.json', {'schema':2, 'code_commit':'a'*40})
-        write_json(previous/'data/split_manifest.json', {})
+        self.snapshot(previous)
         for extra in ({}, {'PREVIOUS_OUTPUT':previous.parent}, {'INPUT_MODE':'resume'}):
             ns = self.discover(**extra)
             self.assertEqual(ns['PREVIOUS_OUTPUT'], previous)
@@ -76,8 +89,38 @@ class Main01ResumeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'commit'):
             self.discover(REPO_REVISION='main')
         other = self.input/'different-output'
-        write_json(other/'stage1_manifest.json', {'schema':2, 'code_commit':'b'*40})
+        self.snapshot(other, 'b'*40)
         with self.assertRaisesRegex(RuntimeError, 'Stage 1'):
+            self.discover()
+
+    def test_logged_three_candidates_skip_diagnostics_and_prefer_selected_notebook(self):
+        dataset = self.snapshot(self.input/'datasets/vphmhunhlong/legalqa-main-01-first-run/legalqa_main_stage1_v8')
+        diagnostics = dataset/'legalqa_main_stage1_v8_diagnostics'
+        # Diagnostics contains the same manifest and JSONs, but no optimizer bytes.
+        manifest = read_json(dataset/'stage1_manifest.json')
+        for name in [*manifest['files'], 'stage1_manifest.json']:
+            if name.endswith('.json'):
+                target = diagnostics/name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(dataset/name, target)
+        notebook = self.snapshot(self.input/'notebooks/lighth/legalqa-main-01-qlora-train/legalqa_main_stage1_v8', 'b'*40)
+        found = self.discover()
+        self.assertEqual(found['PREVIOUS_OUTPUT'], notebook)
+        self.assertEqual(found['PIN'], 'b'*40)
+        # A direct ROOT wins even with nested diagnostics and a different preference.
+        self.assertEqual(self.discover(PREVIOUS_OUTPUT=dataset)['PREVIOUS_OUTPUT'], dataset)
+        self.assertEqual(self.discover(PREVIOUS_OUTPUT=dataset/'stage1_manifest.json')['PREVIOUS_OUTPUT'], dataset)
+        # The dataset mount can also be resolved without matching its diagnostics.
+        self.assertEqual(self.discover(PREVIOUS_OUTPUT=dataset.parent)['PREVIOUS_OUTPUT'], dataset)
+        with self.assertRaisesRegex(ValueError, 'không đủ để resume'):
+            self.discover(PREVIOUS_OUTPUT=diagnostics)
+        with self.assertRaisesRegex(RuntimeError, 'Stage 1'):
+            self.discover(PREFERRED_PREVIOUS_NOTEBOOK=None)
+
+    def test_incomplete_output_never_silently_starts_fresh(self):
+        incomplete = self.snapshot(self.input/'incomplete')
+        (incomplete/'sft/optimizer.pt').write_bytes(b'')
+        with self.assertRaisesRegex(ValueError, 'không có output đủ để resume'):
             self.discover()
 
     def test_zip_cache_discovery_and_explicit_fresh_ignores_old_output(self):

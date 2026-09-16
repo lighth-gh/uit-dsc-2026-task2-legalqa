@@ -100,12 +100,13 @@ class RetrievalImportTests(unittest.TestCase):
         setup = next(''.join(cell['source']) for cell in nb['cells'] if cell.get('id') == 's1c3')
         prefix = setup[:setup.index('# The old dataset mount')]
         ns = dict(Path=Path, json=json, INPUT_MODE='auto', WORK_HOURS=9, SESSION_STARTED=0, INPUT=self.root, STAGE=1,
-                  RETRIEVAL_INPUT=self.source, PREVIOUS_OUTPUT=None, UPSTREAM_OUTPUT=None, LEGACY_INPUT_ROOT=None)
+                  RETRIEVAL_INPUT=self.source, PREVIOUS_OUTPUT=None, UPSTREAM_OUTPUT=None, LEGACY_INPUT_ROOT=None,
+                  PREFERRED_PREVIOUS_NOTEBOOK=None)
         exec(prefix, ns)
         self.assertIsNone(ns['PREVIOUS_OUTPUT'])
         ns['RETRIEVAL_INPUT'] = None
-        exec(prefix, ns)
-        self.assertEqual(ns['PREVIOUS_OUTPUT'], self.source)
+        with self.assertRaisesRegex(ValueError, 'không có output đủ để resume'):
+            exec(prefix, ns)
 
     def test_stage_imports_cache_then_launches_fit_without_retrieval(self):
         from legalqa.stages import Stage
