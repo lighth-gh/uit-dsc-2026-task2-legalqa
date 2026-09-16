@@ -20,7 +20,8 @@ def build():
         for path in sorted(paths):
             info = ZipInfo(path.relative_to(ROOT).as_posix(), date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = ZIP_DEFLATED
-            archive.writestr(info, path.read_bytes())
+            data = path.read_bytes().replace(b"\r\n", b"\n")
+            archive.writestr(info, data)
     payload = buffer.getvalue()
     cells = []
 

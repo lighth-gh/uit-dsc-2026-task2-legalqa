@@ -13,8 +13,12 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 from .io import ROOT, _unique_pairs, digest, file_hash, read_json, validate_predictions, write_json
 
 
-POLICY = {"version": 1, "min_chars": 60, "min_words": 8,
-          "min_repeats": 3, "max_block_units": 12}
+POLICY = {"version": 2, "min_chars": 60, "min_words": 8,
+          "min_repeats": 3, "max_block_units": 12,
+          "min_chars_2rep": 100, "min_words_2rep": 15,
+          "allow_2_repeats_for_large_blocks": True,
+          "clean_dangling_colons": True,
+          "keep_single_lead_in_on_blocked": True}
 PUBLIC = "submissions/public/submission"
 
 
@@ -163,25 +167,40 @@ def repetition_ratio(text):
     return (len(lines) - len(set(lines))) / len(lines) if lines else 0.0
 
 
-def _collapse(text, sentence_mode, policy):
-    pattern = r"\S[\s\S]*?(?:[.!?](?=\s|$)|$)" if sentence_mode else r"[^\r\n]+"
+def _collapse(text, mode, policy):
+    if mode is True or mode == "sentence":
+        pattern = r"\S[\s\S]*?(?:[.!?](?=\s|$)|$)"
+        unit_name = "sentence"
+    elif mode == "clause":
+        pattern = r"\S[\s\S]*?(?:[.!?;](?=\s|$)|$)"
+        unit_name = "clause"
+    else:
+        pattern = r"[^\r\n]+"
+        unit_name = "line"
     units = [(m.start(), m.end(), m.group().strip()) for m in re.finditer(pattern, text)
              if m.group().strip()]
     deletions, i = [], 0
+    eff_min_rep = 2 if policy.get("allow_2_repeats_for_large_blocks") else policy["min_repeats"]
     while i < len(units):
         matched = False
-        for width in range(1, min(policy["max_block_units"], (len(units) - i) // policy["min_repeats"]) + 1):
+        max_width = min(policy["max_block_units"], (len(units) - i) // eff_min_rep)
+        for width in range(1, max_width + 1):
             block = [u[2] for u in units[i:i + width]]
             joined = " ".join(block)
-            if len(joined) < policy["min_chars"] or len(joined.split()) < policy["min_words"]:
+            wc = len(joined.split())
+            cc = len(joined)
+            if cc < policy["min_chars"] or wc < policy["min_words"]:
                 continue
             end = i + width
             while end + width <= len(units) and [u[2] for u in units[end:end + width]] == block:
                 end += width
             repeats = (end - i) // width
-            if repeats >= policy["min_repeats"]:
+            req_repeats = policy["min_repeats"]
+            if policy.get("allow_2_repeats_for_large_blocks") and cc >= policy.get("min_chars_2rep", 100) and wc >= policy.get("min_words_2rep", 15):
+                req_repeats = 2
+            if repeats >= req_repeats:
                 deletions.append({"start": units[i + width - 1][1], "end": units[end - 1][1],
-                                  "repeats": repeats, "unit": "sentence" if sentence_mode else "line",
+                                  "repeats": repeats, "unit": unit_name,
                                   "block_units": width})
                 i, matched = end, True
                 break
@@ -194,16 +213,42 @@ def _collapse(text, sentence_mode, policy):
 
 
 def deduplicate_answer(text, policy=None):
-    """Only identical adjacent blocks (>=3 copies); never fuzzy-match legal clauses."""
+    """Only identical adjacent blocks (>=3 copies, or >=2 copies for blocks >=100 chars); never fuzzy-match legal clauses."""
     policy = dict(POLICY if policy is None else policy)
     _require(policy["min_repeats"] >= 3 and policy["min_chars"] >= 60
              and policy["min_words"] >= 8 and policy["max_block_units"] >= 1,
              "Unsafe repetition policy")
     result, changes = text, []
-    for sentence_mode in (False, True):
-        result, removed = _collapse(result, sentence_mode, policy)
+    for mode in ("line", "sentence", "clause"):
+        result, removed = _collapse(result, mode, policy)
         changes.extend(removed)
     return result, changes
+
+
+def clean_dangling_tail(text):
+    """Strip trailing dangling colons / headers from truncated long answers."""
+    stripped = text.rstrip()
+    if not stripped.endswith(":"):
+        return text, False
+    lines = [l.rstrip() for l in stripped.splitlines()]
+    changed = False
+    while len(lines) >= 2 and lines[-1].endswith(":"):
+        prev_lines = lines[:-1]
+        prev_text = "\n".join(prev_lines).rstrip()
+        words_prev = len(prev_text.split())
+        if words_prev >= 15 and len(lines[-1].strip()) <= 250:
+            lines = prev_lines
+            changed = True
+        else:
+            break
+    if changed:
+        result = "\n".join(lines).rstrip()
+        result = re.sub(r"[\s,:;]+$", "", result)
+        if result and not result.endswith((".", "!", "?")):
+            result += "."
+        return result, True
+    result = re.sub(r"[\s,:;]+$", "", stripped) + "."
+    return result, True
 
 
 def _incomplete(text):
@@ -214,10 +259,16 @@ def _incomplete(text):
 def repair_predictions(predictions, audit, policy=None):
     """No references, model calls or raw rejected generations enter this function."""
     _require(set(predictions) == set(audit), "Repair/audit ID mismatch")
+    policy = dict(POLICY if policy is None else policy)
     candidate, records, unresolved = {}, {}, {}
     for key, value in predictions.items():
         before, row = value["answer"], audit[key]
         proposed, changes = deduplicate_answer(before, policy)
+        if policy.get("clean_dangling_colons", True):
+            proposed, tail_cleaned = clean_dangling_tail(proposed)
+            if tail_cleaned:
+                changes.append({"start": len(proposed), "end": len(before),
+                                "repeats": 1, "unit": "tail_clean", "block_units": 1})
         reasons = []
         ratio = repetition_ratio(before)
         if ratio >= .25:
@@ -235,7 +286,13 @@ def repair_predictions(predictions, audit, policy=None):
             blocked.append("dedup_leaves_unfinished_answer")
         if changes and len(proposed) < .2 * len(before) and len(proposed.split()) < 40:
             blocked.append("dedup_leaves_too_little_content")
-        after = before if blocked else proposed
+        if blocked:
+            if policy.get("keep_single_lead_in_on_blocked", True) and (_incomplete(before) or repetition_ratio(before) >= 0.5):
+                after = proposed
+            else:
+                after = before
+        else:
+            after = proposed
         candidate[key] = {"answer": after}
         remaining = list(blocked)
         if repetition_ratio(after) >= .25:

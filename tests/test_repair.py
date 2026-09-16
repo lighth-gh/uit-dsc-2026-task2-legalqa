@@ -102,9 +102,27 @@ class RepairTests(unittest.TestCase):
         lead = "Căn cứ theo khoản 8 Điều 3 Quyết định 909/QĐ-BNV năm 2016 quy định như sau:"
         before = {"a": {"answer": "\n".join([lead] * 45)}}
         result, audit, queue = repair_predictions(before, {"a": audit_row(hit_token_limit=True)})
-        self.assertEqual(result, before)
+        self.assertEqual(result, {"a": {"answer": lead.rstrip(":") + "."}})
         self.assertIn("dedup_leaves_unfinished_answer", audit["a"]["blocked"])
         self.assertFalse(queue["a"]["regenerate_automatically"])
+
+    def test_two_repeats_large_block_deduplication(self):
+        long_block = CLAUSE + " " + DETAIL
+        result, changes = deduplicate_answer(long_block + "\n" + long_block)
+        self.assertEqual(result, long_block)
+        self.assertTrue(changes)
+
+    def test_semicolon_clause_deduplication(self):
+        semi_block = "Khoản a quy định người lao động được nghỉ phép hàng năm; Khoản b quy định người sử dụng lao động phải thanh toán tiền lương;"
+        result, changes = deduplicate_answer(semi_block + " " + semi_block + " " + semi_block)
+        self.assertEqual(result.strip(), semi_block.strip())
+        self.assertTrue(changes)
+
+    def test_dangling_tail_cleaned(self):
+        long_answer = (CLAUSE + "\n") * 3 + "Năng lực chuyên môn:"
+        result, audit, _ = repair_predictions({"a": {"answer": long_answer}}, {"a": audit_row()})
+        self.assertFalse(result["a"]["answer"].endswith(":"))
+        self.assertTrue(result["a"]["answer"].endswith("."))
 
     def test_token_limit_does_not_force_edit_or_restore_raw(self):
         before = {"a": {"answer": DETAIL}, "b": {"answer": CLAUSE}}
@@ -227,7 +245,7 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(payload).hexdigest(), namespace["BUNDLE_SHA256"])
         with ZipFile(io.BytesIO(payload)) as z:
             for name in z.namelist():
-                self.assertEqual(z.read(name), (ROOT / name).read_bytes())
+                self.assertEqual(z.read(name), (ROOT / name).read_bytes().replace(b"\r\n", b"\n"))
 
 
 if __name__ == "__main__":
