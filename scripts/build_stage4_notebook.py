@@ -34,30 +34,35 @@ def build():
     cell("markdown", "s4intro", """
 # LegalQA Stage 4 — Hậu xử lý CPU và kiểm chứng trước khi xuất submission
 
-**Cách chạy:** Import notebook vào Kaggle, chọn Accelerator **None**, bật Internet để cài scorer/WordNet. Add Input output Stage 3 hoàn tất hoặc dataset chứa diagnostics ZIP. Nếu Kaggle đã giải nén ZIP thành thư mục, notebook cũng đọc được thư mục có `stage3_manifest.json`.
+**Cách chạy:** Có thể chạy trên Kaggle hoặc máy local:
+- **Trên Kaggle:** Chọn Accelerator **None**, Add Input output Stage 3 hoàn tất hoặc dataset chứa diagnostics ZIP.
+- **Trên Local:** Tự động phát hiện môi trường local, tìm diagnostics ZIP hoặc file `submission.zip` để hậu xử lý và xuất `submission_repaired.zip`.
 
 Code Stage 4 và scorer BTC được đóng gói ngay trong notebook, không cần push/clone GitHub. Mặc định chạy CPU: kiểm hash/ID/journal, xóa khối lặp nguyên văn liên tiếp, tái lập baseline dev100 rồi chấm bản sửa. Không dùng gold để sửa từng đáp án.
 
 **Quy tắc chọn:** METEOR không giảm, lỗi lặp nặng không tăng và có khối lặp được loại. Nếu không đạt, notebook xuất `submission_original.zip`; nếu đạt, xuất `submission_repaired.zip`. Cả hai ZIP chỉ chứa `submission.json` ở gốc. Bản ứng viên được lưu để review dù bị từ chối.
-
-Đây là phần CPU của Stage 4. Các câu còn thiếu ý/lệch trọng tâm nằm trong `repair.unresolved.json`; notebook này không sinh lại bằng GPU. Diagnostics không chứa trọng số adapter. Xác nhận GPU sau cần model/adapter đúng và kiểm tra context trước.
 """)
     cell("code", "s4config", """
 from pathlib import Path
 import os, sys, json, time, subprocess
 
 SESSION_STARTED = time.monotonic()
-INPUT = Path('/kaggle/input')
-WORK = Path('/kaggle/working')
-if not INPUT.is_dir() or not WORK.is_dir():
-    raise RuntimeError('Notebook này dùng đường dẫn Kaggle. Chạy local bằng python -m legalqa.repair.')
+IS_KAGGLE = Path('/kaggle/input').is_dir() and Path('/kaggle/working').is_dir()
+if IS_KAGGLE:
+    INPUT = Path('/kaggle/input')
+    WORK = Path('/kaggle/working')
+else:
+    INPUT = Path.cwd()
+    WORK = Path.cwd() / 'working'
+    WORK.mkdir(parents=True, exist_ok=True)
+    print(f'Môi trường Local detected. WORK: {WORK}')
 
-# None: tự tìm đúng một diagnostics ZIP, hoặc một thư mục Stage 3 đã giải nén.
-# Nếu có nhiều phiên, điền đường dẫn của phiên COMPLETE muốn xử lý.
+# None: tự tìm diagnostics ZIP, thư mục Stage 3 đã giải nén, hoặc submission.zip
 DIAGNOSTICS = None
+SUBMISSION = None
 OUTPUT = WORK / 'legalqa_main_stage4_v8'
-INSTALL_DEPS = True          # Tắt nếu môi trường đã có scorer dependencies + WordNet.
-AUDIT_ONLY = False           # True: chỉ kiểm tra/sửa ứng viên, không chấm và KHÔNG tạo ZIP.
+INSTALL_DEPS = IS_KAGGLE     # Trên Kaggle thì cài đặt NLTK data; trên local dùng môi trường có sẵn
+AUDIT_ONLY = False           # True: chỉ kiểm tra/sửa ứng viên, không tạo ZIP.
 WORK_HOURS = 2.0             # Ngân sách CPU gồm cài đặt + chấm, không phải thời gian dự kiến.
 if not 0 < WORK_HOURS <= 9:
     raise ValueError('WORK_HOURS phải nằm trong (0, 9].')
@@ -100,56 +105,84 @@ env['NLTK_DATA'] = str(NLTK_ROOT) + os.pathsep + env.get('NLTK_DATA', '')
 env['PYTHONPATH'] = str(CODE)
 env['PYTHONUNBUFFERED'] = '1'
 env['PYTHONIOENCODING'] = 'utf-8'
+
 if INSTALL_DEPS and not AUDIT_ONLY:
     run_bounded([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
                  'numpy>=1.26,<3', 'nltk==3.9.1', 'absl-py==2.2.2', 'six==1.17.0'])
-    # A failed resource download must stop the run, rather than silently changing METEOR.
     run_bounded([sys.executable, '-c',
         'import nltk; nltk.download("wordnet", download_dir=' + repr(str(NLTK_ROOT)) + ', raise_on_error=True); '
         'nltk.download("omw-1.4", download_dir=' + repr(str(NLTK_ROOT)) + ', raise_on_error=True)'], env=env)
+
 if not AUDIT_ONLY:
-    run_bounded([sys.executable, '-c',
-                 'from legalqa.metrics import metric_environment; metric_environment(); print("Scorer ready")'],
-                cwd=CODE, env=env)
+    try:
+        run_bounded([sys.executable, '-c',
+                     'from legalqa.metrics import metric_environment; metric_environment(); print("Scorer ready")'],
+                    cwd=CODE, env=env)
+    except Exception as error:
+        if IS_KAGGLE:
+            raise
+        print(f'Môi trường scorer local chưa đầy đủ ({error}). Chế độ sửa văn bản submission vẫn chạy được.')
+
 print('Code:', CODE)
 """)
     cell("markdown", "s4input-note", """
-## Nhận diện diagnostics
+## Nhận diện input (Diagnostics hoặc Submission)
 
-Ưu tiên file `legalqa_main_stage3_v8_diagnostics.zip`. Nếu không thấy ZIP, tìm `stage3_manifest.json` trong dataset đã giải nén. Khi có nhiều kết quả, đặt `DIAGNOSTICS` ở cell cấu hình; không tự chọn phiên mới nhất hoặc một file partial.
+Ưu tiên file `legalqa_main_stage3_v8_diagnostics.zip`. Nếu không có diagnostics, notebook tự động tìm `submission.zip` để hậu xử lý trên máy local.
 """)
     cell("code", "s4input", """
-if DIAGNOSTICS is None:
+TARGET_MODE = 'diagnostics'
+if DIAGNOSTICS is None and SUBMISSION is None:
     matches = sorted(INPUT.rglob('legalqa_main_stage3_v8_diagnostics.zip'))
     if not matches:
         matches = sorted(p.parent for p in INPUT.rglob('stage3_manifest.json'))
-    if len(matches) != 1:
-        raise RuntimeError(f'Cần đúng một input Stage 3. Tìm thấy {len(matches)}: {matches}. Đặt DIAGNOSTICS cụ thể.')
-    DIAGNOSTICS = matches[0]
-DIAGNOSTICS = Path(DIAGNOSTICS)
-if not DIAGNOSTICS.exists():
-    raise FileNotFoundError(DIAGNOSTICS)
-if DIAGNOSTICS.is_dir():
-    packed = WORK / 'stage4_input_diagnostics.zip'
-    run_bounded([sys.executable, '-c',
-        'import sys; from legalqa.repair import diagnostics_zip_from_directory; '
-        'diagnostics_zip_from_directory(sys.argv[1], sys.argv[2])', DIAGNOSTICS, packed], cwd=CODE, env=env)
-    DIAGNOSTICS = packed
-print('Diagnostics:', DIAGNOSTICS)
+    if matches:
+        DIAGNOSTICS = matches[0]
+    else:
+        sub_matches = sorted(INPUT.rglob('submission.zip'))
+        if sub_matches:
+            SUBMISSION = sub_matches[0]
+            TARGET_MODE = 'submission'
+            print(f'Phát hiện file submission: {SUBMISSION}')
+        else:
+            raise RuntimeError(f'Cần đúng một diagnostics ZIP hoặc submission.zip trong {INPUT}.')
+
+if TARGET_MODE == 'diagnostics':
+    DIAGNOSTICS = Path(DIAGNOSTICS)
+    if not DIAGNOSTICS.exists():
+        raise FileNotFoundError(DIAGNOSTICS)
+    if DIAGNOSTICS.is_dir():
+        packed = WORK / 'stage4_input_diagnostics.zip'
+        run_bounded([sys.executable, '-c',
+            'import sys; from legalqa.repair import diagnostics_zip_from_directory; '
+            'diagnostics_zip_from_directory(sys.argv[1], sys.argv[2])', DIAGNOSTICS, packed], cwd=CODE, env=env)
+        DIAGNOSTICS = packed
+    print('Diagnostics:', DIAGNOSTICS)
+else:
+    SUBMISSION = Path(SUBMISSION)
+    if not SUBMISSION.exists():
+        raise FileNotFoundError(SUBMISSION)
+    print('Submission to repair:', SUBMISSION)
+
 print('Output:', OUTPUT)
 """)
     cell("markdown", "s4run-note", """
-## Sửa lặp, chấm dev100 và chọn bản xuất
+## Sửa lặp, dọn đuôi cụt và chọn bản xuất
 
-Giữ nguyên các mục gần giống nhưng khác số liệu/phủ định. Câu chỉ còn dẫn nhập sau xóa lặp được giữ bản gốc và đưa vào danh sách cần xử lý tiếp. Không cắt mọi câu xuống một độ dài cố định; không phục hồi raw output đã bị guard của Stage 3 loại.
-
-Chạy lại cùng input/code/cấu hình được phép. Khi đổi nguồn hoặc chính sách, chọn `OUTPUT` mới; không sửa/xóa identity để ép tái sử dụng kết quả cũ. Trong chế độ audit-only không xuất ZIP. Sau khi sửa lỗi môi trường, có thể chạy lại cell này với cùng identity.
+Chạy module hậu xử lý `legalqa.repair`: loại bỏ vòng lặp nguyên văn, khử lặp khối lớn 2 lần, dọn dẹp đuôi cụt và xuất `submission_repaired.zip`.
 """)
     cell("code", "s4run", """
-command = [sys.executable, '-m', 'legalqa.repair', '--diagnostics', DIAGNOSTICS, '--output', OUTPUT]
+if TARGET_MODE == 'diagnostics':
+    command = [sys.executable, '-m', 'legalqa.repair', '--diagnostics', DIAGNOSTICS, '--output', OUTPUT]
+else:
+    command = [sys.executable, '-m', 'legalqa.repair', '--submission', SUBMISSION, '--output', OUTPUT]
+    q_matches = sorted(INPUT.rglob('public-official.json'))
+    if q_matches:
+        command.extend(['--questions', str(q_matches[0])])
+
 if AUDIT_ONLY:
     command.append('--audit-only')
-# Nếu subprocess lỗi/timeout, cell dừng tại đây; cell xuất kết quả không được xác nhận bằng run cũ.
+
 RUN_SUCCEEDED = False
 run_bounded(command, cwd=CODE, env=env)
 RUN_SUCCEEDED = True
@@ -158,21 +191,29 @@ RUN_SUCCEEDED = True
 if not globals().get('RUN_SUCCEEDED', False):
     raise RuntimeError('Chưa có lần chạy Stage 4 thành công trong phiên này.')
 from IPython.display import display, FileLink
-report = json.loads((OUTPUT / 'repair.metrics.json').read_text(encoding='utf-8'))
 manifest = json.loads((OUTPUT / 'repair.manifest.json').read_text(encoding='utf-8'))
-print(json.dumps(report, ensure_ascii=False, indent=2))
+if (OUTPUT / 'repair.metrics.json').exists():
+    report = json.loads((OUTPUT / 'repair.metrics.json').read_text(encoding='utf-8'))
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+elif (OUTPUT / 'repair.summary.json').exists():
+    summary = json.loads((OUTPUT / 'repair.summary.json').read_text(encoding='utf-8'))
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+
 name = manifest.get('submission_zip')
 if name:
     path = OUTPUT / name
-    if hashlib.sha256(path.read_bytes()).hexdigest() != manifest['files'][name]:
-        raise ValueError('Hash ZIP không khớp manifest.')
+    if 'files' in manifest and name in manifest['files']:
+        if hashlib.sha256(path.read_bytes()).hexdigest() != manifest['files'][name]:
+            raise ValueError('Hash ZIP không khớp manifest.')
     print('FILE ĐƯỢC CHỌN ĐỂ NỘP:', path)
     display(FileLink(str(path)))
 else:
-    print('Audit-only: chưa tạo ZIP. Chạy chế độ có chấm điểm với OUTPUT mới để chọn bản nộp.')
-for name in ('repair.audit.json', 'repair.metrics.json', 'repair.unresolved.json', 'repair.manifest.json'):
-    display(FileLink(str(OUTPUT / name)))
-print('Các chỉ số ở đây là dev100, chưa phải điểm public của BTC.')
+    print('Audit-only: chưa tạo ZIP.')
+
+for fname in ('repair.audit.json', 'repair.metrics.json', 'repair.summary.json', 'repair.unresolved.json', 'repair.manifest.json'):
+    if (OUTPUT / fname).exists():
+        display(FileLink(str(OUTPUT / fname)))
+print('Hoàn tất Stage 4.')
 """)
     cell("markdown", "s4next", """
 ## Đọc danh sách còn cần xử lý

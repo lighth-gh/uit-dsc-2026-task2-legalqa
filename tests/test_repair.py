@@ -11,7 +11,7 @@ from zipfile import ZipFile
 from legalqa.io import digest, read_json
 from legalqa.repair import (PUBLIC, acceptance_decision, deduplicate_answer,
                            diagnostics_zip_from_directory, load_diagnostics,
-                           repair_predictions, run_repair)
+                           repair_predictions, run_repair, run_repair_submission)
 
 
 CLAUSE = "Người sử dụng lao động phải thông báo đầy đủ cho người lao động trước khi thực hiện thủ tục."
@@ -246,6 +246,21 @@ class RepairTests(unittest.TestCase):
         with ZipFile(io.BytesIO(payload)) as z:
             for name in z.namelist():
                 self.assertEqual(z.read(name), (ROOT / name).read_bytes().replace(b"\r\n", b"\n"))
+
+    def test_run_repair_submission_standalone(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sub_file = root / "submission.json"
+            sub_data = {"a": {"answer": (CLAUSE + "\n") * 4 + DETAIL}}
+            sub_file.write_text(json.dumps(sub_data, ensure_ascii=False), encoding="utf-8")
+            out = root / "output"
+            result = run_repair_submission(sub_file, out)
+            self.assertEqual(result["status"], "complete")
+            self.assertEqual(result["submission_zip"], "submission_repaired.zip")
+            self.assertTrue((out / "submission_repaired.zip").exists())
+            with ZipFile(out / "submission_repaired.zip") as z:
+                repaired = json.loads(z.read("submission.json"))
+            self.assertEqual(repaired["a"]["answer"], CLAUSE + "\n" + DETAIL)
 
 
 if __name__ == "__main__":

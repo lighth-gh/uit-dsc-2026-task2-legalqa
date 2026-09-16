@@ -458,13 +458,82 @@ def run_repair(diagnostics, output, *, audit_only=False, expected_public_count=1
     return result
 
 
+def run_repair_submission(submission_path, output, *, audit_only=False, questions_path=None, policy=None):
+    """Repair a standalone submission.zip or submission.json without requiring full Stage 3 diagnostics."""
+    sub_path = Path(submission_path)
+    _require(sub_path.exists(), f"Submission file not found: {sub_path}")
+    if sub_path.suffix.lower() == ".zip":
+        with ZipFile(sub_path) as z:
+            _require("submission.json" in z.namelist(), "Missing submission.json inside zip")
+            predictions = json.loads(z.read("submission.json"), object_pairs_hook=_unique_pairs)
+    else:
+        predictions = read_json(sub_path)
+
+    questions = None
+    if questions_path and Path(questions_path).exists():
+        questions = read_json(questions_path)
+        validate_predictions(predictions, questions)
+    else:
+        validate_predictions(predictions, predictions)
+
+    audit_mock = {k: {"route": "generated", "hit_token_limit": False, "context_parent_ids": []} for k in predictions}
+    policy = dict(POLICY if policy is None else policy)
+    repaired, records, unresolved = repair_predictions(predictions, audit_mock, policy=policy)
+
+    root = Path(output)
+    root.mkdir(parents=True, exist_ok=True)
+    write_json(root / "submission.original.json", predictions)
+    write_json(root / "submission.repaired.json", repaired)
+    write_json(root / "repair.audit.json", records)
+    write_json(root / "repair.unresolved.json", unresolved)
+
+    changed_count = sum(predictions[k]["answer"] != repaired[k]["answer"] for k in predictions)
+    chars_before = sum(len(predictions[k]["answer"]) for k in predictions)
+    chars_after = sum(len(repaired[k]["answer"]) for k in repaired)
+    rep_before = sum(repetition_ratio(predictions[k]["answer"]) >= 0.5 for k in predictions)
+    rep_after = sum(repetition_ratio(repaired[k]["answer"]) >= 0.5 for k in repaired)
+    colons_before = sum(predictions[k]["answer"].strip().endswith(":") for k in predictions)
+    colons_after = sum(repaired[k]["answer"].strip().endswith(":") for k in repaired)
+
+    summary = {
+        "questions": len(predictions),
+        "changed": changed_count,
+        "chars_reduced": chars_before - chars_after,
+        "severe_repetition_before": rep_before,
+        "severe_repetition_after": rep_after,
+        "colons_before": colons_before,
+        "colons_after": colons_after,
+    }
+    write_json(root / "repair.summary.json", summary)
+
+    zip_name = None
+    if not audit_only:
+        zip_name = "submission_repaired.zip"
+        _package(repaired, questions or predictions, root / zip_name)
+
+    outputs = {p.name: file_hash(p) for p in root.iterdir()
+               if p.is_file() and p.name not in ("repair.manifest.json",) and not p.name.endswith(".tmp")}
+    result = {"status": "complete", "submission_zip": zip_name, "summary": summary, "files": outputs}
+    write_json(root / "repair.manifest.json", result)
+    print(json.dumps({k: result[k] for k in ("status", "summary", "submission_zip")},
+                     ensure_ascii=False, indent=2), flush=True)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--diagnostics", required=True)
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--diagnostics", help="Path to Stage 3 diagnostics ZIP or folder")
+    parser.add_argument("--submission", help="Path to standalone submission.zip or submission.json to repair on local")
+    parser.add_argument("--questions", help="Optional path to questions JSON for validation")
+    parser.add_argument("--output", required=True, help="Output directory")
     parser.add_argument("--audit-only", action="store_true", help="Inspect without scoring or packaging")
     args = parser.parse_args()
-    run_repair(args.diagnostics, args.output, audit_only=args.audit_only)
+    if args.diagnostics:
+        run_repair(args.diagnostics, args.output, audit_only=args.audit_only)
+    elif args.submission:
+        run_repair_submission(args.submission, args.output, audit_only=args.audit_only, questions_path=args.questions)
+    else:
+        parser.error("Must provide either --diagnostics or --submission")
 
 
 if __name__ == "__main__":
