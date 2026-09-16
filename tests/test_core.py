@@ -206,7 +206,7 @@ class CoreTests(unittest.TestCase):
         samples,report = training_examples(qa,{"1":{"contexts":parents}},tok,c)
         labels = samples[0]["labels"]
         answer_ids = tok(qa["1"]["answer"])["input_ids"]+[tok.eos_token_id]
-        self.assertEqual(labels[-len(answer_ids):],answer_ids)
+        self.assertEqual(list(labels[-len(answer_ids):]),answer_ids)
         self.assertTrue(all(x==-100 for x in labels[:-len(answer_ids)]))
         self.assertEqual(report["used"],1)
 

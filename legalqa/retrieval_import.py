@@ -2,11 +2,13 @@
 import hashlib
 import io
 import json
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from zipfile import ZipFile
 
 from .io import ROOT, _unique_pairs, digest, source_hash, write_json
+from .training_cache import stream_identity, stream_records
 
 
 CACHE_NAME = 'train.sft.lexical.retrieval.json'
@@ -14,6 +16,11 @@ CACHE_NAME = 'train.sft.lexical.retrieval.json'
 # Stage 1 diagnostics. Accept this old code only while retrieval dependencies
 # remain unchanged. Do not broadly disable read_retrieval's code check.
 LEGACY_CODE = '626e4f377fcfd84dfcb3b51bf2d6af216f2905bbf71e35fcf266eb07cb19a476'
+# Pre-streaming Stage 1; retrieval dependencies are identical to the audit below.
+PRE_STREAMING_CODES = {
+    'b7ce423ad04f159853087bbf1ea6e41e1015d8b66d8d69f5eec7f6d56f247f41',  # Linux: commit 6e1eb19
+    'c13dd1e5277994af3a94cd102cdab88fd7f90bd866a421da08ad9b6b1b412882',  # CRLF checkout
+}
 LEGACY_DEPENDENCIES = {
     'retrieval.py': 'ba41492b6b329b387fab7b09cf4f84933e2d009a3c4211f20de7eacad5db8676',
     'models.py': '7b4e658092a37cfacc9c148fe63390b9c3ab8919786b88e9fa691f343cc9707c',
@@ -27,7 +34,7 @@ LEGACY_DEPENDENCIES = {
 def compatible_code(code):
     if code == source_hash():
         return True
-    return code == LEGACY_CODE and all(
+    return code in {LEGACY_CODE, *PRE_STREAMING_CODES} and all(
         hashlib.sha256((ROOT/'legalqa'/name).read_bytes().replace(b'\r\n', b'\n')).hexdigest() == expected
         for name, expected in LEGACY_DEPENDENCIES.items())
 
@@ -50,7 +57,8 @@ def source_file(source, name):
 
 def source_json(source, name):
     with source_file(source, name) as stream:
-        return json.load(io.TextIOWrapper(stream, encoding='utf-8-sig'), object_pairs_hook=_unique_pairs)
+        with io.TextIOWrapper(stream, encoding='utf-8-sig') as text:
+            return json.load(text, object_pairs_hook=_unique_pairs)
 
 
 def import_training_retrieval(source, output, questions, c, lock, index_hash):
@@ -70,8 +78,8 @@ def import_training_retrieval(source, output, questions, c, lock, index_hash):
             size += len(block)
     if size != expected_file['size'] or checksum.hexdigest() != expected_file['sha256']:
         raise ValueError('Training retrieval checksum/size differs from the source manifest')
-    payload = source_json(source, CACHE_NAME)
-    identity, records = payload['identity'], payload['records']
+    with source_file(source, CACHE_NAME) as stream:
+        identity = stream_identity(stream)
     if identity.get('code') != manifest.get('source_hash') or not compatible_code(identity.get('code')):
         raise ValueError('Retrieval code compatibility has not been verified for this snapshot')
     question_only = {key:{'question':item['question']} for key,item in questions.items()}
@@ -81,18 +89,42 @@ def import_training_retrieval(source, output, questions, c, lock, index_hash):
     for key, value in expected.items():
         if identity.get(key) != value:
             raise ValueError(f'Training retrieval import mismatch: {key}')
-    if set(records) != set(questions):
+    seen = set()
+    with source_file(source, CACHE_NAME) as stream:
+        for key, record in stream_records(stream):
+            if key not in question_only or key in seen:
+                raise ValueError('Training retrieval does not cover exactly the selected training IDs')
+            if record.get('question') != question_only[key]['question']:
+                raise ValueError(f'Training retrieval question text differs: {key}')
+            seen.add(key)
+    if seen != set(questions):
         raise ValueError('Training retrieval does not cover exactly the selected training IDs')
-    for key, question in question_only.items():
-        if records[key].get('question') != question['question']:
-            raise ValueError(f'Training retrieval question text differs: {key}')
     # Preserve all records, contexts, scores and order. Keep original identity
     # as provenance; publish the verified current-code identity atomically.
-    payload['import_provenance'] = {'source':str(source), 'source_file':CACHE_NAME,
+    provenance = {'source':str(source), 'source_file':CACHE_NAME,
         'source_file_sha256':checksum.hexdigest(), 'source_commit':manifest.get('code_commit'),
-        'original_identity':identity, 'compatible_with_code':source_hash(), 'records':len(records)}
-    payload['identity'] = {**identity, 'code':source_hash()}
-    write_json(output, payload)
-    print(f'Imported lexical retrieval: {len(records)} records; BM25 skipped; source_sha256={checksum.hexdigest()}',
+        'original_identity':identity, 'compatible_with_code':source_hash(), 'records':len(seen)}
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(output.name + '.tmp')
+    try:
+        with temporary.open('w', encoding='utf-8') as destination:
+            destination.write('{"identity":')
+            json.dump({**identity, 'code':source_hash()}, destination, ensure_ascii=False, allow_nan=False)
+            destination.write(',"import_provenance":')
+            json.dump(provenance, destination, ensure_ascii=False, allow_nan=False)
+            destination.write(',"records":{')
+            with source_file(source, CACHE_NAME) as stream:
+                for position, (key, record) in enumerate(stream_records(stream)):
+                    if position:
+                        destination.write(',')
+                    destination.write(json.dumps(key) + ':')
+                    json.dump(record, destination, ensure_ascii=False, allow_nan=False)
+            destination.write('}}\n')
+            destination.flush()
+            os.fsync(destination.fileno())
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(f'Imported lexical retrieval: {len(seen)} records; BM25 skipped; source_sha256={checksum.hexdigest()}',
           flush=True)
-    return payload['import_provenance']
+    return provenance

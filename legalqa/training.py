@@ -5,8 +5,9 @@ from pathlib import Path
 
 from .io import copy_file, digest, file_hash, load_questions, source_hash, write_json
 from .models import audit_models, load_generator, model_lock
+from .memory_guard import low_memory
 from .prompts import pack_prompt
-from .retrieval import read_retrieval
+from .training_cache import training_retrieval
 from .runtime import should_pause
 from .training_memory import compact_samples, enable_fused_loss, padded_batch
 
@@ -29,29 +30,35 @@ def prepare_training_subset(c, train_path, output):
 
 
 def training_examples(questions, records, tokenizer, c):
-    samples, skipped, stats = [], [], []
+    samples, skipped, stats = {}, {}, {}
     limit = c["training"]["max_sequence_tokens"]
     training_prompt_limit = c["training"].get("max_prompt_tokens",c["generation"]["max_input_tokens"])
-    for key,item in questions.items():
+    # Stream context text; restore the original question order for deterministic
+    # Trainer sampling and checkpoint resume even if cache JSON order differs.
+    rows = ((key, records[key]) for key in questions) if isinstance(records, dict) else records
+    for key, record in rows:
+        item = questions[key]
         answer_ids = tokenizer(item["answer"],add_special_tokens=False)["input_ids"]+[tokenizer.eos_token_id]
         prompt_budget = min(c["generation"]["max_input_tokens"],training_prompt_limit,
                             limit-len(answer_ids))
         if prompt_budget < c["generation"]["min_context_tokens"]+256:
-            skipped.append({"id":key,"reason":"full reference does not fit without losing the context", "answer_tokens":len(answer_ids)})
+            skipped[key] = {"id":key,"reason":"full reference does not fit without losing the context", "answer_tokens":len(answer_ids)}
             continue
-        prompt_ids,packed = pack_prompt(item["question"],records[key]["contexts"],tokenizer,c,prompt_budget)
+        prompt_ids,packed = pack_prompt(item["question"],record["contexts"],tokenizer,c,prompt_budget)
         if not packed:
-            skipped.append({"id":key,"reason":"no retrieved context"})
+            skipped[key] = {"id":key,"reason":"no retrieved context"}
             continue
         input_ids = prompt_ids+answer_ids
         if len(input_ids)>limit:
             raise AssertionError("Training sequence exceeds configured length")
-        samples.append({"input_ids":input_ids,"attention_mask":[1]*len(input_ids),
-                        "labels":[-100]*len(prompt_ids)+answer_ids})
-        stats.append({"id":key,"prompt_tokens":len(prompt_ids),"answer_tokens":len(answer_ids)})
+        samples[key] = compact_samples([{"input_ids":input_ids,"attention_mask":[1]*len(input_ids),
+                        "labels":[-100]*len(prompt_ids)+answer_ids}])[0]
+        stats[key] = {"id":key,"prompt_tokens":len(prompt_ids),"answer_tokens":len(answer_ids)}
     if not samples:
         raise ValueError("No complete original QA targets fit the training budget")
-    return samples,{"used":len(samples),"skipped":skipped,"lengths":stats}
+    return [samples[k] for k in questions if k in samples], {
+        "used":len(samples), "skipped":[skipped[k] for k in questions if k in skipped],
+        "lengths":[stats[k] for k in questions if k in stats]}
 
 
 def training_layout(settings, environ, visible_gpus):
@@ -70,7 +77,7 @@ def training_layout(settings, environ, visible_gpus):
 
 
 def pause_training(torch, device, world):
-    stop = torch.tensor(int(should_pause()), device=device)
+    stop = torch.tensor(int(should_pause() or low_memory()), device=device)
     if world > 1:
         torch.distributed.all_reduce(stop, op=torch.distributed.ReduceOp.MAX)
     return bool(stop.item())
@@ -97,14 +104,19 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
           f"effective_batch={t['batch_size']*accumulation*world}", flush=True)
     set_seed(c["seed"])
     questions = select_training_questions(load_questions(train_path,answers=True),c)
-    records,retrieval_id = read_retrieval(retrieval_path,questions,c,root,expected_mode=c["training"]["retrieval_mode"])
+    records,retrieval_id = training_retrieval(retrieval_path,questions,c,root)
     output = Path(output)
     if output.exists() and any(output.iterdir()) and not resume:
         raise ValueError("Training directory is nonempty. Choose a new directory or --resume an exact checkpoint.")
     # Every rank checks the empty directory before rank 0 creates reports.
     if world > 1:
         torch.distributed.barrier()
-    model,tokenizer = load_generator(c,root,device,training=True)
+    # Tokenize before loading GPU weights. Only compact arrays remain in RAM
+    # during model load; no worker materializes the whole retrieval JSON.
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(Path(root)/"generator", local_files_only=True)
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
     samples,report = training_examples(questions,records,tokenizer,c)
     output.mkdir(parents=True,exist_ok=True)
     manifest = {"train_file_sha256":file_hash(train_path),"qa_hash":digest(questions),"qa_ids":list(questions),
@@ -124,6 +136,12 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
     del records, questions
     compact_samples(samples)
     gc.collect()
+    # Avoid simultaneous CPU staging of two base models on Kaggle.
+    for loading_rank in range(world):
+        if rank == loading_rank:
+            model,tokenizer = load_generator(c,root,device,training=True)
+        if world > 1:
+            torch.distributed.barrier()
     model = prepare_model_for_kbit_training(model,use_gradient_checkpointing=True,
                                             gradient_checkpointing_kwargs={"use_reentrant":False})
     enable_fused_loss(model)
@@ -178,7 +196,7 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
         optim="paged_adamw_8bit",
         max_grad_norm=.3,save_strategy="steps" if bounded else "epoch",save_steps=10,save_total_limit=2,logging_steps=10,
         eval_strategy="no",report_to="none",remove_unused_columns=False,seed=c["seed"],data_seed=c["seed"],
-        dataloader_num_workers=0,local_rank=local_rank if world > 1 else -1,
+        dataloader_num_workers=0,dataloader_pin_memory=False,local_rank=local_rank if world > 1 else -1,
         ddp_find_unused_parameters=False,ddp_broadcast_buffers=False,
         average_tokens_across_devices=True)
     trainer = Trainer(model=model,args=args,train_dataset=samples,data_collator=collate,processing_class=tokenizer,
@@ -196,6 +214,9 @@ def fit(c, train_path, retrieval_path, root, output, device="cuda:0", resume=Non
             "peak_allocated_bytes":torch.cuda.max_memory_allocated(local_rank)})
         if {p['rank'] for p in proof} != set(range(world)) or len({p['global_step'] for p in proof}) != 1:
             raise RuntimeError("QLoRA workers did not complete the same optimizer steps")
+        if len({p['device'] for p in proof}) != world or any(
+                p['global_step'] <= 0 or p['peak_allocated_bytes'] <= 0 for p in proof):
+            raise RuntimeError("Missing evidence of optimizer work on both GPUs")
     else:
         proof = [{"rank":rank,"device":device,"global_step":trainer.state.global_step}]
     if rank == 0:

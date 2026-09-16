@@ -378,6 +378,8 @@ class Stage:
                                       self.c, self.lock, self.index_hash)
         if not cache.exists():
             self.command("retrieve", "--questions", questions,"--index",self.index,"--output",cache,"--mode","lexical")
+        else:
+            print(f'Reusing completed lexical retrieval: {cache}; BM25 skipped (identity checked by fit)', flush=True)
         if not cache.exists() or should_pause():
             self.progress(complete=False, phase="train_retrieval")
             return
@@ -386,6 +388,7 @@ class Stage:
         if checkpoints:
             latest = max(checkpoints,key=lambda p:read_json(p/"trainer_state.json")["global_step"])
             args += ["--resume",latest]
+            print(f'Resuming QLoRA checkpoint: {latest}', flush=True)
         elif sft.exists() and any(sft.iterdir()):
             # No optimizer step was ever saved: only setup manifests may be
             # removed, after their identity was checked above. Preserve reports.

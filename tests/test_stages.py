@@ -26,7 +26,8 @@ class StageTests(unittest.TestCase):
         return read_json(ROOT/names[stage])
 
     def test_notebook_supervisor_kills_group_and_honors_remaining_budget(self):
-        for stage in (1,2,3):
+        # Main 01 now polls both RAM and time; covered in test_main01_resume.
+        for stage in (2,3):
             nb = self.notebook(stage)
             code = next(''.join(c['source']) for c in nb['cells'] if c['cell_type']=='code'
                         and 'def bounded_process' in ''.join(c['source']))
@@ -67,12 +68,11 @@ class StageTests(unittest.TestCase):
             ns['WORK_HOURS']=12
             with self.assertRaises(ValueError):exec(block,ns)
 
-    def test_three_notebooks_share_supervisor_setup_and_runner(self):
+    def test_stage2_and_3_share_runner_and_all_stages_keep_budget(self):
         codes=[[''.join(c['source']) for c in self.notebook(i)['cells'] if c['cell_type']=='code']
                for i in (1,2,3)]
         for position in range(1,len(codes[0])):
-            self.assertEqual(codes[0][position],codes[1][position])
-            self.assertEqual(codes[0][position],codes[2][position])
+            self.assertEqual(codes[1][position],codes[2][position])
         for stage,cells in enumerate(codes,1):
             self.assertIn('WORK_HOURS = 9.0',cells[0])
             self.assertIn('EXPORT_SECONDS = 600',cells[0])

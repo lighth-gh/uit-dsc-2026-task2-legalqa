@@ -98,8 +98,8 @@ class RetrievalImportTests(unittest.TestCase):
         from legalqa.io import ROOT
         nb = read_json(ROOT/'legalqa_main_01_qlora_train.ipynb')
         setup = next(''.join(cell['source']) for cell in nb['cells'] if cell.get('id') == 's1c3')
-        prefix = setup[:setup.index('pins = []')]
-        ns = dict(Path=Path, WORK_HOURS=9, SESSION_STARTED=0, INPUT=self.root, STAGE=1,
+        prefix = setup[:setup.index('# The old dataset mount')]
+        ns = dict(Path=Path, json=json, INPUT_MODE='auto', WORK_HOURS=9, SESSION_STARTED=0, INPUT=self.root, STAGE=1,
                   RETRIEVAL_INPUT=self.source, PREVIOUS_OUTPUT=None, UPSTREAM_OUTPUT=None, LEGACY_INPUT_ROOT=None)
         exec(prefix, ns)
         self.assertIsNone(ns['PREVIOUS_OUTPUT'])
