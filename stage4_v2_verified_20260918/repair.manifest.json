@@ -1,0 +1,29 @@
+{
+  "status": "complete",
+  "selected_variant": "cpu_v1",
+  "submission_zip": "submission_selected.zip",
+  "files": {
+    "submission_selected.zip": "1d9e9162eee9a377e247137ac6f46e1a99e496d254e5cc881d3d5d1112bf14ce",
+    "identity.json": "6b58e3a2e9d6ea48e96c251b6e277f37af4a4b5d6791f407e3968514b82a3b42",
+    "dev.selected.json": "32dad4d97901a7cbddaedfd65eeb5f6ef81a3b031b423e3b569a5a93a2ebaf36",
+    "public.selected.json": "a3cdecf5d26b9c4ba0f2825b6f359a902462e204b1c9a0e3fbb615e102f9155c",
+    "repair.metrics.json": "dae02207bbfff9e5c87789b336823da024cbfaa6523681787399d2672462b7e5"
+  },
+  "source": {
+    "diagnostics_sha256": "a19932405fe8ae65713d290c362a1ba2b968ee71d090ea4479dcdeeda018afe7",
+    "stage3_code": "b7ce423ad04f159853087bbf1ea6e41e1015d8b66d8d69f5eec7f6d56f247f41",
+    "selected_adapter": "epoch-01",
+    "omitted_weights": [
+      "selected_adapter/adapter_model.safetensors"
+    ]
+  },
+  "verification": {
+    "crc": "passed",
+    "hashes": "passed",
+    "schema_and_ids": "passed",
+    "journal": "passed",
+    "identity": "passed",
+    "public_count": 1000
+  },
+  "public_count": 1000
+}

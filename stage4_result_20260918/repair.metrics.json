@@ -1,0 +1,75 @@
+{
+  "status": "scored",
+  "baseline": {
+    "meteor": 0.6182826973445281,
+    "rougeL": 0.5908622414672994
+  },
+  "candidate": {
+    "meteor": 0.6202453105154175,
+    "rougeL": 0.5938193946382953
+  },
+  "metric_identity": {
+    "nltk": "3.9.1",
+    "numpy": "2.4.2",
+    "scoring": "f04843fbfad26d41356506d8e49692a7c8a0ed1b9f065a3a8472fa6398a5aa95",
+    "rouge_files": {
+      "__init__.py": "7d007905e3e38fc10b41821cf4f49807732208e683dec8b2ff48ac1c4b2cbc91",
+      "create_pyrouge_files.py": "fc6b662278957958d25ad04ca192016de1fa5ccba7cf56b76e3b27d439866e80",
+      "io.py": "b50771934202974815dc1797a74fa542e417f82a483d453ffd97420eb52cf05f",
+      "rouge.py": "d4a271f18af0eea41136998afd70ad01f36130ebed6643855424739d3b88aad8",
+      "rouge_scorer.py": "9484c5fd05e22cd28b5053bf9de586b3620cf65b0c38052b8690badd51f31d1a",
+      "scoring.py": "b3fc153499e484665294ddbaeb876452b40a8fa2120e824b804928c96e3f2c1a",
+      "test_util.py": "91ae80cd7cf30963840546f89df2906601b793bca027acf65e49b46c74aeb53c",
+      "tokenize.py": "dc91cea8f09507f744549160c458031d0956e35fa230c80d01f990eba20a7403",
+      "tokenizers.py": "2b7b9dae505ce8739064ba8e4791b871b13aa1f65bc54e25692f1a9ba8600508"
+    }
+  },
+  "decision": {
+    "accepted": true,
+    "selected": "repaired",
+    "delta": {
+      "meteor": 0.0019626131708894157,
+      "rougeL": 0.0029571531709958743
+    },
+    "changed_dev_ids": [
+      "108871",
+      "22333"
+    ],
+    "severe_repetition_before": 2,
+    "severe_repetition_after": 1,
+    "rule": "METEOR non-decreasing; exact-loop content reduced; severe repetition non-increasing",
+    "note": "Dev100 was already used for checkpoint selection; this is not independent validation."
+  },
+  "changed_dev_deltas": [
+    {
+      "id": "108871",
+      "meteor": 0.16910104029918321,
+      "rougeL": 0.24403899167306103
+    },
+    {
+      "id": "22333",
+      "meteor": 0.027160276789747806,
+      "rougeL": 0.05167632542653322
+    }
+  ],
+  "summary": {
+    "dev": {
+      "questions": 100,
+      "screened": 24,
+      "changed_cpu": 2,
+      "blocked_edits": 0,
+      "unresolved": 24,
+      "generated_gpu": 0,
+      "candidate_unresolved": 24
+    },
+    "public": {
+      "questions": 1000,
+      "screened": 226,
+      "changed_cpu": 37,
+      "blocked_edits": 3,
+      "unresolved": 225,
+      "generated_gpu": 0,
+      "candidate_unresolved": 225
+    }
+  }
+}

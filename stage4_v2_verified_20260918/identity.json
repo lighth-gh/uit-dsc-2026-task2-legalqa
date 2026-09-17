@@ -1,0 +1,20 @@
+{
+  "source": {
+    "diagnostics_sha256": "a19932405fe8ae65713d290c362a1ba2b968ee71d090ea4479dcdeeda018afe7",
+    "stage3_code": "b7ce423ad04f159853087bbf1ea6e41e1015d8b66d8d69f5eec7f6d56f247f41",
+    "selected_adapter": "epoch-01",
+    "omitted_weights": [
+      "selected_adapter/adapter_model.safetensors"
+    ]
+  },
+  "code": "23a8c6a58c508707462144aa3d63eba5622d71ea5e9d713205ac854c9032d075",
+  "policy": {
+    "version": 2,
+    "min_chars": 60,
+    "min_words": 8,
+    "min_repeats": 3,
+    "max_block_units": 12,
+    "numbered_min_repeats": 6
+  },
+  "audit_only": false
+}

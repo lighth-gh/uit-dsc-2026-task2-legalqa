@@ -1,0 +1,24 @@
+# K?t qu? Main 04 ? 18/09/2026
+
+?? ch?y ??y ?? `python -m legalqa.repair` tr?n diagnostics (5).zip. Diagnostics kh?p to?n b? 1.000 ??p ?n trong submission.zip ??u v?o. Kh?ng s?a m? ngu?n hay ghi ?? ZIP g?c.
+
+| Ch? s? dev100 | Tr??c l?c | Sau l?c |
+|---|---:|---:|
+| METEOR | 0.61828270 | 0.62024531 |
+| ROUGE-L | 0.59086224 | 0.59381939 |
+
+Main 04 ch?p nh?n b?n s?a theo quy t?c hi?n c?. Hai c?u dev ???c s?a: 108871, 22333. Public s?a 37/1.000 c?u, gi? nguy?n 963 c?u; s? c?u c? t? l? d?ng l?p >= 0,5 gi?m 36 ? 8. Ba c?u 15491, 16791, 3351 ???c gi? nguy?n v? x?a l?p ?? l?i c?u d?n dang d?.
+
+File k?t qu?: `submission_repaired.zip`, ch?a ??ng m?t `submission.json` ? g?c. ?? ki?m tra CRC, hash t?t c? artifact trong manifest, schema v? ?? 1.000 ID public. B? ki?m th? Main 04 ?? ??t 14/14 ? l??t ki?m tra tr??c; code b? l?c kh?p code nh?ng trong notebook.
+
+C?n 225 c?u public ???c g?n c? c?n xem l?i trong `repair.unresolved.json`; c?c c? g?m ch?m gi?i h?n token, fallback, l?p v? c?u d?n dang d?, kh?ng ??ng ngh?a 225 ??p ?n sai. Kh?ng sinh l?i b?ng GPU. Dev100 ?? d?ng ?? ch?n checkpoint, kh?ng ph?i validation ??c l?p; ch?a c? ?i?m public v? METEOR dev v?n d??i m?c ti?u 0,65.
+
+Chi ti?t: `repair.metrics.json`, `repair.audit.json`, `repair.unresolved.json`, `repair.manifest.json`.
+
+L?nh t?i l?p trong PowerShell t?i th? m?c repository (ch?n th? m?c output m?i):
+
+```powershell
+$env:NLTK_DATA = (Resolve-Path 'runs/metric-rescore/nltk_data').Path
+$env:PYTHONIOENCODING = 'utf-8'
+& 'runs/metric-rescore/env/Scripts/python.exe' -m legalqa.repair --diagnostics 'C:\Users\HP\Downloads\legalqa_main_stage3_v8_diagnostics (5).zip' --output 'stage4_result_rerun'
+```

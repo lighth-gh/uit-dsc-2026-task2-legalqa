@@ -107,7 +107,7 @@ def _parallel_answers(c, root, adapter, devices, keys, questions, records):
                                      lambda key: (questions[key], records[key]))
 
 
-def _generate_one(c, key, questions, records, model, tokenizer, device, mode):
+def _generate_one(c, key, questions, records, model, tokenizer, device, mode, *, generation_overrides=None):
     import torch
     start = time.perf_counter()
     prompt_ids, packed = pack_prompt(questions[key]["question"], records[key]["contexts"], tokenizer,c)
@@ -117,10 +117,11 @@ def _generate_one(c, key, questions, records, model, tokenizer, device, mode):
     if mode == "generate":
         ids = torch.tensor([prompt_ids],device=device)
         with torch.inference_mode():
-            sequences = model.generate(input_ids=ids, attention_mask=torch.ones_like(ids),
-                do_sample=False, num_beams=1, max_new_tokens=c["generation"]["max_new_tokens"],
+            options = dict(do_sample=False, num_beams=1, max_new_tokens=c["generation"]["max_new_tokens"],
                 repetition_penalty=1.0, eos_token_id=tokenizer.eos_token_id,
                 pad_token_id=tokenizer.pad_token_id, use_cache=True)
+            options.update(generation_overrides or {})
+            sequences = model.generate(input_ids=ids, attention_mask=torch.ones_like(ids), **options)
         new = sequences[0,len(prompt_ids):].tolist()
         completion_tokens = len(new)
         hit_limit = len(new) >= c["generation"]["max_new_tokens"] and new[-1] != tokenizer.eos_token_id

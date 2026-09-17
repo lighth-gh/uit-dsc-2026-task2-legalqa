@@ -1,0 +1,51 @@
+{
+  "status": "scored",
+  "baseline": {
+    "meteor": 0.6182826973445281,
+    "rougeL": 0.5908622414672994
+  },
+  "cpu_v1": {
+    "meteor": 0.6202453105154175,
+    "rougeL": 0.5938193946382953
+  },
+  "cpu_v2": {
+    "meteor": 0.6201418864869608,
+    "rougeL": 0.5957020125799276
+  },
+  "selected": {
+    "meteor": 0.6202453105154175,
+    "rougeL": 0.5938193946382953
+  },
+  "decision": {
+    "accepted": false,
+    "changed_dev_ids": [
+      "12165",
+      "164143",
+      "8593"
+    ],
+    "meteor_delta": -0.00010342402845675558,
+    "rougeL_delta": 0.0018826179416323585,
+    "severe_before": 1,
+    "severe_after": 1,
+    "per_question": {
+      "12165": {
+        "meteor": 0.10263743467491931,
+        "rougeL": 0.17512329479440034
+      },
+      "164143": {
+        "meteor": -0.06200768505071094,
+        "rougeL": 0.052138005373744745
+      },
+      "8593": {
+        "meteor": -0.05097215246988543,
+        "rougeL": -0.03899950600491853
+      }
+    },
+    "note": "One fixed policy for all IDs; dev100 is not independent validation.",
+    "public_severe_nonincreasing": true
+  },
+  "selected_variant": "cpu_v1",
+  "public_changed_vs_original": 37,
+  "public_severe_before": 36,
+  "public_severe_after": 8
+}

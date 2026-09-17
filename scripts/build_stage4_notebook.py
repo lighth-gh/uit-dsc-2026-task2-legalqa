@@ -1,4 +1,4 @@
-"""Build the portable CPU notebook from reviewed local sources (no GitHub dependency)."""
+"""Build the portable Stage 4 CPU/GPU notebook (no GitHub dependency)."""
 import base64
 import hashlib
 import io
@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def build():
-    paths = [ROOT / "legalqa" / n for n in ("__init__.py", "io.py", "metrics.py", "repair.py")]
+    paths = sorted((ROOT / "legalqa").glob("*.py"))
+    paths += [ROOT / "assets/approved_models.json"]
     paths += [ROOT / "vendor/scoring.py", *sorted((ROOT / "vendor/rouge_score").glob("*.py"))]
     # Preserve attribution alongside the embedded scorer.
     paths += [ROOT / "NOTICE.md"]
@@ -31,15 +32,15 @@ def build():
         cells.append(item)
 
     cell("markdown", "s4intro", """
-# LegalQA Stage 4 — Hậu xử lý CPU và kiểm chứng trước khi xuất submission
+# LegalQA Stage 4 V2 — Lọc CPU và thử sinh lại có chọn lọc trên GPU
 
-**Cách chạy:** Import notebook vào Kaggle, chọn Accelerator **None**, bật Internet để cài scorer/WordNet. Add Input output Stage 3 hoàn tất hoặc dataset chứa diagnostics ZIP. Nếu Kaggle đã giải nén ZIP thành thư mục, notebook cũng đọc được thư mục có `stage3_manifest.json`.
+**Cách chạy:** Import notebook vào Kaggle, chọn GPU T4/P100, bật Internet để cài dependencies. Add Input diagnostics Stage 3 hoàn tất (hỗ trợ tên có hậu tố như `(5).zip`), output Stage 2/3 có `selected_adapter`, và dataset model gốc có `models.lock.json` cùng các thư mục `generator/`, `embedding/`, `reranker/`. Diagnostics không chứa trọng số. Chỉ CPU: đặt `RUN_GPU=False`, Accelerator None.
 
-Code Stage 4 và scorer BTC được đóng gói ngay trong notebook, không cần push/clone GitHub. Mặc định chạy CPU: kiểm hash/ID/journal, xóa khối lặp nguyên văn liên tiếp, tái lập baseline dev100 rồi chấm bản sửa. Không dùng gold để sửa từng đáp án.
+Code và scorer BTC được nhúng trong notebook. CPU so sánh bản cũ V1 với V2 (thêm vòng lặp đổi nhãn danh sách), giữ bản có METEOR không thấp hơn. Giữ phần kết luận: thử xóa kết luận trên diagnostics (5) làm giảm METEOR. Không dùng gold làm prompt hoặc chọn đáp án riêng cho từng ID.
 
-**Quy tắc chọn:** METEOR không giảm, lỗi lặp nặng không tăng và có khối lặp được loại. Nếu không đạt, notebook xuất `submission_original.zip`; nếu đạt, xuất `submission_repaired.zip`. Cả hai ZIP chỉ chứa `submission.json` ở gốc. Bản ứng viên được lưu để review dù bị từ chối.
+GPU dùng đúng adapter/model đã kiểm identity, giữ context/top-k/ngân sách token, thêm repetition penalty 1.08 và no-repeat 12-gram. Chỉ thử câu có cờ lỗi và evidence đủ mạnh theo heuristic. Toàn bộ nhóm dev được thử trước public; cần METEOR toàn dev100 tăng ít nhất 0,001, ít nhất 2 câu thay đổi và lặp nặng không tăng. Nếu không đạt, giữ CPU và không chạy public GPU. Đây là một cấu hình thử nghiệm cố định, chưa được benchmark GPU.
 
-Đây là phần CPU của Stage 4. Các câu còn thiếu ý/lệch trọng tâm nằm trong `repair.unresolved.json`; notebook này không sinh lại bằng GPU. Diagnostics không chứa trọng số adapter. Xác nhận GPU sau cần model/adapter đúng và kiểm tra context trước.
+Đầu ra `submission_selected.zip` luôn có đủ 1.000 ID và đúng một `submission.json`. Khi GPU **paused**, ZIP hiện tại là bản CPU; Add Input toàn bộ output vừa lưu và đặt `PREVIOUS_OUTPUT` để tiếp tục. Mục tiêu public 0,59 chưa được bảo đảm bởi điểm dev100.
 """)
     cell("code", "s4config", """
 from pathlib import Path
@@ -54,13 +55,22 @@ if not INPUT.is_dir() or not WORK.is_dir():
 # None: tự tìm đúng một diagnostics ZIP, hoặc một thư mục Stage 3 đã giải nén.
 # Nếu có nhiều phiên, điền đường dẫn của phiên COMPLETE muốn xử lý.
 DIAGNOSTICS = None
-OUTPUT = WORK / 'legalqa_main_stage4_v8'
+OUTPUT = WORK / 'legalqa_main_stage4_v2'
+RUN_GPU = True
+MODEL_ROOT = None            # Thư mục chứa models.lock.json và generator/.
+ADAPTER_ROOT = None          # Thư mục selected_adapter chứa trọng số + adapter_config.json.
+PREVIOUS_OUTPUT = None       # Thư mục legalqa_main_stage4_v2 của phiên paused, từ Add Input.
+GPU_MAX_ITEMS = 50           # Tổng câu mới mỗi phiên, cả dev và public; các phiên sau resume.
 INSTALL_DEPS = True          # Tắt nếu môi trường đã có scorer dependencies + WordNet.
 AUDIT_ONLY = False           # True: chỉ kiểm tra/sửa ứng viên, không chấm và KHÔNG tạo ZIP.
-WORK_HOURS = 2.0             # Ngân sách CPU gồm cài đặt + chấm, không phải thời gian dự kiến.
+WORK_HOURS = 9.0             # Gồm cài đặt, CPU, GPU và chấm; không cam kết xong trong một phiên.
 if not 0 < WORK_HOURS <= 9:
     raise ValueError('WORK_HOURS phải nằm trong (0, 9].')
 DEADLINE = SESSION_STARTED + WORK_HOURS * 3600
+if RUN_GPU and AUDIT_ONLY:
+    raise ValueError('RUN_GPU không dùng cùng AUDIT_ONLY.')
+if not isinstance(GPU_MAX_ITEMS, int) or GPU_MAX_ITEMS <= 0:
+    raise ValueError('GPU_MAX_ITEMS phải là số nguyên dương.')
 
 def run_bounded(command, **kwargs):
     remaining = DEADLINE - time.monotonic()
@@ -99,9 +109,17 @@ env['NLTK_DATA'] = str(NLTK_ROOT) + os.pathsep + env.get('NLTK_DATA', '')
 env['PYTHONPATH'] = str(CODE)
 env['PYTHONUNBUFFERED'] = '1'
 env['PYTHONIOENCODING'] = 'utf-8'
+env['LEGALQA_DEADLINE'] = str(time.time() + max(0, DEADLINE - time.monotonic()))
+env['LEGALQA_MAX_ITEMS'] = '0'
 if INSTALL_DEPS and not AUDIT_ONLY:
     run_bounded([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
                  'numpy>=1.26,<3', 'nltk==3.9.1', 'absl-py==2.2.2', 'six==1.17.0'])
+    if RUN_GPU:
+        # Retain Kaggle CUDA torch. The model contract matches the Stage 3 environment.
+        run_bounded([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
+                     'transformers==4.51.3', 'accelerate==1.6.0', 'peft==0.15.2',
+                     'bitsandbytes==0.45.5', 'huggingface-hub==0.30.2',
+                     'safetensors==0.5.3', 'sentencepiece==0.2.0'])
     # A failed resource download must stop the run, rather than silently changing METEOR.
     run_bounded([sys.executable, '-c',
         'import nltk; nltk.download("wordnet", download_dir=' + repr(str(NLTK_ROOT)) + ', raise_on_error=True); '
@@ -115,11 +133,11 @@ print('Code:', CODE)
     cell("markdown", "s4input-note", """
 ## Nhận diện diagnostics
 
-Ưu tiên file `legalqa_main_stage3_v8_diagnostics.zip`. Nếu không thấy ZIP, tìm `stage3_manifest.json` trong dataset đã giải nén. Khi có nhiều kết quả, đặt `DIAGNOSTICS` ở cell cấu hình; không tự chọn phiên mới nhất hoặc một file partial.
+Ưu tiên ZIP có tên bắt đầu bằng `legalqa_main_stage3_v8_diagnostics`. Nếu không thấy ZIP, tìm `stage3_manifest.json` trong dataset đã giải nén. Khi có nhiều kết quả, đặt `DIAGNOSTICS` cụ thể; không tự chọn phiên mới nhất.
 """)
     cell("code", "s4input", """
 if DIAGNOSTICS is None:
-    matches = sorted(INPUT.rglob('legalqa_main_stage3_v8_diagnostics.zip'))
+    matches = sorted(INPUT.rglob('legalqa_main_stage3_v8_diagnostics*.zip'))
     if not matches:
         matches = sorted(p.parent for p in INPUT.rglob('stage3_manifest.json'))
     if len(matches) != 1:
@@ -137,6 +155,29 @@ if DIAGNOSTICS.is_dir():
 print('Diagnostics:', DIAGNOSTICS)
 print('Output:', OUTPUT)
 """)
+    cell("code", "s4gpu-inputs", """
+import shutil
+if PREVIOUS_OUTPUT is not None and not OUTPUT.exists():
+    previous = Path(PREVIOUS_OUTPUT)
+    if not (previous / 'identity.json').is_file():
+        raise ValueError('PREVIOUS_OUTPUT phải là output Stage 4 V2 có identity.json.')
+    shutil.copytree(previous, OUTPUT)
+if RUN_GPU:
+    if MODEL_ROOT is None:
+        choices = sorted(p.parent for p in INPUT.rglob('models.lock.json')
+                         if (p.parent / 'generator/config.json').is_file())
+        if len(choices) != 1:
+            raise RuntimeError(f'Đặt MODEL_ROOT cụ thể; tìm thấy {choices}.')
+        MODEL_ROOT = choices[0]
+    if ADAPTER_ROOT is None:
+        choices = sorted(p.parent for p in INPUT.rglob('selected_adapter/adapter_config.json')
+                         if (p.parent / 'adapter_model.safetensors').is_file())
+        if len(choices) != 1:
+            raise RuntimeError(f'Đặt ADAPTER_ROOT cụ thể; tìm thấy {choices}.')
+        ADAPTER_ROOT = choices[0]
+    print('Models:', MODEL_ROOT, 'Adapter:', ADAPTER_ROOT)
+    print('GPU sẽ kiểm adapter hash và model lock trước khi load weights.')
+""")
     cell("markdown", "s4run-note", """
 ## Sửa lặp, chấm dev100 và chọn bản xuất
 
@@ -145,9 +186,11 @@ Giữ nguyên các mục gần giống nhưng khác số liệu/phủ định. C
 Chạy lại cùng input/code/cấu hình được phép. Khi đổi nguồn hoặc chính sách, chọn `OUTPUT` mới; không sửa/xóa identity để ép tái sử dụng kết quả cũ. Trong chế độ audit-only không xuất ZIP. Sau khi sửa lỗi môi trường, có thể chạy lại cell này với cùng identity.
 """)
     cell("code", "s4run", """
-command = [sys.executable, '-m', 'legalqa.repair', '--diagnostics', DIAGNOSTICS, '--output', OUTPUT]
+command = [sys.executable, '-m', 'legalqa.repair_v2', '--diagnostics', DIAGNOSTICS, '--output', OUTPUT]
 if AUDIT_ONLY:
     command.append('--audit-only')
+if RUN_GPU:
+    command.extend(['--gpu', '--models', MODEL_ROOT, '--adapter', ADAPTER_ROOT, '--max-items', GPU_MAX_ITEMS])
 # Nếu subprocess lỗi/timeout, cell dừng tại đây; cell xuất kết quả không được xác nhận bằng run cũ.
 RUN_SUCCEEDED = False
 run_bounded(command, cwd=CODE, env=env)
@@ -160,6 +203,9 @@ from IPython.display import display, FileLink
 report = json.loads((OUTPUT / 'repair.metrics.json').read_text(encoding='utf-8'))
 manifest = json.loads((OUTPUT / 'repair.manifest.json').read_text(encoding='utf-8'))
 print(json.dumps(report, ensure_ascii=False, indent=2))
+print('STATUS:', manifest['status'], 'SELECTED:', manifest.get('selected_variant'))
+if manifest['status'] == 'paused':
+    print('GPU chưa hoàn tất. ZIP hiện tại là CPU; lưu toàn bộ output để resume phiên sau.')
 name = manifest.get('submission_zip')
 if name:
     path = OUTPUT / name
@@ -170,15 +216,20 @@ if name:
 else:
     print('Audit-only: chưa tạo ZIP. Chạy chế độ có chấm điểm với OUTPUT mới để chọn bản nộp.')
 for name in ('repair.audit.json', 'repair.metrics.json', 'repair.unresolved.json', 'repair.manifest.json'):
-    display(FileLink(str(OUTPUT / name)))
+    if (OUTPUT / name).is_file():
+        display(FileLink(str(OUTPUT / name)))
+if (OUTPUT / 'gpu').is_dir():
+    for name in ('candidates.json', 'decision.json', 'status.json'):
+        if (OUTPUT / 'gpu' / name).is_file():
+            display(FileLink(str(OUTPUT / 'gpu' / name)))
 print('Các chỉ số ở đây là dev100, chưa phải điểm public của BTC.')
 """)
     cell("markdown", "s4next", """
 ## Đọc danh sách còn cần xử lý
 
-`repair.unresolved.json` ghi các ID của **bản được chọn** cần kiểm tra tiếp. `regenerate_automatically=false`: đây không phải lệnh tự chạy GPU. Cờ chạm token chỉ yêu cầu kiểm tra đủ ý; không khẳng định đáp án chắc chắn sai.
+`repair.unresolved.json` ghi cờ cần xem lại của bản được chọn. Cờ chạm token chỉ yêu cầu kiểm tra đủ ý; không khẳng định đáp án sai. `gpu/candidates.json` ghi danh sách thử và các câu bị bỏ qua vì evidence yếu. Bộ lọc evidence là heuristic, không chứng minh retrieval đúng.
 
-`repair.candidate_unresolved.json` và `repair.audit.json` giữ kết quả ứng viên trước quyết định toàn tập. Nếu CPU không giải quyết được thiếu ý, bước GPU sau cần generator/tokenizer + selected adapter từ output Kaggle, kiểm hash, xác nhận context phù hợp và thử trên dev trước. Không có nhãn public để cam kết tăng điểm public, và chưa có prediction holdout trong diagnostics để xác nhận độc lập.
+`gpu/*.checkpoint.jsonl` lưu từng lần sinh và lý do từ chối. Không khôi phục raw output bị guard từ chối. Câu không thuộc nhóm thử hoặc bản sinh mới bị lỗi được giữ nguyên từ CPU. Không có nhãn public hoặc prediction holdout để xác nhận độc lập; dev100 đã dùng chọn checkpoint nên có nguy cơ chọn cấu hình quá hợp tập.
 """)
     nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
           "language_info": {"name": "python", "version": "3.11.0"}}, "nbformat": 4, "nbformat_minor": 5}

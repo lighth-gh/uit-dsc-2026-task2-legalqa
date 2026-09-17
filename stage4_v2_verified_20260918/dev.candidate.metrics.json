@@ -1,0 +1,639 @@
+{
+  "label": "dev.candidate",
+  "samples": 100,
+  "meteor": 0.6201418864869608,
+  "rougeL": 0.5957020125799276,
+  "objective": {
+    "primary_metric": "meteor",
+    "secondary_metric": "rougeL",
+    "target_meteor": 0.65,
+    "target_met": false,
+    "meteor_gap": 0.02985811351303924
+  },
+  "prediction_path": "D:\\code\\uit dsc 2026\\UIT_DSC_2026_LegalQA_baseline_v3\\stage4_v2_verified_20260918\\dev.candidate.json",
+  "prediction_hash": "c8b0ba38b0e95c1e3195005be662be4e114864d4e7fbd8ac4ea2ae07f4a15f8c",
+  "reference_hash": "892518457af76573410fd440fedfd743a76c9406552319d1f8fd22b1004f9aef",
+  "metric_identity": {
+    "nltk": "3.9.1",
+    "numpy": "2.4.2",
+    "scoring": "f04843fbfad26d41356506d8e49692a7c8a0ed1b9f065a3a8472fa6398a5aa95",
+    "rouge_files": {
+      "__init__.py": "7d007905e3e38fc10b41821cf4f49807732208e683dec8b2ff48ac1c4b2cbc91",
+      "create_pyrouge_files.py": "fc6b662278957958d25ad04ca192016de1fa5ccba7cf56b76e3b27d439866e80",
+      "io.py": "b50771934202974815dc1797a74fa542e417f82a483d453ffd97420eb52cf05f",
+      "rouge.py": "d4a271f18af0eea41136998afd70ad01f36130ebed6643855424739d3b88aad8",
+      "rouge_scorer.py": "9484c5fd05e22cd28b5053bf9de586b3620cf65b0c38052b8690badd51f31d1a",
+      "scoring.py": "b3fc153499e484665294ddbaeb876452b40a8fa2120e824b804928c96e3f2c1a",
+      "test_util.py": "91ae80cd7cf30963840546f89df2906601b793bca027acf65e49b46c74aeb53c",
+      "tokenize.py": "dc91cea8f09507f744549160c458031d0956e35fa230c80d01f990eba20a7403",
+      "tokenizers.py": "2b7b9dae505ce8739064ba8e4791b871b13aa1f65bc54e25692f1a9ba8600508"
+    }
+  },
+  "per_question": {
+    "144875": {
+      "meteor": 0.6068870550125952,
+      "rougeL": 0.56203007518797,
+      "prediction_words": 418,
+      "reference_words": 270
+    },
+    "17421": {
+      "meteor": 0.44621668841904566,
+      "rougeL": 0.4217032967032967,
+      "prediction_words": 579,
+      "reference_words": 379
+    },
+    "150887": {
+      "meteor": 0.40868334725016287,
+      "rougeL": 0.3547094188376753,
+      "prediction_words": 432,
+      "reference_words": 191
+    },
+    "100271": {
+      "meteor": 0.789002562176647,
+      "rougeL": 0.8617511520737327,
+      "prediction_words": 126,
+      "reference_words": 155
+    },
+    "130303": {
+      "meteor": 0.10918354519633175,
+      "rougeL": 0.24425634824667475,
+      "prediction_words": 95,
+      "reference_words": 451
+    },
+    "98515": {
+      "meteor": 0.4733779002024932,
+      "rougeL": 0.455078125,
+      "prediction_words": 336,
+      "reference_words": 360
+    },
+    "19469": {
+      "meteor": 0.5542018413480249,
+      "rougeL": 0.4768729641693811,
+      "prediction_words": 602,
+      "reference_words": 406
+    },
+    "160199": {
+      "meteor": 0.094757097623315,
+      "rougeL": 0.32786885245901637,
+      "prediction_words": 198,
+      "reference_words": 309
+    },
+    "143995": {
+      "meteor": 0.8744971461772599,
+      "rougeL": 0.6244029526704299,
+      "prediction_words": 1061,
+      "reference_words": 489
+    },
+    "56645": {
+      "meteor": 0.8861359366318428,
+      "rougeL": 0.9100817438692097,
+      "prediction_words": 336,
+      "reference_words": 364
+    },
+    "85391": {
+      "meteor": 0.5029382574659742,
+      "rougeL": 0.4569775849602314,
+      "prediction_words": 424,
+      "reference_words": 446
+    },
+    "119899": {
+      "meteor": 0.3988053599347133,
+      "rougeL": 0.4779299847792998,
+      "prediction_words": 524,
+      "reference_words": 451
+    },
+    "43709": {
+      "meteor": 0.7094375004733028,
+      "rougeL": 0.4160191273161984,
+      "prediction_words": 809,
+      "reference_words": 240
+    },
+    "97491": {
+      "meteor": 0.6959825113364911,
+      "rougeL": 0.4931662870159453,
+      "prediction_words": 608,
+      "reference_words": 493
+    },
+    "9023": {
+      "meteor": 0.24188528868604575,
+      "rougeL": 0.27568710359408033,
+      "prediction_words": 1065,
+      "reference_words": 448
+    },
+    "25189": {
+      "meteor": 0.7600924847091429,
+      "rougeL": 0.6127167630057803,
+      "prediction_words": 68,
+      "reference_words": 37
+    },
+    "108871": {
+      "meteor": 0.6178572132522671,
+      "rougeL": 0.47747747747747743,
+      "prediction_words": 376,
+      "reference_words": 203
+    },
+    "57785": {
+      "meteor": 0.8427613530604864,
+      "rougeL": 0.6836002208724462,
+      "prediction_words": 714,
+      "reference_words": 398
+    },
+    "143605": {
+      "meteor": 0.7241349837772961,
+      "rougeL": 0.7268518518518519,
+      "prediction_words": 145,
+      "reference_words": 138
+    },
+    "113243": {
+      "meteor": 0.8527265776529899,
+      "rougeL": 0.9342403628117915,
+      "prediction_words": 520,
+      "reference_words": 595
+    },
+    "146161": {
+      "meteor": 0.8502312007277137,
+      "rougeL": 0.6859903381642513,
+      "prediction_words": 254,
+      "reference_words": 155
+    },
+    "149895": {
+      "meteor": 0.8046807179479766,
+      "rougeL": 0.502808988764045,
+      "prediction_words": 1013,
+      "reference_words": 362
+    },
+    "111153": {
+      "meteor": 0.4402479712288998,
+      "rougeL": 0.24508320726172464,
+      "prediction_words": 398,
+      "reference_words": 80
+    },
+    "63743": {
+      "meteor": 0.4083786224055341,
+      "rougeL": 0.35249333840883135,
+      "prediction_words": 1167,
+      "reference_words": 480
+    },
+    "146905": {
+      "meteor": 0.7782076945200384,
+      "rougeL": 0.8146718146718146,
+      "prediction_words": 172,
+      "reference_words": 164
+    },
+    "35051": {
+      "meteor": 0.6864817182559741,
+      "rougeL": 0.4474885844748858,
+      "prediction_words": 423,
+      "reference_words": 152
+    },
+    "28233": {
+      "meteor": 0.2782173438158184,
+      "rougeL": 0.41284403669724773,
+      "prediction_words": 148,
+      "reference_words": 312
+    },
+    "136055": {
+      "meteor": 0.8354757155999183,
+      "rougeL": 0.7652892561983472,
+      "prediction_words": 492,
+      "reference_words": 317
+    },
+    "6665": {
+      "meteor": 0.9031247497728646,
+      "rougeL": 0.6634844868735084,
+      "prediction_words": 732,
+      "reference_words": 381
+    },
+    "20779": {
+      "meteor": 0.5091512941173664,
+      "rougeL": 0.6201022146507665,
+      "prediction_words": 148,
+      "reference_words": 274
+    },
+    "29635": {
+      "meteor": 0.946662908151052,
+      "rougeL": 0.926829268292683,
+      "prediction_words": 432,
+      "reference_words": 378
+    },
+    "99623": {
+      "meteor": 0.36669598867663616,
+      "rougeL": 0.2933730454206999,
+      "prediction_words": 717,
+      "reference_words": 174
+    },
+    "22579": {
+      "meteor": 0.5476131176351882,
+      "rougeL": 0.38654434250764524,
+      "prediction_words": 853,
+      "reference_words": 303
+    },
+    "11029": {
+      "meteor": 0.2210886752214812,
+      "rougeL": 0.18729817007534985,
+      "prediction_words": 1101,
+      "reference_words": 192
+    },
+    "144291": {
+      "meteor": 0.391616566569455,
+      "rougeL": 0.4346116027531957,
+      "prediction_words": 312,
+      "reference_words": 377
+    },
+    "87427": {
+      "meteor": 0.1939484024536556,
+      "rougeL": 0.3262163108155408,
+      "prediction_words": 443,
+      "reference_words": 1447
+    },
+    "138633": {
+      "meteor": 0.8298828194928114,
+      "rougeL": 0.806201550387597,
+      "prediction_words": 812,
+      "reference_words": 641
+    },
+    "38669": {
+      "meteor": 0.8536771708137489,
+      "rougeL": 0.6693354683746997,
+      "prediction_words": 511,
+      "reference_words": 273
+    },
+    "86225": {
+      "meteor": 0.901145007128094,
+      "rougeL": 0.9521044992743106,
+      "prediction_words": 921,
+      "reference_words": 922
+    },
+    "87113": {
+      "meteor": 0.9252922109485356,
+      "rougeL": 0.9564375605033881,
+      "prediction_words": 329,
+      "reference_words": 350
+    },
+    "1681": {
+      "meteor": 0.9664480839413041,
+      "rougeL": 0.935251798561151,
+      "prediction_words": 277,
+      "reference_words": 249
+    },
+    "33507": {
+      "meteor": 0.5537970679728852,
+      "rougeL": 0.48327137546468396,
+      "prediction_words": 1223,
+      "reference_words": 497
+    },
+    "164165": {
+      "meteor": 0.8530451473327951,
+      "rougeL": 0.6421499292786421,
+      "prediction_words": 306,
+      "reference_words": 157
+    },
+    "148973": {
+      "meteor": 0.5180660890526936,
+      "rougeL": 0.42237762237762233,
+      "prediction_words": 602,
+      "reference_words": 354
+    },
+    "158411": {
+      "meteor": 0.19063988724930112,
+      "rougeL": 0.26469182990922124,
+      "prediction_words": 1011,
+      "reference_words": 312
+    },
+    "136787": {
+      "meteor": 0.24929226864506054,
+      "rougeL": 0.4139784946236559,
+      "prediction_words": 194,
+      "reference_words": 263
+    },
+    "31787": {
+      "meteor": 0.7633065347351062,
+      "rougeL": 0.8375,
+      "prediction_words": 46,
+      "reference_words": 56
+    },
+    "51037": {
+      "meteor": 0.7848515171891356,
+      "rougeL": 0.8629737609329446,
+      "prediction_words": 337,
+      "reference_words": 323
+    },
+    "15927": {
+      "meteor": 0.1894468808663608,
+      "rougeL": 0.3138075313807531,
+      "prediction_words": 150,
+      "reference_words": 473
+    },
+    "132737": {
+      "meteor": 0.7969018209438946,
+      "rougeL": 0.642390289449113,
+      "prediction_words": 408,
+      "reference_words": 258
+    },
+    "40221": {
+      "meteor": 0.7602252103817219,
+      "rougeL": 0.6164672765657988,
+      "prediction_words": 510,
+      "reference_words": 357
+    },
+    "31233": {
+      "meteor": 0.8851336727207127,
+      "rougeL": 0.7264770240700218,
+      "prediction_words": 589,
+      "reference_words": 348
+    },
+    "32933": {
+      "meteor": 0.7060772888522827,
+      "rougeL": 0.6525529265255292,
+      "prediction_words": 286,
+      "reference_words": 229
+    },
+    "53141": {
+      "meteor": 0.5644602690076942,
+      "rougeL": 0.3237867939538584,
+      "prediction_words": 1290,
+      "reference_words": 268
+    },
+    "153843": {
+      "meteor": 0.26973612983190953,
+      "rougeL": 0.18224666142969365,
+      "prediction_words": 769,
+      "reference_words": 100
+    },
+    "69289": {
+      "meteor": 0.6062153625111587,
+      "rougeL": 0.686060606060606,
+      "prediction_words": 309,
+      "reference_words": 219
+    },
+    "12165": {
+      "meteor": 0.3709376783675799,
+      "rougeL": 0.36327345309381237,
+      "prediction_words": 468,
+      "reference_words": 167
+    },
+    "88623": {
+      "meteor": 0.8430847712604191,
+      "rougeL": 0.7502254283137962,
+      "prediction_words": 431,
+      "reference_words": 280
+    },
+    "116645": {
+      "meteor": 0.8481378818245041,
+      "rougeL": 0.9116809116809117,
+      "prediction_words": 341,
+      "reference_words": 362
+    },
+    "34193": {
+      "meteor": 0.3717045348329026,
+      "rougeL": 0.44108761329305135,
+      "prediction_words": 228,
+      "reference_words": 216
+    },
+    "66341": {
+      "meteor": 0.9858766887036504,
+      "rougeL": 0.9930069930069931,
+      "prediction_words": 142,
+      "reference_words": 142
+    },
+    "59005": {
+      "meteor": 0.9573086648050484,
+      "rougeL": 0.9292604501607717,
+      "prediction_words": 201,
+      "reference_words": 193
+    },
+    "36675": {
+      "meteor": 0.39844627685891776,
+      "rougeL": 0.7005988023952096,
+      "prediction_words": 437,
+      "reference_words": 769
+    },
+    "60049": {
+      "meteor": 0.7249834839523044,
+      "rougeL": 0.48010610079575594,
+      "prediction_words": 678,
+      "reference_words": 270
+    },
+    "164143": {
+      "meteor": 0.17874676730548927,
+      "rougeL": 0.3167259786476868,
+      "prediction_words": 368,
+      "reference_words": 370
+    },
+    "78067": {
+      "meteor": 0.9455998370409022,
+      "rougeL": 0.9768421052631578,
+      "prediction_words": 311,
+      "reference_words": 325
+    },
+    "36035": {
+      "meteor": 0.17814043243838756,
+      "rougeL": 0.3401069518716578,
+      "prediction_words": 169,
+      "reference_words": 407
+    },
+    "10295": {
+      "meteor": 0.7341534982332156,
+      "rougeL": 0.40509259259259256,
+      "prediction_words": 501,
+      "reference_words": 133
+    },
+    "5809": {
+      "meteor": 0.38557771445548294,
+      "rougeL": 0.4352660841938046,
+      "prediction_words": 418,
+      "reference_words": 411
+    },
+    "146535": {
+      "meteor": 0.8206701882428498,
+      "rougeL": 0.8166089965397926,
+      "prediction_words": 176,
+      "reference_words": 190
+    },
+    "70029": {
+      "meteor": 0.8812598929801838,
+      "rougeL": 0.9393063583815029,
+      "prediction_words": 432,
+      "reference_words": 439
+    },
+    "148123": {
+      "meteor": 0.9044331657259347,
+      "rougeL": 0.8552338530066814,
+      "prediction_words": 151,
+      "reference_words": 156
+    },
+    "145819": {
+      "meteor": 0.9466955295900683,
+      "rougeL": 0.8826025459688824,
+      "prediction_words": 240,
+      "reference_words": 211
+    },
+    "151047": {
+      "meteor": 0.3733672926493876,
+      "rougeL": 0.4472361809045226,
+      "prediction_words": 496,
+      "reference_words": 608
+    },
+    "4927": {
+      "meteor": 0.30945796590241037,
+      "rougeL": 0.40909090909090906,
+      "prediction_words": 324,
+      "reference_words": 314
+    },
+    "150773": {
+      "meteor": 0.8619555396383579,
+      "rougeL": 0.93006993006993,
+      "prediction_words": 345,
+      "reference_words": 398
+    },
+    "63387": {
+      "meteor": 0.37495711948490595,
+      "rougeL": 0.33057851239669417,
+      "prediction_words": 319,
+      "reference_words": 140
+    },
+    "8593": {
+      "meteor": 0.1670230135626013,
+      "rougeL": 0.2960222016651249,
+      "prediction_words": 129,
+      "reference_words": 562
+    },
+    "134205": {
+      "meteor": 0.9644497780265147,
+      "rougeL": 0.9823182711198428,
+      "prediction_words": 166,
+      "reference_words": 167
+    },
+    "97507": {
+      "meteor": 0.1704452893562783,
+      "rougeL": 0.33301064859632135,
+      "prediction_words": 205,
+      "reference_words": 471
+    },
+    "37299": {
+      "meteor": 0.9707695545998974,
+      "rougeL": 0.9702660406885759,
+      "prediction_words": 210,
+      "reference_words": 201
+    },
+    "153291": {
+      "meteor": 0.8265978626071447,
+      "rougeL": 0.5849297573435505,
+      "prediction_words": 352,
+      "reference_words": 158
+    },
+    "113785": {
+      "meteor": 0.9426742931612723,
+      "rougeL": 0.9560853199498117,
+      "prediction_words": 495,
+      "reference_words": 519
+    },
+    "107583": {
+      "meteor": 0.8497669553247333,
+      "rougeL": 0.9375907111756168,
+      "prediction_words": 211,
+      "reference_words": 229
+    },
+    "92641": {
+      "meteor": 0.6699708652739577,
+      "rougeL": 0.8372093023255814,
+      "prediction_words": 327,
+      "reference_words": 420
+    },
+    "128323": {
+      "meteor": 0.8450546623425188,
+      "rougeL": 0.6866866866866868,
+      "prediction_words": 407,
+      "reference_words": 267
+    },
+    "17937": {
+      "meteor": 0.7468005395467898,
+      "rougeL": 0.8612167300380227,
+      "prediction_words": 295,
+      "reference_words": 385
+    },
+    "100197": {
+      "meteor": 0.761867430605806,
+      "rougeL": 0.5142083897158322,
+      "prediction_words": 680,
+      "reference_words": 247
+    },
+    "163003": {
+      "meteor": 0.8397911051212937,
+      "rougeL": 0.6835443037974683,
+      "prediction_words": 141,
+      "reference_words": 108
+    },
+    "129715": {
+      "meteor": 0.7757001949182226,
+      "rougeL": 0.6274509803921569,
+      "prediction_words": 226,
+      "reference_words": 132
+    },
+    "31253": {
+      "meteor": 0.7542227200904434,
+      "rougeL": 0.8733264675592173,
+      "prediction_words": 364,
+      "reference_words": 302
+    },
+    "54173": {
+      "meteor": 0.17494105112062977,
+      "rougeL": 0.3528428093645484,
+      "prediction_words": 303,
+      "reference_words": 464
+    },
+    "94451": {
+      "meteor": 0.766130020401692,
+      "rougeL": 0.6379310344827587,
+      "prediction_words": 416,
+      "reference_words": 211
+    },
+    "116877": {
+      "meteor": 0.3166842193393077,
+      "rougeL": 0.4065040650406504,
+      "prediction_words": 157,
+      "reference_words": 149
+    },
+    "22333": {
+      "meteor": 0.45680734970257225,
+      "rougeL": 0.4366492146596858,
+      "prediction_words": 768,
+      "reference_words": 446
+    },
+    "14843": {
+      "meteor": 0.41911467468388364,
+      "rougeL": 0.517094017094017,
+      "prediction_words": 252,
+      "reference_words": 365
+    },
+    "59633": {
+      "meteor": 0.5757314263520131,
+      "rougeL": 0.6077844311377245,
+      "prediction_words": 192,
+      "reference_words": 250
+    },
+    "155609": {
+      "meteor": 0.6039629425151153,
+      "rougeL": 0.5838198498748958,
+      "prediction_words": 812,
+      "reference_words": 728
+    },
+    "53207": {
+      "meteor": 0.8113987282892696,
+      "rougeL": 0.6304347826086957,
+      "prediction_words": 391,
+      "reference_words": 207
+    },
+    "156051": {
+      "meteor": 0.28976127035800714,
+      "rougeL": 0.3506607929515419,
+      "prediction_words": 1065,
+      "reference_words": 359
+    }
+  },
+  "lengths": {
+    "mean": 448.61,
+    "p90": 859.8000000000006,
+    "mean_reference": 328.68
+  }
+}

@@ -15,6 +15,7 @@ from .io import ROOT, _unique_pairs, digest, file_hash, read_json, validate_pred
 
 POLICY = {"version": 1, "min_chars": 60, "min_words": 8,
           "min_repeats": 3, "max_block_units": 12}
+EXTENDED_POLICY = {**POLICY, "version": 2, "numbered_min_repeats": 6}
 PUBLIC = "submissions/public/submission"
 
 
@@ -129,7 +130,7 @@ def load_diagnostics(path, expected_public_count=1000):
                 _require(set(audit[k]["context_parent_ids"]) <= {c["parent_id"] for c in contexts},
                          "Audit references an unknown parent")
             splits[split] = {"predictions": pred, "audit": audit, "questions": questions,
-                             "prediction_manifest": pm}
+                             "prediction_manifest": pm, "records": records}
         _require(len(splits["public"]["predictions"]) == expected_public_count
                  == manifest["progress"]["answers"], "Unexpected public answer count")
         dev_manifest = splits["dev"]["prediction_manifest"]
@@ -151,7 +152,7 @@ def load_diagnostics(path, expected_public_count=1000):
         _require(all(abs(stored_metrics[k] - selection[k]) <= 1e-12 for k in ("meteor", "rougeL")),
                  "Selection/metrics mismatch")
         splits["dev"].update(references=references, stored_metrics=stored_metrics)
-    return {**splits, "source": {"diagnostics_sha256": file_hash(path), "stage3_code": manifest["source_hash"],
+    return {**splits, "config": config, "source": {"diagnostics_sha256": file_hash(path), "stage3_code": manifest["source_hash"],
             "selected_adapter": label, "omitted_weights": omitted},
             "verification": {"crc": "passed", "hashes": "passed", "schema_and_ids": "passed",
                              "journal": "passed", "identity": "passed",
@@ -193,15 +194,48 @@ def _collapse(text, sentence_mode, policy):
     return result, deletions
 
 
+def _line_content(text):
+    """Ignore list markers only; quantities, citations and negations remain exact."""
+    text = re.sub(r"^\s*(?:(?:\d+|[a-zA-ZđĐ]{1,2})[.)]\s+|[-*•●]\s+)", "", text)
+    return " ".join(text.split()).strip()
+
+
+def _collapse_numbered(text, policy):
+    units = list(re.finditer(r"[^\r\n]+", text))
+    deletions, i = [], 0
+    marker = re.compile(r"^\s*(?:\d+|[a-zA-ZđĐ]{1,2})[.)]\s+")
+    while i < len(units):
+        first = units[i]
+        content = _line_content(first.group())
+        end = i + 1
+        if marker.match(first.group()) and len(content.split()) >= 5 and len(content) >= 25:
+            while (end < len(units) and marker.match(units[end].group())
+                   and _line_content(units[end].group()) == content):
+                end += 1
+            if end - i >= policy["numbered_min_repeats"]:
+                deletions.append({"start": first.end(), "end": units[end - 1].end(),
+                                  "repeats": end - i, "unit": "numbered_loop", "block_units": 1})
+        i = end
+    for change in reversed(deletions):
+        text = text[:change["start"]] + text[change["end"]:]
+    return text, deletions
+
+
 def deduplicate_answer(text, policy=None):
     """Only identical adjacent blocks (>=3 copies); never fuzzy-match legal clauses."""
     policy = dict(POLICY if policy is None else policy)
     _require(policy["min_repeats"] >= 3 and policy["min_chars"] >= 60
              and policy["min_words"] >= 8 and policy["max_block_units"] >= 1,
              "Unsafe repetition policy")
+    _require(policy["version"] in (1, 2) and
+             (policy["version"] == 1 or policy.get("numbered_min_repeats", 0) >= 6),
+             "Unsafe numbered repetition policy")
     result, changes = text, []
     for sentence_mode in (False, True):
         result, removed = _collapse(result, sentence_mode, policy)
+        changes.extend(removed)
+    if policy["version"] == 2:
+        result, removed = _collapse_numbered(result, policy)
         changes.extend(removed)
     return result, changes
 
@@ -223,7 +257,8 @@ def repair_predictions(predictions, audit, policy=None):
         if ratio >= .25:
             reasons.append("repetition_screen")
         if changes:
-            reasons.append("exact_adjacent_loop")
+            reasons.extend(sorted({"numbered_loop" if c["unit"] == "numbered_loop"
+                                   else "exact_adjacent_loop" for c in changes}))
         if row["hit_token_limit"]:
             reasons.append("token_limit_review")
         if "fallback" in row["route"]:

@@ -1,0 +1,34 @@
+{
+  "source": {
+    "diagnostics_sha256": "a19932405fe8ae65713d290c362a1ba2b968ee71d090ea4479dcdeeda018afe7",
+    "stage3_code": "b7ce423ad04f159853087bbf1ea6e41e1015d8b66d8d69f5eec7f6d56f247f41",
+    "selected_adapter": "epoch-01",
+    "omitted_weights": [
+      "selected_adapter/adapter_model.safetensors"
+    ]
+  },
+  "implementation": {
+    "legalqa/repair.py": "6407bf207a0ce27b515bc190a12c56a58a72141893ebb44c591844014aeeebbe",
+    "legalqa/io.py": "0c82e8297a8a611c29bc54bb7fe5e92bbf4f51d6136ca857cffd041733d79435",
+    "legalqa/metrics.py": "bf8bf96079296f0c547f7d1e25b4d3b437be9ad8a426ce2d06a2c3e878db942b",
+    "vendor/scoring.py": "f04843fbfad26d41356506d8e49692a7c8a0ed1b9f065a3a8472fa6398a5aa95",
+    "vendor/rouge_score/__init__.py": "7d007905e3e38fc10b41821cf4f49807732208e683dec8b2ff48ac1c4b2cbc91",
+    "vendor/rouge_score/create_pyrouge_files.py": "fc6b662278957958d25ad04ca192016de1fa5ccba7cf56b76e3b27d439866e80",
+    "vendor/rouge_score/io.py": "b50771934202974815dc1797a74fa542e417f82a483d453ffd97420eb52cf05f",
+    "vendor/rouge_score/rouge.py": "d4a271f18af0eea41136998afd70ad01f36130ebed6643855424739d3b88aad8",
+    "vendor/rouge_score/rouge_scorer.py": "9484c5fd05e22cd28b5053bf9de586b3620cf65b0c38052b8690badd51f31d1a",
+    "vendor/rouge_score/scoring.py": "b3fc153499e484665294ddbaeb876452b40a8fa2120e824b804928c96e3f2c1a",
+    "vendor/rouge_score/test_util.py": "91ae80cd7cf30963840546f89df2906601b793bca027acf65e49b46c74aeb53c",
+    "vendor/rouge_score/tokenize.py": "dc91cea8f09507f744549160c458031d0956e35fa230c80d01f990eba20a7403",
+    "vendor/rouge_score/tokenizers.py": "2b7b9dae505ce8739064ba8e4791b871b13aa1f65bc54e25692f1a9ba8600508"
+  },
+  "policy": {
+    "version": 1,
+    "min_chars": 60,
+    "min_words": 8,
+    "min_repeats": 3,
+    "max_block_units": 12
+  },
+  "audit_only": false,
+  "expected_public_count": 1000
+}

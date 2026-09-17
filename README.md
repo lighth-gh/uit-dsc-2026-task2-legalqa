@@ -78,24 +78,24 @@ Chỉ có thể nhập QLoRA cũ bằng `LEGACY_INPUT_ROOT` nếu run đó đã 
 
 Notebook dùng một GPU cho mỗi subprocess; đặc biệt QLoRA chỉ thấy GPU 0. Nếu có hai T4, không mặc định coi chúng là một GPU có VRAM cộng gộp. Retrieval hoàn tất và nhả model trước khi generation bắt đầu. Chưa có benchmark tốc độ/VRAM thực tế của cấu hình này.
 
-### Stage 4: hậu xử lý CPU sau khi Stage 3 hoàn tất
+### Stage 4 V2: lọc CPU và thử sinh lại có chọn lọc bằng GPU
 
-Import `legalqa_main_04_repair_submit.ipynb` vào Kaggle, chọn **Accelerator: None**, bật Internet và Add Input output Stage 3 hoàn tất hoặc dataset chứa diagnostics. Notebook tự tìm đúng một `legalqa_main_stage3_v8_diagnostics.zip`; cũng hỗ trợ dataset đã giải nén có `stage3_manifest.json`. Khi có nhiều phiên, điền `DIAGNOSTICS` cụ thể. Code và scorer BTC được nhúng trong notebook, không cần clone/push GitHub.
+Import `legalqa_main_04_repair_submit.ipynb` vào Kaggle, chọn GPU T4/P100, bật Internet. Add Input diagnostics Stage 3, output Stage 2/3 có `selected_adapter`, và dataset model gốc. Notebook hỗ trợ tên ZIP có hậu tố như `(5).zip` hoặc thư mục có `stage3_manifest.json`. Khi có nhiều input, đặt `DIAGNOSTICS`, `MODEL_ROOT`, `ADAPTER_ROOT` cụ thể. Chỉ CPU: đặt `RUN_GPU=False`, Accelerator None. Code/scorer được nhúng, không cần clone/push GitHub. Hướng dẫn và giới hạn: [docs/main04_v2.md](docs/main04_v2.md).
 
-Stage 4 kiểm tra CRC/hash/ID/journal, loại các khối lặp nguyên văn liên tiếp từ ba bản trở lên và chấm lại dev100. Chỉ xuất `submission_repaired.zip` khi METEOR không giảm, có khối lặp được loại và số câu lặp nặng không tăng. Nếu không đạt thì xuất `submission_original.zip`. ZIP được chọn chứa đúng một `submission.json`; bản gốc, ứng viên, audit, metrics và manifest nằm riêng trong `/kaggle/working/legalqa_main_stage4_v8/`.
+CPU kiểm CRC/hash/ID/journal và tái lập điểm dev100, so sánh V1 với V2 (thêm vòng lặp nội dung y hệt nhưng đổi nhãn danh sách từ 6 mục liên tiếp). V2 phải không giảm METEOR so với bản CPU được chọn của V1. GPU thử toàn bộ nhóm dev có cờ lỗi/evidence mạnh trước, cần METEOR tăng ít nhất 0,001 và ít nhất 2 câu đổi đáp án mới chạy public. Mọi phiên xuất `submission_selected.zip` có đúng một `submission.json` đủ 1.000 ID trong `/kaggle/working/legalqa_main_stage4_v2/`. Khi GPU paused, ZIP hiện tại là bản CPU; gắn toàn bộ output vào phiên sau và đặt `PREVIOUS_OUTPUT` để resume.
 
-Đã kiểm chứng trên diagnostics V8 ngày 14/09/2026: dev100 METEOR **0,56356 → 0,57095**, ROUGE-L **0,53082 → 0,54667**; cả 6 câu dev được sửa đều tăng hai chỉ số. Public có 52 câu được sửa, số câu bị heuristic gắn cờ lặp nặng giảm từ 51 xuống 11. Đây là kết quả dev100, chưa phải điểm public; việc xóa lặp không chứng minh mọi đáp án đã đủ ý.
+Trên diagnostics `(5)` ngày 18/09/2026, V1 đạt dev100 METEOR **0,61828 → 0,62025**; người dùng báo public **0,5580 → 0,5599**. Hai loại điểm không được suy ra trực tiếp từ nhau. Mục tiêu public 0,59 chưa được bảo đảm; GPU V2 cần được chạy trên Kaggle để kiểm chứng.
 
-`repair.unresolved.json` là danh sách cần xem lại của bản được chọn, không phải danh sách tự động sinh lại. Cờ chạm token không mặc định là lỗi. V1 chạy CPU, chưa chạy GPU hoặc sửa retrieval; câu dẫn còn thiếu nội dung sau xóa lặp được giữ bản gốc và ghi lý do. Bước GPU sau cần đúng generator/tokenizer/selected adapter vì diagnostics ZIP không chứa trọng số. Thiết kế và giới hạn chi tiết nằm trong `STAGE4_REVIEW_PLAN.md`.
+`repair.unresolved.json` ghi cờ cần xem lại, không phải danh sách đáp án chắc chắn sai. `gpu/candidates.json` ghi các ID đủ điều kiện thử và các ID bỏ qua vì evidence yếu. GPU giữ top-k và ngân sách context/token, thử một cấu hình chống lặp, giữ nguyên guards và đáp án CPU nếu generation lỗi. Journal Stage 4 riêng khóa input/code/model/adapter. Diagnostics không có trọng số; không sửa retrieval hoặc train lại ở Stage 4.
 
 Chạy local phần CPU bằng dependencies scorer (`numpy`, `nltk==3.9.1`, `absl-py==2.2.2`, `six==1.17.0`) và WordNet:
 
 ```bash
 python -m nltk.downloader wordnet omw-1.4
-python -m legalqa.repair --diagnostics /path/legalqa_main_stage3_v8_diagnostics.zip --output runs/stage4
+python -m legalqa.repair_v2 --diagnostics /path/legalqa_main_stage3_v8_diagnostics.zip --output runs/stage4_v2
 ```
 
-Thêm `--audit-only` nếu chỉ muốn kiểm tra và tạo bản ứng viên mà không chấm/đóng ZIP. Đổi input/code/chế độ phải chọn output mới; không xóa identity để ép dùng lại kết quả. Sau khi sửa code Stage 4 trong repo, chạy `python scripts/build_stage4_notebook.py` để cập nhật code nhúng. Kiểm thử: `python -m unittest discover -s tests -p test_repair.py -v`.
+Thêm `--gpu --models /path/models --adapter /path/selected_adapter --max-items 50` để thử GPU; notebook quản lý thêm hạn giờ. `--audit-only` chỉ tạo ứng viên, không chấm/đóng ZIP. Đổi input/code/chế độ phải chọn output mới; không xóa identity. Lệnh cũ `python -m legalqa.repair` vẫn tái lập V1. Build notebook: `python scripts/build_stage4_notebook.py`. Kiểm thử: `python -m unittest discover -s tests -p "test_repair*.py" -v`.
 
 ## Chạy bằng dòng lệnh
 
