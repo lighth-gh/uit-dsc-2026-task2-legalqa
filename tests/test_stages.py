@@ -192,6 +192,7 @@ class StageTests(unittest.TestCase):
             stage.generate_submit()
             self.assertFalse(pred.with_suffix('.zip').exists())
             self.assertEqual(stage.command.call_args.kwargs['cap'],200)
+            self.assertIn('--multi-gpu', stage.command.call_args.args)
             answers={**partial,'2':{'answer':'two'}}
             write_json(pred,answers);write_json(pred.with_suffix('.audit.json'),{'1':{},'2':{}})
             write_json(pred.with_suffix('.manifest.json'),{'prediction_hash':digest(answers)})

@@ -533,7 +533,7 @@ class Stage:
         destination = self.root/"submissions"/"public"
         pred = destination/"submission.json"
         if not generation_ready(pred):
-            self.command("generate","--questions",questions,"--retrieval",cache,
+            self.command("generate","--multi-gpu","--questions",questions,"--retrieval",cache,
                          "--adapter",self.root/"selected_adapter","--output",pred,
                          cap=int(self.o.get("max_new_questions",200)))
         if not generation_ready(pred):

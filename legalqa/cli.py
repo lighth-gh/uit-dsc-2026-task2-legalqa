@@ -24,6 +24,7 @@ def main():
     p = sub.add_parser("generate")
     p.add_argument("--questions",required=True); p.add_argument("--retrieval",required=True); p.add_argument("--output",required=True)
     p.add_argument("--adapter"); p.add_argument("--mode",choices=["generate","extractive"],default="generate")
+    p.add_argument("--multi-gpu", action="store_true", help="Generate independent questions on up to two visible GPUs")
     p = sub.add_parser("fit")
     p.add_argument("--train",required=True); p.add_argument("--retrieval",required=True); p.add_argument("--output",required=True)
     p.add_argument("--resume"); p.add_argument("--gpu",default="0")
@@ -68,7 +69,8 @@ def main():
         result = retrieve(c,args.questions,args.models,args.index,args.output,args.device,args.mode)
     elif cmd == "generate":
         from .generation import generate
-        result = generate(c,args.questions,args.retrieval,args.models,args.output,args.device,args.adapter,args.mode)
+        result = generate(c,args.questions,args.retrieval,args.models,args.output,args.device,args.adapter,args.mode,
+                          multi_gpu=args.multi_gpu)
     elif cmd == "fit":
         from .training import fit
         result = fit(c,args.train,args.retrieval,args.models,args.output,args.device,args.resume)
