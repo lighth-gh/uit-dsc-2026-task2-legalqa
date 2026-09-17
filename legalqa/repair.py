@@ -18,6 +18,9 @@ POLICY = {"version": 2, "min_chars": 60, "min_words": 8,
           "min_chars_2rep": 100, "min_words_2rep": 15,
           "allow_2_repeats_for_large_blocks": True,
           "clean_dangling_colons": True,
+          "clean_trailing_bare_bullets": True,
+          "enable_extended_dedup": True,
+          "min_words_floor": 160,
           "keep_single_lead_in_on_blocked": True}
 PUBLIC = "submissions/public/submission"
 
@@ -212,9 +215,134 @@ def _collapse(text, mode, policy):
     return result, deletions
 
 
+BULLET_RE = re.compile(
+    r'^(?:(?:(?:Theo\s+)?(?:Khoản|Điều|Điểm|Mục|Phần)\s*\d+[a-z]?'
+    r'(?:\s*Điều\s*\d+[a-z]?)?'
+    r'(?:\s*quy\s*định(?:\s*về[^\n:]*)?(?:\s*như\s*sau)?)?'
+    r'[\.\:\)]?|\d+[\.\)\:]|[a-zđ][\.\)\:]|[\-\*\•])\s*)+',
+    re.IGNORECASE
+)
+
+LEAD_IN_RE = re.compile(
+    r'^(?:(?:Căn\s+cứ\s+theo|Theo)\s+)?(?:Khoản|Điều|Điểm|Mục)\s*\d+[a-z]?'
+    r'(?:\s*Điều\s*\d+[a-z]?)?'
+    r'(?:\s*Luật|\s*Nghị\s*định|\s*Thông\s*tư|\s*Quyết\s*định)?'
+    r'[\s\S]*?(?:quy\s*định(?:\s*về[^\n:]*)?(?:\s*như\s*sau)?)?\s*[:.]?$',
+    re.IGNORECASE
+)
+
+
+def extract_bullet_body(line):
+    m = BULLET_RE.match(line.strip())
+    if m:
+        return line.strip()[m.end():].strip(), m.group(0).strip()
+    return line.strip(), ""
+
+
+def dedup_enumerated_extreme(text, min_repeats=3, min_body_chars=25):
+    lines = text.splitlines(keepends=True)
+    if len(lines) < 4:
+        return text, []
+    new_lines = []
+    changes = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        body, bullet = extract_bullet_body(line)
+        if len(body) >= min_body_chars:
+            j = i + 1
+            matching_count = 1
+            while j < len(lines):
+                next_body, next_bullet = extract_bullet_body(lines[j])
+                if next_body == body and (next_bullet or bullet):
+                    matching_count += 1
+                    j += 1
+                elif not lines[j].strip():
+                    if j + 1 < len(lines):
+                        nb, nbul = extract_bullet_body(lines[j + 1])
+                        if nb == body and (nbul or bullet):
+                            matching_count += 1
+                            j += 2
+                            continue
+                    break
+                else:
+                    break
+            if matching_count >= min_repeats:
+                new_lines.append(lines[i])
+                changes.append({"start": len("".join(new_lines)), "end": len("".join(new_lines)) + len("".join(lines[i + 1:j])),
+                                "repeats": matching_count, "unit": "enumerated_extreme", "block_units": 1})
+                i = j
+                continue
+        new_lines.append(lines[i])
+        i += 1
+    return "".join(new_lines), changes
+
+
+def dedup_incremental_loops(text):
+    lines = text.splitlines(keepends=True)
+    if len(lines) < 6:
+        return text, []
+    changes, i, new_lines = [], 0, []
+    while i < len(lines):
+        matched = False
+        max_w = min(35, (len(lines) - i) // 2)
+        for w in range(max_w, 1, -1):
+            block = [l.strip() for l in lines[i:i + w]]
+            if sum(len(l) for l in block) < 60:
+                continue
+            step = w + 1
+            if i + step + w <= len(lines) and LEAD_IN_RE.match(lines[i + w].strip()):
+                next_block = [l.strip() for l in lines[i + step:i + step + w]]
+                if next_block == block:
+                    k = i + step
+                    reps = 2
+                    while k + step <= len(lines):
+                        if LEAD_IN_RE.match(lines[k + w].strip()) and [l.strip() for l in lines[k + step:k + step + w]] == block:
+                            k += step
+                            reps += 1
+                        else:
+                            break
+                    new_lines.extend(lines[i:i + w])
+                    changes.append({"start": len("".join(new_lines)), "end": len("".join(new_lines)) + len("".join(lines[i + w:k + w])),
+                                    "repeats": reps, "unit": "incremental_loop", "block_units": w})
+                    i = k + w
+                    matched = True
+                    break
+        if not matched:
+            new_lines.append(lines[i])
+            i += 1
+    return "".join(new_lines), changes
+
+
+def drop_duplicate_tail(text, min_lines=5):
+    lines = [l for l in text.splitlines(keepends=True)]
+    stripped = [l.strip() for l in lines]
+    max_k = min(len(lines) // 2, 40)
+    for k in range(max_k, min_lines - 1, -1):
+        tail = stripped[-k:]
+        if not tail or not any(len(x) >= 20 for x in tail):
+            continue
+        earlier = stripped[:-k]
+        for start_idx in range(len(earlier) - len(tail) + 1):
+            if earlier[start_idx:start_idx + len(tail)] == tail:
+                res = "".join(lines[:-k]).rstrip()
+                return res, [{"start": len(res), "end": len(text), "repeats": 2, "unit": "tail_duplicate", "block_units": k}]
+    return text, []
+
+
+def clean_trailing_bare_bullet(text):
+    """Strip dangling trailing bullet markers (e.g. '\n49.' or '\n2.') without following text."""
+    m = re.search(r'(?:\n|\A)\s*(?:\d+[\.\)]|[a-zđ][\.\)]|[\-\*\•])\s*$', text)
+    if m:
+        cleaned = text[:m.start()].rstrip()
+        if len(cleaned.split()) >= 20:
+            return cleaned, True
+    return text, False
+
+
 def deduplicate_answer(text, policy=None):
     """Only identical adjacent blocks (>=3 copies, or >=2 copies for blocks >=100 chars); never fuzzy-match legal clauses."""
-    policy = dict(POLICY if policy is None else policy)
+    policy = {**POLICY, **(policy or {})}
     _require(policy["min_repeats"] >= 3 and policy["min_chars"] >= 60
              and policy["min_words"] >= 8 and policy["max_block_units"] >= 1,
              "Unsafe repetition policy")
@@ -222,6 +350,18 @@ def deduplicate_answer(text, policy=None):
     for mode in ("line", "sentence", "clause"):
         result, removed = _collapse(result, mode, policy)
         changes.extend(removed)
+    if policy.get("enable_extended_dedup", True):
+        p_large = dict(policy)
+        p_large["max_block_units"] = max(policy.get("max_block_units", 12), 50)
+        for mode in ("line", "sentence", "clause"):
+            result, removed = _collapse(result, mode, p_large)
+            changes.extend(removed)
+        result, incr_removed = dedup_incremental_loops(result)
+        changes.extend(incr_removed)
+        result, enum_removed = dedup_enumerated_extreme(result, min_repeats=3, min_body_chars=25)
+        changes.extend(enum_removed)
+        result, tail_removed = drop_duplicate_tail(result, min_lines=5)
+        changes.extend(tail_removed)
     return result, changes
 
 
@@ -259,7 +399,7 @@ def _incomplete(text):
 def repair_predictions(predictions, audit, policy=None):
     """No references, model calls or raw rejected generations enter this function."""
     _require(set(predictions) == set(audit), "Repair/audit ID mismatch")
-    policy = dict(POLICY if policy is None else policy)
+    policy = {**POLICY, **(policy or {})}
     candidate, records, unresolved = {}, {}, {}
     for key, value in predictions.items():
         before, row = value["answer"], audit[key]
@@ -286,6 +426,9 @@ def repair_predictions(predictions, audit, policy=None):
             blocked.append("dedup_leaves_unfinished_answer")
         if changes and len(proposed) < .2 * len(before) and len(proposed.split()) < 40:
             blocked.append("dedup_leaves_too_little_content")
+        floor = policy.get("min_words_floor", 160)
+        if changes and len(proposed.split()) < floor and len(before.split()) >= floor:
+            blocked.append("dedup_leaves_below_length_floor")
         if blocked:
             if policy.get("keep_single_lead_in_on_blocked", True) and (_incomplete(before) or repetition_ratio(before) >= 0.5):
                 after = proposed
@@ -293,6 +436,11 @@ def repair_predictions(predictions, audit, policy=None):
                 after = before
         else:
             after = proposed
+        if policy.get("clean_trailing_bare_bullets", True):
+            after, bullet_cleaned = clean_trailing_bare_bullet(after)
+            if bullet_cleaned:
+                changes.append({"start": len(after), "end": len(before),
+                                "repeats": 1, "unit": "bare_bullet_clean", "block_units": 1})
         candidate[key] = {"answer": after}
         remaining = list(blocked)
         if repetition_ratio(after) >= .25:
@@ -477,7 +625,7 @@ def run_repair_submission(submission_path, output, *, audit_only=False, question
         validate_predictions(predictions, predictions)
 
     audit_mock = {k: {"route": "generated", "hit_token_limit": False, "context_parent_ids": []} for k in predictions}
-    policy = dict(POLICY if policy is None else policy)
+    policy = {**POLICY, **(policy or {})}
     repaired, records, unresolved = repair_predictions(predictions, audit_mock, policy=policy)
 
     root = Path(output)

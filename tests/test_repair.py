@@ -124,6 +124,19 @@ class RepairTests(unittest.TestCase):
         self.assertFalse(result["a"]["answer"].endswith(":"))
         self.assertTrue(result["a"]["answer"].endswith("."))
 
+    def test_clean_trailing_bare_bullet(self):
+        answer_with_bullet = CLAUSE + "\n" + DETAIL + "\n49."
+        result, audit, _ = repair_predictions({"a": {"answer": answer_with_bullet}}, {"a": audit_row()})
+        self.assertEqual(result["a"]["answer"], CLAUSE + "\n" + DETAIL)
+
+    def test_length_floor_blocks_aggressive_dedup(self):
+        # A long answer (200 words) that would collapse to <160 words is blocked
+        long_answer = ("\n".join([f"{i}. " + CLAUSE for i in range(1, 15)]))
+        self.assertGreaterEqual(len(long_answer.split()), 160)
+        result, audit, _ = repair_predictions({"a": {"answer": long_answer}}, {"a": audit_row()}, policy={"min_words_floor": 160})
+        self.assertIn("dedup_leaves_below_length_floor", audit["a"]["blocked"])
+        self.assertEqual(result["a"]["answer"], long_answer)
+
     def test_token_limit_does_not_force_edit_or_restore_raw(self):
         before = {"a": {"answer": DETAIL}, "b": {"answer": CLAUSE}}
         result, _, queue = repair_predictions(before, {"a": audit_row(hit_token_limit=True),
