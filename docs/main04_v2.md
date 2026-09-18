@@ -1,16 +1,38 @@
-# Main 04 V2 trên diagnostics (5)
+# Main 04 P0/P1/P2 trên diagnostics (5)
 
-Mục tiêu của bản này là cải thiện submission bằng sửa lặp và thử sinh lại có chọn lọc, có đối chứng với Main 04 V1. Điểm public người dùng đã báo: 0,5580 trước sửa, 0,5599 sau V1. Chưa có bằng chứng đạt public 0,59.
+Notebook hiện điều phối sẵn baseline P0, inference ablation P1, retrieval ablation P2 và workflow repair V2 cũ. Điểm public người dùng đã báo: 0,5580 trước sửa, 0,5599 sau V1. Chưa có bằng chứng đạt public 0,60.
 
 ## Chạy Kaggle
 
-1. Import lại `legalqa_main_04_repair_submit.ipynb` đã cập nhật; chọn GPU T4 hoặc P100, bật Internet.
-2. Add Input diagnostics Stage 3 hoàn tất của lần chạy này, output Stage 2/3 có `selected_adapter/adapter_model.safetensors` và `adapter_config.json`, dataset model gốc có `models.lock.json` và các thư mục model. Diagnostics ZIP không chứa adapter weights.
-3. Mặc định `RUN_GPU=True`, `GPU_MAX_ITEMS=50`, `WORK_HOURS=9.0`. Nếu phát hiện nhiều input, điền `DIAGNOSTICS`, `MODEL_ROOT`, `ADAPTER_ROOT`; không đổi model hoặc dùng adapter của phiên khác. `MODEL_ROOT` là thư mục cha của `generator/`, không phải `generator/`.
-4. Recipe 2 dùng output mới `legalqa_main_stage4_v2_recipe2`, để `PREVIOUS_OUTPUT=None` ở lần đầu; không resume output recipe 1. Save & Run All. Xem `STATUS` và `selected_variant`. Khi `paused`, Save output, gắn toàn bộ output vào phiên tiếp theo rồi đặt `PREVIOUS_OUTPUT` đến thư mục recipe 2 đó. Giữ nguyên code, input và cấu hình. Resume dùng journal, không sinh lại các câu đã ghi xong.
-5. Lấy `submission_selected.zip`. Nếu `paused`, ZIP này là bản CPU đầy đủ; nếu GPU bị từ chối trên dev, cũng giữ CPU. Chỉ khi toàn bộ nhóm public hoàn tất và được kiểm tra mới chọn `gpu_v2`.
+Chỉ cần tải từ máy lên Kaggle một file: `legalqa_main_04_repair_submit.ipynb`. Tạo notebook bằng **New Notebook → File → Import Notebook**, sau đó chọn file này. Trong **Settings**, chọn accelerator **GPU T4 x2** nếu có (T4/P100 một GPU vẫn dùng được) và bật Internet để cài các gói còn thiếu.
 
-Muốn chạy CPU trước: `RUN_GPU=False`, Accelerator None. Sau đó có thể bật GPU và tiếp tục cùng output/cùng code; trạng thái GPU có identity riêng. Khi đổi code sau một phiên đã lưu, bắt đầu output mới để không trộn kết quả.
+Trong **Add Input**, gắn đủ ba nguồn sau. Không tải ZIP/model vào `/kaggle/working` bằng tay:
+
+| Input cần gắn | Chọn ở Kaggle | File đánh dấu notebook sẽ kiểm |
+| --- | --- | --- |
+| Model và index Version 3 | **Add Input → Datasets**, tìm `lighth/ver3-smoke-output` | `models/models.lock.json`, `models/generator/`, `index/` |
+| Checkpoint đã chọn của đúng lượt train | **Add Input → Your Work / Notebook Output**, chọn output Stage 2; nếu output Stage 3 của bạn có nguyên `selected_adapter/` thì có thể dùng nó | `selected_adapter/adapter_model.safetensors`, `selected_adapter/adapter_config.json` |
+| Diagnostics hoàn chỉnh | **Add Input → Your Work / Notebook Output**, chọn version Stage 3 đã `complete` | `legalqa_main_stage3_v8_diagnostics*.zip` hoặc thư mục giải nén có `stage3_manifest.json` |
+
+Diagnostics ZIP không chứa adapter weights, vì vậy chỉ gắn ZIP là chưa đủ. Không gắn nhiều version Stage 2/3 cùng lúc nếu không cần; notebook sẽ dừng thay vì đoán khi tìm thấy nhiều adapter hoặc diagnostics.
+
+Sau khi Add Input:
+
+1. Mở cell cấu hình đầu tiên. Lượt đầu giữ `MODE='p1_dev'`, `RUN_GPU=True`, `GPU_MAX_ITEMS=50`, `WORK_HOURS=9.0`, `PREVIOUS_OUTPUT=None`.
+2. `MODEL_ROOT` mặc định trỏ tới `lighth/ver3-smoke-output`. Để `ADAPTER_ROOT=None` và `DIAGNOSTICS=None` nếu mỗi loại chỉ có đúng một kết quả. Nếu notebook báo nhiều kết quả, chép đúng đường dẫn được in trong lỗi vào biến tương ứng. `MODEL_ROOT` là thư mục `models`, tức thư mục cha của `generator/`.
+3. Bấm **Save Version → Save & Run All**. Output chung được ghi ở `/kaggle/working/legalqa_main_04_v8_060/`; trạng thái điều phối nằm trong `main04_state.json`.
+4. Nếu cuối log là `paused`, lưu version có output. Ở phiên sau, Add Input output của chính version đó qua **Your Work / Notebook Output**, đặt `PREVIOUS_OUTPUT` tới thư mục `.../legalqa_main_04_v8_060`, giữ nguyên `MODE` và danh sách variant, rồi Save & Run All lại.
+5. Khi một mode báo `complete`, tải báo cáo/ZIP trong tab **Output**, hoặc Save Version để dùng toàn bộ thư mục output làm Input cho mode kế tiếp.
+
+## Các mode có sẵn
+
+- `p1_dev`: chạy năm variant inference và ghi `p1/p1_summary.json`.
+- `p1_public`: điền `P1_WINNER`; notebook từ chối nếu variant không có `passes_screen=true`, rồi resume và đóng `submission_<variant>.zip` khi đủ 1.000 ID.
+- `p2_retrieval`: chạy năm variant retrieval, ghi `p2/retrieval_summary.json`.
+- `p2_generate`: điền tối đa hai tên vào `P2_SHORTLIST`; generation dev100 có journal, sau đó repair, evaluate và paired compare.
+- `repair_v2`: giữ workflow recipe 2 trước đây dưới `legalqa_main_04_v8_060/repair_v2`.
+
+Các mode `p1_dev`, `p1_public`, `p2_retrieval` và `p2_generate` bắt buộc `RUN_GPU=True`. Chỉ `repair_v2` có thể đặt `RUN_GPU=False` để chạy lại sửa CPU cũ. Khi đổi code sau một phiên đã lưu, bắt đầu output mới để không trộn kết quả.
 
 ## Quy tắc và chi phí
 
