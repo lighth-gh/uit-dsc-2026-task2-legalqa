@@ -1,0 +1,100 @@
+{
+  "baseline_config_hash": "3c60a23fd43e17c3f32efa3daef51c030265de4b4d4e28688969dc7c7c24f19f",
+  "pipeline_code": "e920acd9f719f879e7c01c3a6fe1611905d1596a930e328660b16aaff54c34de",
+  "inference": {
+    "g1_penalty_103": {
+      "patch": {
+        "generation": {
+          "repetition_penalty": 1.03
+        }
+      },
+      "config_hash": "6a785d3c594fca7a990446512f27a4bdb7a460eade76668f27275783f697c3a4",
+      "path": "inference/g1_penalty_103.json"
+    },
+    "g1_penalty_105": {
+      "patch": {
+        "generation": {
+          "repetition_penalty": 1.05
+        }
+      },
+      "config_hash": "a96266b2939b7827226ed0cbe5d5f32b3995067387590815a29d4a8b09001b22",
+      "path": "inference/g1_penalty_105.json"
+    },
+    "g2_contexts_2": {
+      "patch": {
+        "generation": {
+          "contexts_k": 2
+        }
+      },
+      "config_hash": "d6dbeb988b36239ca248137e100eab1f39e87499678da221e0721b83be39de29",
+      "path": "inference/g2_contexts_2.json"
+    },
+    "g3_complete_units": {
+      "patch": {
+        "generation": {
+          "complete_legal_units": true
+        }
+      },
+      "config_hash": "f6d94e440eff40d8c28afd932231e3afe7d01838ae33d86f63cfa35d33af3be3",
+      "path": "inference/g3_complete_units.json"
+    },
+    "g4_grounded_prompt": {
+      "patch": {
+        "generation": {
+          "system_suffix": "Trả lời lần lượt từng vế của câu hỏi. Trước hết xác định đúng chủ thể và phạm vi áp dụng; ưu tiên trích đoạn xếp đầu nếu nó trực tiếp trả lời. Gắn căn cứ, điều kiện, ngoại lệ và số liệu với cùng một nguồn; không trộn quy định của quỹ, cơ quan hoặc văn bản khác. Không lặp nguyên cả câu hoặc đoạn từ ba lần liên tiếp."
+        }
+      },
+      "config_hash": "9f30ec2e1cff712192705ec5f646f54fc4b5f82fc0230f86adf6de68fee0697b",
+      "path": "inference/g4_grounded_prompt.json"
+    }
+  },
+  "retrieval": {
+    "r1_pool_64": {
+      "patch": {
+        "retrieval": {
+          "pool_k": 64
+        }
+      },
+      "config_hash": "6e4c1895bb7059f2c3e1b0122d83ccfc2351fe7b29b69867e7258bbbe82a32b5",
+      "path": "retrieval/r1_pool_64.json"
+    },
+    "r2_intent_query": {
+      "patch": {
+        "retrieval": {
+          "intent_query_expansion": true
+        }
+      },
+      "config_hash": "3e1f15a48f9918ff3058b30f1f1c7af63b1716d5c081f8a6b96d90138b759407",
+      "path": "retrieval/r2_intent_query.json"
+    },
+    "r3_adjacent_articles": {
+      "patch": {
+        "retrieval": {
+          "adjacent_articles": 1,
+          "adjacent_seed_k": 8,
+          "adjacent_reserve": 8
+        }
+      },
+      "config_hash": "3a16afe3678d97548d6796a73babf702471f1b3c191628f1cc9f052dabe3a061",
+      "path": "retrieval/r3_adjacent_articles.json"
+    },
+    "r4_lexical_weight_1": {
+      "patch": {
+        "retrieval": {
+          "lexical_score_weight": 1.0
+        }
+      },
+      "config_hash": "bc238fcbc772634e39a230195eba8274763a1d293c9f858cb5299d4a86d173f7",
+      "path": "retrieval/r4_lexical_weight_1.json"
+    },
+    "r5_scope_penalty": {
+      "patch": {
+        "retrieval": {
+          "scope_mismatch_penalty": 0.75
+        }
+      },
+      "config_hash": "4f9a96815ada785b69b32a1196ea44972a77184ec312b41b161a00fa62f5c7c9",
+      "path": "retrieval/r5_scope_penalty.json"
+    }
+  }
+}

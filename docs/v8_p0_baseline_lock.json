@@ -1,0 +1,34 @@
+{
+  "status": "locked",
+  "artifact_root": "D:\\code\\uit dsc 2026\\UIT_DSC_2026_LegalQA_baseline_v3\\stage4_result_20260918",
+  "source": {
+    "diagnostics_sha256": "a19932405fe8ae65713d290c362a1ba2b968ee71d090ea4479dcdeeda018afe7",
+    "stage3_code": "b7ce423ad04f159853087bbf1ea6e41e1015d8b66d8d69f5eec7f6d56f247f41",
+    "selected_adapter": "epoch-01",
+    "omitted_weights": [
+      "selected_adapter/adapter_model.safetensors"
+    ]
+  },
+  "selected_adapter": "epoch-01",
+  "selected_public_json": "submission.selected.json",
+  "selected_public_sha256": "a3cdecf5d26b9c4ba0f2825b6f359a902462e204b1c9a0e3fbb615e102f9155c",
+  "submission_zip": "submission_repaired.zip",
+  "submission_zip_sha256": "39804cce6931936d4f37ef3ab0164f53803448ebf434b2d958f86e32ed41aeaa",
+  "dev100": {
+    "meteor": 0.6202453105154175,
+    "rougeL": 0.5938193946382953
+  },
+  "public": {
+    "score": 0.5599,
+    "provenance": "user-reported leaderboard score; not recomputable locally"
+  },
+  "verification": {
+    "crc": "passed",
+    "hashes": "passed",
+    "schema_and_ids": "passed",
+    "journal": "passed",
+    "identity": "passed",
+    "public_count": 1000
+  },
+  "baseline_manifest_sha256": "da10660538a41ee9e66ce3642f12bbe5cf2b1622535f0f28671805907fda8dbd"
+}

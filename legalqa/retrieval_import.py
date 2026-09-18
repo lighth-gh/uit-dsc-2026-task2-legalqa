@@ -22,7 +22,9 @@ PRE_STREAMING_CODES = {
     'c13dd1e5277994af3a94cd102cdab88fd7f90bd866a421da08ad9b6b1b412882',  # CRLF checkout
 }
 LEGACY_DEPENDENCIES = {
-    'retrieval.py': 'ba41492b6b329b387fab7b09cf4f84933e2d009a3c4211f20de7eacad5db8676',
+    # Re-audited after adding opt-in P2 branches. With all new keys absent (the
+    # locked v8 config), lexical training retrieval follows the original path.
+    'retrieval.py': '72d5652143f5466cd25782e890604d86cc72de267534b295b26da71059ca7c8b',
     'models.py': '7b4e658092a37cfacc9c148fe63390b9c3ab8919786b88e9fa691f343cc9707c',
     'data.py': '0174249f3f06663fff2b5022d1af0764fa0f14452bed29497785ede2d6b70a04',
     'io.py': '0c82e8297a8a611c29bc54bb7fe5e92bbf4f51d6136ca857cffd041733d79435',

@@ -18,6 +18,11 @@ QUESTION_STOPWORDS = frozenset({
     "thì", "tại", "trong", "và", "về", "với", "đối", "định",
 })
 RECENCY_MARKERS = ("mới nhất", "hiện hành", "hiện nay", "còn hiệu lực")
+SANCTION_PRINCIPLE_MARKERS = (
+    "nhiều lần", "mỗi hành vi", "từng hành vi", "một hành vi", "nhiều hành vi",
+    "xử phạt bao nhiêu lần", "xử phạt mấy lần",
+)
+SCOPE_MARKERS = ("quỹ", "hội đồng quản lý quỹ")
 
 
 def word_tokens(text):
@@ -37,6 +42,30 @@ def legal_document_numbers(text):
 def document_year(text):
     years = [int(value) for value in re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", text)]
     return max(years) if years else None
+
+
+def legal_intent_queries(question):
+    """Return bounded, rule-based query expansions without using an answer/reference."""
+    folded = question.casefold()
+    variants = []
+    if ("xử phạt" in folded or "vi phạm" in folded) and any(
+            marker in folded for marker in SANCTION_PRINCIPLE_MARKERS):
+        variants.append(
+            "nguyên tắc xử phạt vi phạm hành chính một hành vi bị xử phạt một lần "
+            "nhiều hành vi xử phạt từng hành vi"
+        )
+    return variants
+
+
+def scope_mismatch_adjustment(question, candidate_text, settings):
+    """Penalize a narrow named scope only in the opt-in retrieval ablation."""
+    weight = float(settings.get("scope_mismatch_penalty", 0.0))
+    if weight <= 0:
+        return 0.0
+    question, candidate_text = question.casefold(), candidate_text.casefold()
+    mismatches = sum(marker not in question and marker in candidate_text
+                     for marker in SCOPE_MARKERS)
+    return -weight * min(1, mismatches)
 
 
 def retrieval_adjustment(question, candidate, settings, newest_year=None):
@@ -64,6 +93,7 @@ def retrieval_adjustment(question, candidate, settings, newest_year=None):
     if newest_year and any(marker in question.casefold() for marker in RECENCY_MARKERS):
         if document_year(candidate.get("header", "")) == newest_year:
             adjustment += settings.get("recency_bonus", 0.0)
+    adjustment += scope_mismatch_adjustment(question, candidate_text, settings)
     return adjustment
 
 
@@ -486,14 +516,86 @@ class Retriever:
         rows = self.con.execute("SELECT * FROM chunks WHERE chunk_id IN ("+",".join("?" for _ in ids)+")", ids).fetchall()
         return {r["chunk_id"]: dict(r) for r in rows}
 
+    def _adjacent_candidate_ids(self, question, seed_keys, chunks, limit):
+        """Find chunks from the immediately adjacent articles of top seed parents."""
+        distance = int(self.c["retrieval"].get("adjacent_articles", 0))
+        if distance <= 0 or limit <= 0:
+            return []
+        parent_ids = list(dict.fromkeys(chunks[key]["parent_id"] for key in seed_keys))
+        if not parent_ids:
+            return []
+        placeholders = ",".join("?" for _ in parent_ids)
+        seed_parents = self.con.execute(
+            f"SELECT parent_id,doc_id FROM parents WHERE parent_id IN ({placeholders})", parent_ids
+        ).fetchall()
+        by_document = {}
+        for row in seed_parents:
+            by_document.setdefault(row["doc_id"], set()).add(row["parent_id"])
+        neighbours = []
+        for doc_id, seeds in by_document.items():
+            ordered = [row[0] for row in self.con.execute(
+                "SELECT parent_id FROM parents WHERE doc_id=? ORDER BY rowid", (doc_id,)
+            )]
+            positions = {parent_id: i for i, parent_id in enumerate(ordered)}
+            for seed in seeds:
+                position = positions[seed]
+                for offset in range(1, distance + 1):
+                    for index in (position - offset, position + offset):
+                        if 0 <= index < len(ordered):
+                            neighbours.append(ordered[index])
+        neighbours = list(dict.fromkeys(neighbours))
+        if not neighbours:
+            return []
+        placeholders = ",".join("?" for _ in neighbours)
+        rows = self.con.execute(
+            f"SELECT * FROM chunks WHERE parent_id IN ({placeholders}) ORDER BY chunk_id", neighbours
+        ).fetchall()
+        rc = self.c["retrieval"]
+        per_parent = int(rc["max_children_per_parent"])
+        candidates = [dict(row) for row in rows]
+        years = [document_year(row["header"]) for row in candidates]
+        newest_year = max((year for year in years if year), default=None)
+        candidates.sort(key=lambda row: (
+            -retrieval_adjustment(question, row, rc, newest_year), row["chunk_id"]
+        ))
+        result, counts = [], Counter()
+        for row in candidates:
+            if counts[row["parent_id"]] >= per_parent:
+                continue
+            result.append(row["chunk_id"])
+            counts[row["parent_id"]] += 1
+            if len(result) == limit:
+                break
+        return result
+
     def retrieve_one(self, question, dense_ids, reranker):
         start = time.perf_counter()
         (bm, phrase_bm, precise_bm), timings = self.lexical_rankings(question)
+        query_variants = [question]
+        extra_rankings = []
+        if self.c["retrieval"].get("intent_query_expansion", False):
+            for position, variant in enumerate(legal_intent_queries(question), 1):
+                query_variants.append(variant)
+                rankings, variant_timings = self.lexical_rankings(variant)
+                extra_rankings.extend(rankings)
+                timings.update({f"intent_{position}_{key}": value
+                                for key, value in variant_timings.items()})
         bm_seconds = time.perf_counter()-start
         rc = self.c["retrieval"]
-        fusion = rrf([bm, phrase_bm, precise_bm, dense_ids], rc["rrf_constant"])
+        fusion = rrf([bm, phrase_bm, precise_bm, *extra_rankings, dense_ids], rc["rrf_constant"])
         chunks = self.chunks(fusion)
-        pool = diversified(fusion, chunks, rc["pool_k"], rc["max_children_per_parent"])
+        base_pool = diversified(fusion, chunks, rc["pool_k"], rc["max_children_per_parent"])
+        reserve = int(rc.get("adjacent_reserve", max(1, rc["pool_k"] // 4)))
+        reserve = min(reserve, rc["pool_k"])
+        adjacent = self._adjacent_candidate_ids(
+            question, base_pool[:int(rc.get("adjacent_seed_k", 8))], chunks, reserve
+        )
+        if adjacent:
+            chunks.update(self.chunks(adjacent))
+            keep = max(0, rc["pool_k"] - len(adjacent))
+            pool = list(dict.fromkeys(base_pool[:keep] + adjacent + base_pool[keep:]))[:rc["pool_k"]]
+        else:
+            pool = base_pool
         t = time.perf_counter()
         scores = reranker.score(question, [chunks[k]["header"]+"\n"+chunks[k]["text"] for k in pool])
         years = [document_year(chunks[key]["header"]) for key in pool]
@@ -504,7 +606,10 @@ class Retriever:
         selected = self._materialize(ranked,chunks)
         return {"question": question, "contexts": selected,
                 "stages": {"bm25": bm, "bm25_phrases": phrase_bm, "bm25_precise": precise_bm,
-                           "dense": dense_ids, "rrf": fusion, "reranked": [row[0] for row in ranked]},
+                           "dense": dense_ids, "rrf": fusion, "pool": pool,
+                           "adjacent": adjacent, "reranked": [row[0] for row in ranked]},
+                "query_variants": query_variants,
+                "candidate_count": len(pool),
                 "seconds": {**timings, "bm25": bm_seconds, "rerank": time.perf_counter()-t}}
 
     def _materialize(self, ranked, chunks):

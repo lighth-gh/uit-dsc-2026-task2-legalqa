@@ -117,9 +117,13 @@ def _generate_one(c, key, questions, records, model, tokenizer, device, mode, *,
     if mode == "generate":
         ids = torch.tensor([prompt_ids],device=device)
         with torch.inference_mode():
+            generation = c["generation"]
             options = dict(do_sample=False, num_beams=1, max_new_tokens=c["generation"]["max_new_tokens"],
-                repetition_penalty=1.0, eos_token_id=tokenizer.eos_token_id,
+                repetition_penalty=float(generation.get("repetition_penalty", 1.0)),
+                eos_token_id=tokenizer.eos_token_id,
                 pad_token_id=tokenizer.pad_token_id, use_cache=True)
+            if "no_repeat_ngram_size" in generation:
+                options["no_repeat_ngram_size"] = int(generation["no_repeat_ngram_size"])
             options.update(generation_overrides or {})
             sequences = model.generate(input_ids=ids, attention_mask=torch.ones_like(ids), **options)
         new = sequences[0,len(prompt_ids):].tolist()
@@ -159,11 +163,26 @@ def _generate_one(c, key, questions, records, model, tokenizer, device, mode, *,
         entity_conflict = {"conflict":False,"conflicting_context_index":None,"copied_phrase_words":0}
         answer = extractive_fallback(questions[key]["question"],packed,refusal_support)
         route,flags = "extractive_baseline",{}
+    try:
+        packed_context_tokens = [len(tokenizer(p["text"], add_special_tokens=False)["input_ids"])
+                                 for p in packed]
+    except TypeError:  # Minimal mocked tokenizers in CPU orchestration tests need not tokenize text.
+        packed_context_tokens = [None for _ in packed]
     audit = {"route": route, "device": str(device), "raw_answer": raw, "flags_before_fallback": flags,
         "refusal_evidence_support": refusal_support if mode == "generate" else None,
         "entity_conflict": entity_conflict,
         "hit_token_limit": hit_limit, "input_tokens": len(prompt_ids), "output_tokens": completion_tokens,
         "answer_words": len(answer.split()), "context_parent_ids": [p["parent_id"] for p in packed],
+        "packed_contexts": len(packed),
+        "packed_context_tokens": packed_context_tokens,
+        "generation_settings": {
+            "repetition_penalty": float(c["generation"].get("repetition_penalty", 1.0)),
+            "no_repeat_ngram_size": int(c["generation"].get("no_repeat_ngram_size", 0)),
+            "contexts_k": int(c["generation"].get(
+                "contexts_k", c.get("retrieval", {}).get("parents_k", len(packed) or 4)
+            )),
+            "complete_legal_units": bool(c["generation"].get("complete_legal_units", False)),
+        },
         "seconds": time.perf_counter()-start}
     return {"prediction": {"answer": answer}, "audit": audit}
 
@@ -186,6 +205,8 @@ def generate(c, questions_path, retrieval_path, root, output, device, adapter=No
         print(f"Generation devices: {devices}; replicas={len(devices)}; "
               f"max_input_tokens={c['generation']['max_input_tokens']}; "
               f"max_new_tokens={c['generation']['max_new_tokens']}; "
+              f"contexts_k={c['generation'].get('contexts_k', c['retrieval']['parents_k'])}; "
+              f"repetition_penalty={c['generation'].get('repetition_penalty', 1.0)}; "
               f"session_cap={os.environ.get('LEGALQA_MAX_ITEMS', '0')}", flush=True)
 
         def serial_answers():

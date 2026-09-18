@@ -26,15 +26,32 @@ REFUSAL = re.compile(
     r"(?:chưa đủ căn cứ|không có thông tin|không đủ thông tin|không thể trả lời)", re.I
 )
 WORD = re.compile(r"[^\W_]+", re.UNICODE)
+LEGAL_UNIT_START = re.compile(
+    r"(?m)^[ \t]*(?=(?:Điều|Khoản|Mục|Chương)\s+\w+|\d+[.)]\s+|[a-zđ][.)]\s+|[-–—•]\s+)",
+    re.I,
+)
 
 
-def messages(question, contexts):
+def messages(question, contexts, *, system_suffix=""):
     evidence = "\n\n".join(f"Trích đoạn {i+1}:\n{context['text']}" for i,context in enumerate(contexts))
-    return [{"role": "system", "content": SYSTEM},
+    return [{"role": "system", "content": SYSTEM + (" " + system_suffix if system_suffix else "")},
             {"role": "user", "content": f"Ngữ cảnh pháp luật:\n{evidence}\n\nCâu hỏi: {question}\n\nCâu trả lời:"}]
 
 
-def window_around_seed(parent, tokenizer, budget):
+def _complete_unit_window(text, start, end, seed_a, seed_b):
+    """Shrink a token window to visible legal/list boundaries; never expand it."""
+    starts = sorted({0, *[match.start() for match in LEGAL_UNIT_START.finditer(text)],
+                     *[match.end() for match in re.finditer(r"\n\s*\n", text)]})
+    ends = sorted({len(text), *[match.start() for match in re.finditer(r"\n\s*\n", text)],
+                   *[match.end() for match in re.finditer(r"[.;:]\s*(?=\n|$)", text)]})
+    left = next((value for value in starts if start <= value <= seed_a), start)
+    right = next((value for value in reversed(ends) if seed_b <= value <= end), end)
+    if left >= right or not (left <= seed_a <= seed_b <= right):
+        return start, end
+    return left, right
+
+
+def window_around_seed(parent, tokenizer, budget, complete_units=False):
     text = parent["text"]
     encoded = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
     offsets = encoded["offset_mapping"]
@@ -46,18 +63,26 @@ def window_around_seed(parent, tokenizer, budget):
     left = max(0, first-max(0, (budget-(last-first+1))//2))
     left = min(left, max(0,len(offsets)-budget))
     right = min(len(offsets), left+budget)
-    return text[offsets[left][0]:offsets[right-1][1]].strip()
+    start_char, end_char = offsets[left][0], offsets[right-1][1]
+    if complete_units:
+        start_char, end_char = _complete_unit_window(text, start_char, end_char, seed_a, seed_b)
+    return text[start_char:end_char].strip()
 
 
 def pack_prompt(question, parents, tokenizer, c, budget=None):
     budget = budget or c["generation"]["max_input_tokens"]
-    base_len = len(tokenizer.apply_chat_template(messages(question, []), tokenize=True, add_generation_prompt=True))
+    system_suffix = c["generation"].get("system_suffix", "")
+    base_len = len(tokenizer.apply_chat_template(messages(question, [], system_suffix=system_suffix),
+                                               tokenize=True, add_generation_prompt=True))
     available = budget-base_len-64
     if available < 32:
         raise ValueError("Question/system prompt leaves no context budget")
     # Give the best-ranked parent more room while preserving a minimum allocation for
     # every other parent. This retains complete legal lists without discarding secondary evidence.
-    parents = parents[:c["retrieval"]["parents_k"]]
+    contexts_k = int(c["generation"].get("contexts_k", c["retrieval"]["parents_k"]))
+    if not 1 <= contexts_k <= c["retrieval"]["parents_k"]:
+        raise ValueError("generation.contexts_k must be between 1 and retrieval.parents_k")
+    parents = parents[:contexts_k]
     count = max(1, len(parents))
     parent_cap = c["generation"]["parent_max_tokens"]
     floor = min(c["generation"]["min_context_tokens"], max(32, available//(count*2)))
@@ -83,8 +108,9 @@ def pack_prompt(question, parents, tokenizer, c, budget=None):
             break
         remaining -= changed
     packed = []
+    complete_units = bool(c["generation"].get("complete_legal_units", False))
     for position,parent in enumerate(parents):
-        text = window_around_seed(parent, tokenizer, caps[position])
+        text = window_around_seed(parent, tokenizer, caps[position], complete_units=complete_units)
         prefix = " ".join(x for x in [parent.get("number"),parent.get("heading")] if x)
         if prefix and prefix not in text:
             # Only fields extracted verbatim from the supplied corpus, never a generated citation.
@@ -96,7 +122,8 @@ def pack_prompt(question, parents, tokenizer, c, budget=None):
                        "final_score": parent.get("final_score")})
     # Exact generator-token check, including role markers, question, and generation prompt.
     while True:
-        prompt_ids = tokenizer.apply_chat_template(messages(question, packed), tokenize=True, add_generation_prompt=True)
+        prompt_ids = tokenizer.apply_chat_template(messages(question, packed, system_suffix=system_suffix),
+                                                   tokenize=True, add_generation_prompt=True)
         if len(prompt_ids) <= budget:
             return prompt_ids, packed
         if not packed:
@@ -106,7 +133,15 @@ def pack_prompt(question, parents, tokenizer, c, budget=None):
         if len(ids)-excess < 32:
             packed.pop()
         else:
-            packed[-1]["text"] = tokenizer.decode(ids[:-excess])
+            shortened = tokenizer.decode(ids[:-excess])
+            if complete_units:
+                # Do not leave a partial final legal/list item merely to consume the budget.
+                end = max(shortened.rfind("\n\n"), shortened.rfind(".\n"), shortened.rfind(";\n"))
+                shortened = shortened[:end + 1].strip() if end >= 31 else ""
+            if len(tokenizer(shortened, add_special_tokens=False)["input_ids"]) < 32:
+                packed.pop()
+            else:
+                packed[-1]["text"] = shortened
 
 
 def clean_answer(text):

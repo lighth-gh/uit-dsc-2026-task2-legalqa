@@ -38,7 +38,7 @@ def build():
 
 Code và scorer BTC được nhúng trong notebook. CPU so sánh bản cũ V1 với V2 (thêm vòng lặp đổi nhãn danh sách), giữ bản có METEOR không thấp hơn. Giữ phần kết luận: thử xóa kết luận trên diagnostics (5) làm giảm METEOR. Không dùng gold làm prompt hoặc chọn đáp án riêng cho từng ID.
 
-GPU dùng đúng adapter/model đã kiểm identity, giữ context/top-k/ngân sách token, thêm repetition penalty 1.08 và no-repeat 12-gram. Chỉ thử câu có cờ lỗi và evidence đủ mạnh theo heuristic. Toàn bộ nhóm dev được thử trước public; cần METEOR toàn dev100 tăng ít nhất 0,001, ít nhất 2 câu thay đổi và lặp nặng không tăng. Nếu không đạt, giữ CPU và không chạy public GPU. Đây là một cấu hình thử nghiệm cố định, chưa được benchmark GPU.
+GPU recipe 2 dùng đúng adapter/model đã kiểm identity: `repetition_penalty=1.0`, `no_repeat_ngram_size=0`, thêm chỉ dẫn giữ nguyên căn cứ và chỉ tránh vòng lặp câu/đoạn. Recipe 1 đã giảm METEOR (0,62025 → 0,61829); chặn 12-gram của nó xét cả prompt, cản sao chép văn bản nguồn. Giữ top-k và trần token; chỉ dẫn bổ sung dùng một phần ngân sách input, nên phần context thực tế có thể ngắn hơn. Chỉ thử câu có cờ lỗi/evidence mạnh. Toàn bộ nhóm dev được thử trước public; cần METEOR toàn dev100 tăng ít nhất 0,001, ít nhất 2 câu thay đổi và lặp nặng không tăng. Nếu không đạt, giữ CPU và không chạy public GPU. Recipe 2 chưa được chạy model GPU thực.
 
 Đầu ra `submission_selected.zip` luôn có đủ 1.000 ID và đúng một `submission.json`. Khi GPU **paused**, ZIP hiện tại là bản CPU; Add Input toàn bộ output vừa lưu và đặt `PREVIOUS_OUTPUT` để tiếp tục. Mục tiêu public 0,59 chưa được bảo đảm bởi điểm dev100.
 """)
@@ -55,11 +55,11 @@ if not INPUT.is_dir() or not WORK.is_dir():
 # None: tự tìm đúng một diagnostics ZIP, hoặc một thư mục Stage 3 đã giải nén.
 # Nếu có nhiều phiên, điền đường dẫn của phiên COMPLETE muốn xử lý.
 DIAGNOSTICS = None
-OUTPUT = WORK / 'legalqa_main_stage4_v2'
+OUTPUT = WORK / 'legalqa_main_stage4_v2_recipe2'
 RUN_GPU = True
-MODEL_ROOT = None            # Thư mục chứa models.lock.json và generator/.
+MODEL_ROOT = Path('/kaggle/input/datasets/lighth/ver3-smoke-output/legalqa_smoke_full_v1/models')
 ADAPTER_ROOT = None          # Thư mục selected_adapter chứa trọng số + adapter_config.json.
-PREVIOUS_OUTPUT = None       # Thư mục legalqa_main_stage4_v2 của phiên paused, từ Add Input.
+PREVIOUS_OUTPUT = None       # Chỉ resume output recipe 2; không gắn journal recipe 1 đã bị từ chối.
 GPU_MAX_ITEMS = 50           # Tổng câu mới mỗi phiên, cả dev và public; các phiên sau resume.
 INSTALL_DEPS = True          # Tắt nếu môi trường đã có scorer dependencies + WordNet.
 AUDIT_ONLY = False           # True: chỉ kiểm tra/sửa ứng viên, không chấm và KHÔNG tạo ZIP.

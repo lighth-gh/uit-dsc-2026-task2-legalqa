@@ -1,0 +1,41 @@
+{
+  "journal_sha256": "4e4a2f5ec0638d9a0720ca32a5bf4bbe475c5e6a799cc2dcaa1a9c6f5d2e4752",
+  "provenance_limit": "Journal metadata sidecar not supplied; row/schema and CPU consistency checked, no independent model identity verification.",
+  "rows": 15,
+  "routes": {
+    "source_fallback": 10,
+    "generated": 4,
+    "generated_truncated": 1
+  },
+  "unsupported_document_numbers": 10,
+  "token_limit_ids": [
+    "33507"
+  ],
+  "control": {
+    "meteor": 0.6202453105154175,
+    "rougeL": 0.5938193946382953
+  },
+  "recipe1_replayed": {
+    "meteor": 0.6182883776147261,
+    "rougeL": 0.5968952527465459
+  },
+  "deltas": {
+    "22579": {
+      "meteor": -0.04802962971515312,
+      "rougeL": 0.09825434278405565
+    },
+    "8593": {
+      "meteor": 0.14030484471692664,
+      "rougeL": 0.14519291338964807
+    },
+    "129715": {
+      "meteor": -0.13479446048001786,
+      "rougeL": 0.14221194095615763
+    },
+    "53207": {
+      "meteor": -0.15317404459090356,
+      "rougeL": -0.07807338630479421
+    }
+  },
+  "recipe2_gpu_run": false
+}

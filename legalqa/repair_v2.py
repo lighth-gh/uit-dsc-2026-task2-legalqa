@@ -8,7 +8,12 @@ from .repair import (EXTENDED_POLICY, _incomplete, _package, _require, load_diag
                      repair_predictions, repetition_ratio, run_repair)
 
 
-GPU_RECIPE = {"version": 1, "repetition_penalty": 1.08, "no_repeat_ngram_size": 12,
+GPU_RECIPE = {"version": 2, "repetition_penalty": 1.0, "no_repeat_ngram_size": 0,
+              "system_suffix": (
+                  "Trong câu trả lời này, được phép chép nguyên văn các cụm từ từ tài liệu. "
+                  "Giữ đúng số hiệu, tên gọi, số liệu và từ phủ định. Không đổi từ để né lặp. "
+                  "Chỉ tránh lặp nguyên cả câu hoặc đoạn từ ba lần liên tiếp; "
+                  "vẫn trình bày đủ điều kiện, ngoại lệ và danh sách."),
               "min_dev_gain": .001, "min_dev_changes": 2}
 
 
@@ -146,6 +151,10 @@ def accept_generated(original, value):
     flags = row.get("flags_before_fallback", {})
     if any(flags.get(k) for k in ("empty", "artifact", "refusal", "unsupported_document_numbers")):
         reasons.append("generation_guard")
+        reasons.extend(f"guard:{key}" for key in
+                       ("empty", "artifact", "refusal", "unsupported_document_numbers") if flags.get(key))
+    if row["hit_token_limit"]:
+        reasons.append("hit_token_limit")
     return (original if reasons else pred["item"]), reasons
 
 
@@ -171,6 +180,8 @@ def run_gpu(bundle, selected, control_metrics, root, models, adapter, *, max_ite
                 "adapter": expected["adapter"], "models": lock, "generator_files": generator_files,
                 "cpu_predictions": digest(selected), "scorer": control_metrics["metric_identity"]}
     _identity(gpu_root, identity)
+    inference_config = copy.deepcopy(bundle["config"])
+    inference_config["generation"]["system_suffix"] = GPU_RECIPE["system_suffix"]
     # Never expose a stale GPU ZIP after a paused/failed rerun. CPU remains available.
     report = read_json(root / "cpu.metrics.json")
     report["gpu"] = {"status": "running"}
@@ -206,7 +217,7 @@ def run_gpu(bundle, selected, control_metrics, root, models, adapter, *, max_ite
                     report["gpu"] = {"status": "paused", "split": split}
                     _publish(root, bundle, selected, report["selected_variant"], report, "paused")
                     return
-                value = _generate_one(bundle["config"], key, bundle[split]["questions"],
+                value = _generate_one(inference_config, key, bundle[split]["questions"],
                                       bundle[split]["records"], model, tokenizer, device, "generate",
                                       generation_overrides={k: GPU_RECIPE[k] for k in
                                                             ("repetition_penalty", "no_repeat_ngram_size")})
@@ -237,11 +248,11 @@ def run_gpu(bundle, selected, control_metrics, root, models, adapter, *, max_ite
     report["gpu"]["status"] = "complete"
     report["gpu"]["public_changed"] = sum(merged["public"][k] != selected["public"][k] for k in selected["public"])
     report["selected"] = report["gpu"]["metrics"]
-    report["selected_variant"] = "gpu_v1"
+    report["selected_variant"] = f"gpu_v{GPU_RECIPE['version']}"
     queues = {s: repair_predictions(merged[s], effective_audits[s], EXTENDED_POLICY)[2]
               for s in ("dev", "public")}
     write_json(root / "repair.unresolved.json", queues)
-    _publish(root, bundle, merged, "gpu_v1", report)
+    _publish(root, bundle, merged, report["selected_variant"], report)
     write_json(gpu_root / "status.json", {"status": "complete"})
 
 

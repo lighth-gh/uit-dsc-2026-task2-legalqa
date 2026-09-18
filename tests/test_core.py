@@ -16,7 +16,8 @@ from legalqa.prompts import (SYSTEM, answer_flags, citation_context_conflict, cl
                              complete_truncated_answer, extractive_fallback,
                              localized_evidence_support, pack_prompt,
                              refusal_evidence_support, window_around_seed)
-from legalqa.retrieval import Retriever, diversified, retrieval_adjustment, rrf
+from legalqa.retrieval import (Retriever, diversified, legal_intent_queries,
+                               retrieval_adjustment, rrf)
 from legalqa.training import fit, prepare_training_subset, select_training_questions, training_examples
 
 
@@ -195,6 +196,45 @@ class CoreTests(unittest.TestCase):
         result = window_around_seed(parent,tok,30)
         self.assertIn("word180",result)
         self.assertLessEqual(len(result.split()),30)
+
+    def test_complete_unit_prompt_and_two_context_ablation(self):
+        tok = TinyTokenizer(); c = config()
+        c["generation"].update({"max_input_tokens": 700, "parent_max_tokens": 150,
+                                "min_context_tokens": 32, "contexts_k": 2,
+                                "complete_legal_units": True})
+        text = "Mở đầu bị bỏ.\n\n1) Điều kiện thứ nhất được áp dụng đầy đủ.\n\n2) Điều kiện thứ hai được áp dụng đầy đủ.\n\n3) Kết thúc."
+        parents = [{"parent_id": str(i), "text": (text + "\n\n") * 30,
+                    "seed_start": text.index("2)"), "seed_end": text.index("3)")} for i in range(4)]
+        _, packed = pack_prompt("Điều kiện là gì?", parents, tok, c)
+        self.assertEqual(len(packed), 2)
+        self.assertTrue(packed[0]["text"].lstrip().startswith(("Mở đầu", "1)", "2)", "3)")))
+        self.assertTrue(packed[0]["text"].rstrip().endswith("."))
+
+    def test_intent_expansion_is_bounded_to_sanction_principle_questions(self):
+        expanded = legal_intent_queries("Một hành vi có bị xử phạt nhiều lần không?")
+        self.assertEqual(len(expanded), 1)
+        self.assertIn("nguyên tắc xử phạt", expanded[0])
+        self.assertEqual(legal_intent_queries("Hồ sơ cấp phép gồm gì?"), [])
+
+    def test_adjacent_article_candidates_stay_in_same_document(self):
+        con = sqlite3.connect(":memory:"); con.row_factory = sqlite3.Row
+        con.execute("CREATE TABLE parents(parent_id TEXT PRIMARY KEY, doc_id TEXT, heading TEXT, number TEXT, text TEXT, source_file TEXT, link TEXT)")
+        con.execute("CREATE TABLE chunks(chunk_id INTEGER PRIMARY KEY, parent_id TEXT, start INTEGER, end INTEGER, header TEXT, text TEXT)")
+        for ordinal in range(3):
+            parent_id = f"doc:{ordinal}"
+            con.execute("INSERT INTO parents VALUES(?,?,?,?,?,?,?)",
+                        (parent_id, "doc", f"Điều {ordinal}", "1/NĐ-CP", f"nội dung điều {ordinal}", "x", ""))
+            con.execute("INSERT INTO chunks VALUES(?,?,?,?,?,?)",
+                        (ordinal, parent_id, 0, 10, f"Điều {ordinal}", f"nội dung điều {ordinal}"))
+        con.execute("INSERT INTO parents VALUES(?,?,?,?,?,?,?)",
+                    ("other:0", "other", "Điều 1", "2/NĐ-CP", "khác", "y", ""))
+        con.execute("INSERT INTO chunks VALUES(?,?,?,?,?,?)", (9, "other:0", 0, 4, "Điều 1", "khác"))
+        engine = Retriever.__new__(Retriever); engine.con = con
+        settings = config(); settings["retrieval"].update({"adjacent_articles": 1, "max_children_per_parent": 1})
+        engine.c = settings
+        chunks = engine.chunks([1])
+        self.assertEqual(set(engine._adjacent_candidate_ids("nội dung", [1], chunks, 8)), {0, 2})
+        con.close()
 
     def test_prompt_budget_and_train_answer_mask(self):
         c = config();tok = TinyTokenizer()

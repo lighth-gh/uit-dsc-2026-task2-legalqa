@@ -10,7 +10,7 @@ from zipfile import ZipFile
 
 from legalqa.io import read_json, write_json
 from legalqa.repair import EXTENDED_POLICY, deduplicate_answer, repair_predictions
-from legalqa.repair_v2 import accept_generated, compare_variant, gpu_candidates, run_cpu, run_gpu
+from legalqa.repair_v2 import GPU_RECIPE, accept_generated, compare_variant, gpu_candidates, run_cpu, run_gpu
 from test_repair import CLAUSE, DETAIL, audit_row, fixture
 
 
@@ -84,9 +84,33 @@ class RepairV2Tests(unittest.TestCase):
             self.assertEqual(result["audit"]["route"], "generated")
             self.assertEqual(model.generate.call_args.kwargs["repetition_penalty"], 1.0)
             self.assertNotIn("no_repeat_ngram_size", model.generate.call_args.kwargs)
-            _generate_one(*args, generation_overrides={"repetition_penalty": 1.08, "no_repeat_ngram_size": 12})
-            self.assertEqual(model.generate.call_args.kwargs["no_repeat_ngram_size"], 12)
+            _generate_one(*args, generation_overrides={"repetition_penalty": 1.0, "no_repeat_ngram_size": 0})
+            self.assertEqual(model.generate.call_args.kwargs["no_repeat_ngram_size"], 0)
+            self.assertEqual(model.generate.call_args.kwargs["repetition_penalty"], 1.0)
             self.assertEqual(model.generate.call_args.kwargs["max_new_tokens"], 1536)
+
+    def test_repair_prompt_preserves_original_system_and_respects_budget(self):
+        from legalqa.io import config
+        from legalqa.prompts import SYSTEM, messages, pack_prompt
+        from test_core import TinyTokenizer
+        contexts = [{"parent_id": "doc:1", "text": " ".join([CLAUSE, DETAIL] * 30)}]
+        original = messages("Hồ sơ?", contexts)
+        self.assertEqual(original[0]["content"], SYSTEM)
+        custom = messages("Hồ sơ?", contexts, system_suffix=GPU_RECIPE["system_suffix"])
+        self.assertTrue(custom[0]["content"].startswith(SYSTEM + " "))
+        self.assertEqual(custom[1], original[1])
+        settings = config()
+        settings["generation"]["max_input_tokens"] = 700
+        tokenizer = TinyTokenizer()
+        normal_ids, normal_contexts = pack_prompt("Hồ sơ?", contexts, tokenizer, settings)
+        settings["generation"]["system_suffix"] = GPU_RECIPE["system_suffix"]
+        repaired_ids, packed = pack_prompt("Hồ sơ?", contexts, tokenizer, settings)
+        self.assertLessEqual(len(repaired_ids), 700)
+        self.assertIn("Không đổi từ để né lặp.", tokenizer.decode(repaired_ids))
+        self.assertEqual([p["parent_id"] for p in packed], ["doc:1"])
+        self.assertLess(len(packed[0]["text"]), len(normal_contexts[0]["text"]))
+        settings["generation"].pop("system_suffix")
+        self.assertEqual(pack_prompt("Hồ sơ?", contexts, tokenizer, settings), (normal_ids, normal_contexts))
 
     def test_candidate_selection_has_no_gold_and_skips_weak_evidence(self):
         predictions = {k: {"answer": CLAUSE} for k in ("a", "b", "c")}
@@ -147,7 +171,7 @@ class GPUWorkflowTests(unittest.TestCase):
         (models / "generator/model.safetensors").write_bytes(b"test weights only")
         return bundle, selected, control, expected, models
 
-    def workflow(self, dev_gain, *, resume=False, corrupt=False):
+    def workflow(self, dev_gain, *, resume=False, corrupt=False, old_recipe=False):
         with tempfile.TemporaryDirectory() as d, contextlib.ExitStack() as stack:
             root = Path(d); bundle, selected, control, expected, models = self.prepare(root)
             def evaluate(pred, refs, output):
@@ -169,6 +193,15 @@ class GPUWorkflowTests(unittest.TestCase):
                 self.assertEqual(read_json(root / "repair.manifest.json")["status"], "paused")
                 self.assertEqual(generate.call_count, 1)
                 self.assertFalse((root / "gpu/public.checkpoint.jsonl").exists())
+                if old_recipe:
+                    path = root / "gpu/identity.json"
+                    identity = read_json(path)
+                    identity["recipe"]["version"] = 1
+                    write_json(path, identity)
+                    with self.assertRaisesRegex(ValueError, "identity differs"):
+                        run_gpu(bundle, selected, control, root, models, root / "adapter")
+                    self.assertEqual(generate.call_count, 1)
+                    return
                 if corrupt:
                     path = root / "gpu/dev.checkpoint.jsonl"
                     row = json.loads(path.read_text(encoding="utf-8"))
@@ -180,12 +213,14 @@ class GPUWorkflowTests(unittest.TestCase):
                 run_gpu(bundle, selected, control, root, models, root / "adapter")
             self.assertEqual(generate.call_count, 3 if dev_gain >= .001 else 2)
             manifest = read_json(root / "repair.manifest.json")
-            self.assertEqual(manifest["selected_variant"], "gpu_v1" if dev_gain >= .001 else "cpu_v2")
+            self.assertEqual(manifest["selected_variant"], "gpu_v2" if dev_gain >= .001 else "cpu_v2")
             if dev_gain < .001:
                 self.assertFalse((root / "gpu/public.checkpoint.jsonl").exists())
             for call in generate.call_args_list:
-                self.assertEqual(call.kwargs["generation_overrides"], {"repetition_penalty": 1.08, "no_repeat_ngram_size": 12})
+                self.assertEqual(call.kwargs["generation_overrides"], {"repetition_penalty": 1.0, "no_repeat_ngram_size": 0})
+                self.assertEqual(call.args[0]["generation"]["system_suffix"], GPU_RECIPE["system_suffix"])
                 self.assertNotIn("references", call.kwargs)
+            self.assertNotIn("system_suffix", bundle["config"]["generation"])
 
     def test_gpu_dev_rejection_prevents_public_generation(self):
         self.workflow(-.01)
@@ -195,6 +230,9 @@ class GPUWorkflowTests(unittest.TestCase):
 
     def test_corrupt_gpu_journal_rejected(self):
         self.workflow(.005, resume=True, corrupt=True)
+
+    def test_previous_recipe_cannot_be_resumed(self):
+        self.workflow(.005, resume=True, old_recipe=True)
 
 
 if __name__ == "__main__":
