@@ -72,6 +72,16 @@ class ExperimentTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "IDs differ"):
                 postprocess_candidate(root / "pred.json", root / "audit.json", root / "out.json")
 
+    def test_main04_exposes_all_ablation_modes_without_manual_cell_rewrite(self):
+        notebook = read_json(Path(__file__).parents[1] / "legalqa_main_04_repair_submit.ipynb")
+        source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+        for value in ("MODE = 'p2_retrieval'", "p1_public", "p2_generate", "repair_v2",
+                      "P1_WINNER = None", "P2_SHORTLIST = []", "RUN_GPU = True",
+                      "main04_state.json", "p2_retrieval_diagnostics.zip"):
+            self.assertIn(value, source)
+        for variant in (*INFERENCE_VARIANTS, *RETRIEVAL_VARIANTS):
+            self.assertIn(variant, source)
+
 
 if __name__ == "__main__":
     unittest.main()

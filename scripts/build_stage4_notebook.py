@@ -34,7 +34,7 @@ def build():
     cell("markdown", "s4intro", """
 # LegalQA Main 04 — P0/P1/P2 ablation và repair
 
-Notebook này đã nhúng sẵn toàn bộ code, scorer và cấu hình thử nghiệm. Chỉ chọn `MODE`; không sửa cell lệnh. Mặc định `p1_dev` tái lập baseline P0 rồi thử độc lập năm cấu hình inference. Các mode khác: `p1_public`, `p2_retrieval`, `p2_generate`, và `repair_v2` để giữ workflow Stage 4 cũ.
+Notebook này đã nhúng sẵn toàn bộ code, scorer và cấu hình thử nghiệm. Chỉ chọn `MODE`; không sửa cell lệnh. Cấu hình hiện tại tiếp nối output Main 04 để chạy `p2_retrieval`. Các mode khác: `p1_dev`, `p1_public`, `p2_generate`, và `repair_v2` để giữ workflow Stage 4 cũ.
 
 **Input bắt buộc:** đúng diagnostics Stage 3 hoàn chỉnh, output Stage 2/3 có `selected_adapter/adapter_model.safetensors`, và dataset Version 3 chứa `models/` cùng `index/`. Chọn GPU T4/P100 và bật Internet. Diagnostics không chứa trọng số adapter.
 
@@ -50,8 +50,8 @@ WORK = Path('/kaggle/working')
 if not INPUT.is_dir() or not WORK.is_dir():
     raise RuntimeError('Notebook này dùng đường dẫn Kaggle. Chạy local bằng python -m legalqa.repair.')
 
-# Chọn đúng một mode. Lượt đầu được khuyến nghị: p1_dev.
-MODE = 'p1_dev'  # p1_dev | p1_public | p2_retrieval | p2_generate | repair_v2
+# Chạy P2 retrieval từ output Main 04 vừa lưu.
+MODE = 'p2_retrieval'  # p1_dev | p1_public | p2_retrieval | p2_generate | repair_v2
 
 # None: tự tìm đúng một diagnostics ZIP, hoặc một thư mục Stage 3 đã giải nén.
 DIAGNOSTICS = None
@@ -60,7 +60,7 @@ OUTPUT = WORK / 'legalqa_main_04_v8_060'
 RUN_GPU = True
 MODEL_ROOT = Path('/kaggle/input/datasets/lighth/ver3-smoke-output/legalqa_smoke_full_v1/models')
 ADAPTER_ROOT = None          # Thư mục selected_adapter chứa trọng số + adapter_config.json.
-PREVIOUS_OUTPUT = None       # Output gốc legalqa_main_04_v8_060 của version trước.
+PREVIOUS_OUTPUT = Path('/kaggle/input/notebooks/lighth/legalqa-main-04-repair-submit/legalqa_main_04_v8_060')
 P1_WINNER = None             # Bắt buộc với p1_public, ví dụ 'g1_penalty_103'.
 P2_SHORTLIST = []            # p2_generate: tối đa 2 tên từ báo cáo p2_retrieval.
 P1_VARIANTS = ['g1_penalty_103', 'g1_penalty_105', 'g2_contexts_2',
@@ -355,6 +355,18 @@ elif MODE == 'p2_retrieval':
         row.get('status') == 'complete' for row in summary.values())
     record('complete' if complete else 'paused', summary='p2/retrieval_summary.json')
 
+    # Gói riêng báo cáo nhẹ để tải/chia sẻ, không đưa cache retrieval lớn vào ZIP.
+    diagnostic_zip = OUTPUT / 'p2_retrieval_diagnostics.zip'
+    diagnostic_tmp = diagnostic_zip.with_suffix('.zip.tmp')
+    diagnostic_files = [root / 'retrieval_summary.json', OUTPUT / 'main04_state.json']
+    diagnostic_files += [root / variant / 'retrieval.diagnostic.json'
+                         for variant in P2_VARIANTS
+                         if (root / variant / 'retrieval.diagnostic.json').is_file()]
+    with zipfile.ZipFile(diagnostic_tmp, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in diagnostic_files:
+            archive.write(path, path.relative_to(OUTPUT).as_posix())
+    os.replace(diagnostic_tmp, diagnostic_zip)
+
 elif MODE == 'p2_generate':
     ensure_configs()
     baseline_metrics = ensure_baseline()
@@ -441,7 +453,8 @@ elif MODE == 'p1_public':
     if current.get('submission_zip'):
         links.append(OUTPUT / current['submission_zip'])
 elif MODE == 'p2_retrieval':
-    links.append(OUTPUT / 'p2/retrieval_summary.json')
+    links += [OUTPUT / 'p2/retrieval_summary.json',
+              OUTPUT / 'p2_retrieval_diagnostics.zip']
 elif MODE == 'p2_generate':
     links.append(OUTPUT / 'p2/generation_summary.json')
 else:
@@ -460,7 +473,7 @@ print('Điểm P1/P2 hiện tại là dev100; chưa phải bằng chứng public
     cell("markdown", "s4next", """
 ## Bước tiếp theo
 
-Sau `p1_dev`, xem `p1/p1_summary.json`; chỉ điền `P1_WINNER` và chuyển sang `p1_public` khi `passes_screen=true`. Sau `p2_retrieval`, gửi `p2/retrieval_summary.json` để chọn tối đa hai tên cho `P2_SHORTLIST`; sau đó dùng `p2_generate`. Nếu một mode paused, không đổi mode/variant giữa chừng.
+Sau `p1_dev`, xem `p1/p1_summary.json`; chỉ điền `P1_WINNER` và chuyển sang `p1_public` khi `passes_screen=true`. Sau `p2_retrieval`, tải/gửi `p2_retrieval_diagnostics.zip` để chọn tối đa hai tên cho `P2_SHORTLIST`; sau đó dùng `p2_generate`. Nếu một mode paused, không đổi mode/variant giữa chừng.
 
 `answer-token coverage` của P2 chỉ là diagnostic, không phải gold recall. Dev100 đã dùng chọn checkpoint nên ứng viên tốt vẫn phải xác nhận trên dev600 trước khi chạy public1000. Không dùng reference hoặc ngưỡng riêng theo ID public.
 """)
