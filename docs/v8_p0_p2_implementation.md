@@ -24,17 +24,15 @@ python -m legalqa.experiments lock-baseline `
 
 ## P1 — inference ablation
 
-Bộ runner chỉ chọn câu bằng tín hiệu có tại inference: lặp, dang dở, chạm token, fallback và evidence đã cache. Gold/reference không đi vào prompt hoặc quy tắc giữ từng câu. Candidate mới bị từ chối nếu fallback, tiếp tục chạm token, thiếu evidence mạnh, xung đột thực thể/số hiệu, từ chối trả lời hoặc còn lặp/dang dở.
+Bộ runner chỉ chọn câu có tín hiệu vòng lặp trong prediction gốc: block/câu dài lặp lại hoặc danh sách nhãn tăng dần nhưng nội dung giống nhau. Gold/reference không đi vào prompt hoặc quy tắc giữ từng câu. Candidate mới bị từ chối nếu fallback, tiếp tục chạm token, thiếu evidence mạnh, xung đột thực thể/số hiệu, từ chối trả lời hoặc còn lặp/dang dở.
 
-Các biến được thử độc lập:
+Ba lượt dùng cùng prompt sửa lặp, tối đa hai context thuộc cùng văn bản với nguồn top-1 và cửa sổ giữ biên khoản/điểm hoàn chỉnh; chỉ penalty thay đổi:
 
 | Tên | Một thay đổi duy nhất |
 |---|---|
+| `g0_penalty_100` | đối chứng `repetition_penalty=1.00` |
 | `g1_penalty_103` | `repetition_penalty=1.03` |
 | `g1_penalty_105` | `repetition_penalty=1.05` |
-| `g2_contexts_2` | prompt dùng 2 thay vì 4 parent, retrieval giữ nguyên |
-| `g3_complete_units` | cửa sổ context co về biên khoản/điểm/đoạn hoàn chỉnh |
-| `g4_grounded_prompt` | ràng buộc từng vế, đúng phạm vi và không trộn nguồn |
 
 Ví dụ chạy một biến trên dev100 ở môi trường có model/adapter GPU:
 
@@ -50,7 +48,7 @@ python -m legalqa.experiments inference `
   --max-items 50
 ```
 
-Runner có journal và identity; nếu paused, chạy lại đúng lệnh để tiếp tục. Không dùng lại output khi đổi variant/code/model. `decision.json` chỉ đánh dấu qua vòng sàng lọc khi METEOR tăng ít nhất `0.01`, ROUGE-L không giảm quá `0.005`, và số câu lặp nặng không tăng.
+Runner có journal và identity; nếu paused, chạy lại đúng lệnh để tiếp tục. Không dùng lại output khi đổi variant/code/model. `decision.json` chỉ đánh dấu qua vòng sàng lọc khi METEOR tăng ít nhất `0.001`, ROUGE-L không giảm quá `0.005`, và số câu lặp nặng không tăng. Notebook ghi thêm `penalty_comparison.json` để so trực tiếp 1.03/1.05 với lượt 1.00.
 
 Chỉ sau khi cùng variant qua dev mới được chạy public; runner bắt buộc truyền kết quả dev tương ứng:
 

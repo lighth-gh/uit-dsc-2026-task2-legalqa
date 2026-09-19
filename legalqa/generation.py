@@ -173,6 +173,7 @@ def _generate_one(c, key, questions, records, model, tokenizer, device, mode, *,
         "entity_conflict": entity_conflict,
         "hit_token_limit": hit_limit, "input_tokens": len(prompt_ids), "output_tokens": completion_tokens,
         "answer_words": len(answer.split()), "context_parent_ids": [p["parent_id"] for p in packed],
+        "context_document_ids": [p.get("doc_id") for p in packed],
         "packed_contexts": len(packed),
         "packed_context_tokens": packed_context_tokens,
         "generation_settings": {
@@ -182,6 +183,7 @@ def _generate_one(c, key, questions, records, model, tokenizer, device, mode, *,
                 "contexts_k", c.get("retrieval", {}).get("parents_k", len(packed) or 4)
             )),
             "complete_legal_units": bool(c["generation"].get("complete_legal_units", False)),
+            "same_document_as_top": bool(c["generation"].get("same_document_as_top", False)),
         },
         "seconds": time.perf_counter()-start}
     return {"prediction": {"answer": answer}, "audit": audit}

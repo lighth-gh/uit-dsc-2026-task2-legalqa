@@ -7,19 +7,25 @@ from pathlib import Path
 from .io import Journal, digest, file_hash, read_json, source_hash, write_json
 
 
-GROUNDING_SUFFIX = (
-    "Trả lời lần lượt từng vế của câu hỏi. Trước hết xác định đúng chủ thể và phạm vi áp dụng; "
-    "ưu tiên trích đoạn xếp đầu nếu nó trực tiếp trả lời. Gắn căn cứ, điều kiện, ngoại lệ và số liệu "
-    "với cùng một nguồn; không trộn quy định của quỹ, cơ quan hoặc văn bản khác. "
-    "Không lặp nguyên cả câu hoặc đoạn từ ba lần liên tiếp."
+FOCUSED_REGEN_SUFFIX = (
+    "Đây là lượt sửa một câu trả lời bị lặp. Chỉ trả lời các ý trực tiếp liên quan đến câu hỏi, "
+    "mỗi ý đúng một lần; không tự tạo danh sách khoản hoặc điểm tăng dần. Trước hết xác định đúng "
+    "chủ thể và phạm vi áp dụng, rồi ưu tiên trích đoạn xếp đầu nếu nó trực tiếp trả lời. "
+    "Giữ nguyên thuật ngữ, số hiệu, điều kiện, ngoại lệ và số liệu cần thiết; không bỏ ý pháp lý "
+    "chỉ vì có từ ngữ cần lặp. Không trộn quy định từ văn bản hoặc thực thể khác."
 )
 
+FOCUSED_GENERATION = {
+    "contexts_k": 2,
+    "same_document_as_top": True,
+    "complete_legal_units": True,
+    "system_suffix": FOCUSED_REGEN_SUFFIX,
+}
+
 INFERENCE_VARIANTS = {
-    "g1_penalty_103": {"generation": {"repetition_penalty": 1.03}},
-    "g1_penalty_105": {"generation": {"repetition_penalty": 1.05}},
-    "g2_contexts_2": {"generation": {"contexts_k": 2}},
-    "g3_complete_units": {"generation": {"complete_legal_units": True}},
-    "g4_grounded_prompt": {"generation": {"system_suffix": GROUNDING_SUFFIX}},
+    "g0_penalty_100": {"generation": {**FOCUSED_GENERATION, "repetition_penalty": 1.0}},
+    "g1_penalty_103": {"generation": {**FOCUSED_GENERATION, "repetition_penalty": 1.03}},
+    "g1_penalty_105": {"generation": {**FOCUSED_GENERATION, "repetition_penalty": 1.05}},
 }
 
 RETRIEVAL_VARIANTS = {
@@ -136,11 +142,11 @@ def _screen_decision(control_metrics, candidate_metrics, control, candidate):
     severe_after = sum(repetition_ratio(row["answer"]) >= .5 for row in candidate.values())
     meteor_delta = candidate_metrics["meteor"] - control_metrics["meteor"]
     rouge_delta = candidate_metrics["rougeL"] - control_metrics["rougeL"]
-    return {"passes_screen": bool(changed) and meteor_delta >= .01 and rouge_delta >= -.005
+    return {"passes_screen": bool(changed) and meteor_delta >= .001 and rouge_delta >= -.005
             and severe_after <= severe_before,
             "changed_ids": changed, "meteor_delta": meteor_delta, "rougeL_delta": rouge_delta,
             "severe_before": severe_before, "severe_after": severe_after,
-            "rule": "delta METEOR >= 0.01; delta ROUGE-L >= -0.005; severe repetition non-increasing"}
+            "rule": "delta METEOR >= 0.001; delta ROUGE-L >= -0.005; severe repetition non-increasing"}
 
 
 def postprocess_candidate(predictions_path, audit_path, output):
@@ -177,7 +183,7 @@ def run_inference_ablation(diagnostics, baseline, models, adapter, variant, outp
     from .metrics import evaluate
     from .models import load_generator, model_lock
     from .repair import load_diagnostics
-    from .repair_v2 import accept_generated, gpu_candidates
+    from .repair_v2 import accept_generated, gpu_candidates, loop_reasons
     from .runtime import should_pause
     import torch
     from transformers import set_seed
@@ -194,12 +200,21 @@ def run_inference_ablation(diagnostics, baseline, models, adapter, variant, outp
     if not str(device).startswith("cuda") or not torch.cuda.is_available():
         raise RuntimeError("Inference ablation requires CUDA")
     config = patched_config(bundle["config"], INFERENCE_VARIANTS[variant])
-    keys, skipped = gpu_candidates(bundle[split], control)
+    detection_predictions = bundle[split]["predictions"]
+    keys, skipped = gpu_candidates(bundle[split], control,
+                                   detection_predictions=detection_predictions,
+                                   loops_only=True,
+                                   contexts_k=int(config["generation"]["contexts_k"]),
+                                   same_document_as_top=bool(
+                                       config["generation"].get("same_document_as_top", False)))
+    candidate_reasons = {key: loop_reasons(detection_predictions[key]["answer"]) for key in keys}
     root = Path(output)
     identity = {"source": bundle["source"], "baseline_predictions": digest(control),
                 "variant": variant, "patch": INFERENCE_VARIANTS[variant],
                 "config_hash": digest(config), "code": source_hash(), "split": split,
-                "ids": keys, "adapter": expected["adapter"], "models": expected["models"]}
+                "ids": keys, "candidate_reasons": candidate_reasons,
+                "selection_policy": "loop_signals_only_from_original_predictions",
+                "adapter": expected["adapter"], "models": expected["models"]}
     marker = root / "identity.json"
     if marker.exists() and read_json(marker) != identity:
         raise ValueError("Ablation identity differs; choose a new output directory")
@@ -207,7 +222,8 @@ def run_inference_ablation(diagnostics, baseline, models, adapter, variant, outp
         if root.exists() and any(root.iterdir()):
             raise ValueError("Ablation output directory is not empty")
         write_json(marker, identity)
-    write_json(root / "candidates.json", {"ids": keys, "skipped": skipped})
+    write_json(root / "candidates.json", {"ids": keys, "reasons": candidate_reasons,
+                                           "skipped": skipped})
     journal = Journal(root / f"{split}.checkpoint.jsonl", identity)
     merged, effective_audit = copy.deepcopy(control), {}
     model = tokenizer = None

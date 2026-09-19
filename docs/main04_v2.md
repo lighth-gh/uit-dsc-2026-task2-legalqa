@@ -20,17 +20,17 @@ Sau khi Add Input:
 
 1. Mở cell cấu hình đầu tiên. Lượt đầu giữ `MODE='p1_dev'`, `RUN_GPU=True`, `GPU_MAX_ITEMS=50`, `WORK_HOURS=9.0`, `PREVIOUS_OUTPUT=None`.
 2. `MODEL_ROOT` mặc định trỏ tới `lighth/ver3-smoke-output`. Để `ADAPTER_ROOT=None` và `DIAGNOSTICS=None` nếu mỗi loại chỉ có đúng một kết quả. Nếu notebook báo nhiều kết quả, chép đúng đường dẫn được in trong lỗi vào biến tương ứng. `MODEL_ROOT` là thư mục `models`, tức thư mục cha của `generator/`.
-3. Bấm **Save Version → Save & Run All**. Output chung được ghi ở `/kaggle/working/legalqa_main_04_v8_060/`; trạng thái điều phối nằm trong `main04_state.json`.
-4. Nếu cuối log là `paused`, lưu version có output. Ở phiên sau, Add Input output của chính version đó qua **Your Work / Notebook Output**, đặt `PREVIOUS_OUTPUT` tới thư mục `.../legalqa_main_04_v8_060`, giữ nguyên `MODE` và danh sách variant, rồi Save & Run All lại.
+3. Bấm **Save Version → Save & Run All**. Output chung được ghi ở `/kaggle/working/legalqa_main_04_v8_060_focused_loop/`; trạng thái điều phối nằm trong `main04_state.json`.
+4. Nếu cuối log là `paused`, lưu version có output. Ở phiên sau, Add Input output của chính version đó qua **Your Work / Notebook Output**, đặt `PREVIOUS_OUTPUT` tới thư mục `.../legalqa_main_04_v8_060_focused_loop`, giữ nguyên `MODE` và danh sách variant, rồi Save & Run All lại.
 5. Khi một mode báo `complete`, tải báo cáo/ZIP trong tab **Output**, hoặc Save Version để dùng toàn bộ thư mục output làm Input cho mode kế tiếp.
 
 ## Các mode có sẵn
 
-- `p1_dev`: chạy năm variant inference và ghi `p1/p1_summary.json`.
+- `p1_dev`: chỉ regenerate câu có vòng lặp và so sánh penalty 1.00/1.03/1.05; ghi `p1/p1_summary.json` cùng `p1/penalty_comparison.json`.
 - `p1_public`: điền `P1_WINNER`; notebook từ chối nếu variant không có `passes_screen=true`, rồi resume và đóng `submission_<variant>.zip` khi đủ 1.000 ID.
 - `p2_retrieval`: chạy năm variant retrieval, ghi `p2/retrieval_summary.json`.
 - `p2_generate`: điền tối đa hai tên vào `P2_SHORTLIST`; generation dev100 có journal, sau đó repair, evaluate và paired compare.
-- `repair_v2`: giữ workflow recipe 2 trước đây dưới `legalqa_main_04_v8_060/repair_v2`.
+- `repair_v2`: giữ workflow recipe 2 trước đây dưới `legalqa_main_04_v8_060_focused_loop/repair_v2`.
 
 Các mode `p1_dev`, `p1_public`, `p2_retrieval` và `p2_generate` bắt buộc `RUN_GPU=True`. Chỉ `repair_v2` có thể đặt `RUN_GPU=False` để chạy lại sửa CPU cũ. Khi đổi code sau một phiên đã lưu, bắt đầu output mới để không trộn kết quả.
 
@@ -38,7 +38,8 @@ Các mode `p1_dev`, `p1_public`, `p2_retrieval` và `p2_generate` bắt buộc `
 
 - V1 được chạy/chấm lại làm đối chứng; V2 chỉ thêm xóa vòng lặp từ 6 mục liên tiếp có cùng nội dung nhưng khác nhãn `a)`, `b)` hoặc `1)`, `2)`. Không xóa phần kết luận, không sửa câu khác số liệu, phủ định hoặc điều kiện.
 - GPU recipe 2 dùng greedy, `repetition_penalty=1.0`, `no_repeat_ngram_size=0`, cộng chỉ dẫn cho phép chép nguyên văn nguồn, giữ căn cứ/số liệu và chỉ tránh lặp nguyên câu/đoạn từ ba lần liên tiếp. Prompt chống hallucination cũ vẫn giữ nguyên. Giữ `max_input_tokens`, `max_new_tokens`, top-k và thứ tự context; chỉ dẫn mới chiếm một phần ngân sách input nên cửa sổ context thực tế có thể ngắn hơn. Không huấn luyện lại, không truy xuất lại corpus.
-- Danh sách thử dựa trên cờ lặp, câu dẫn dang dở, chạm token hoặc fallback, kèm kiểm tra evidence mạnh. Đây là heuristic, không chứng minh đầy đủ căn cứ. Câu evidence yếu được bỏ qua và ghi rõ để xem lại retrieval.
+- P1 chỉ lấy ID có vòng lặp từ prediction gốc: block/câu dài lặp lại hoặc danh sách đánh số tăng dần có cùng nội dung. Câu khác, kể cả token-limit/fallback nhưng không lặp, không bị sinh lại. Evidence yếu được bỏ qua và ghi rõ.
+- Ba lượt P1 dùng cùng prompt tập trung và cùng context policy: tối đa hai parent thuộc cùng văn bản với nguồn top-1, giữ biên khoản/điểm hoàn chỉnh; chỉ `repetition_penalty` thay đổi giữa 1.00/1.03/1.05.
 - Sinh toàn bộ nhóm dev được chọn trước; giữ nguyên các dev khác để chấm toàn bộ dev100. Cần METEOR tăng ít nhất 0,001 so với CPU, ít nhất 2 đáp án dev thay đổi và cờ lặp nặng không tăng. Không dùng gold trong prompt, không chọn bản sửa theo điểm riêng từng câu.
 - Public chỉ chạy sau khi dev đạt điều kiện. Bản sinh chạm token, fallback/refusal, thiếu evidence, xung đột thực thể/số hiệu hoặc vẫn dang dở/lặp bị từ chối; giữ đáp án CPU của câu đó. Quy tắc này giống nhau ở dev/public.
 - `GPU_MAX_ITEMS` là số câu **mới mỗi phiên**, cộng cả dev và public; không phải giới hạn tổng nhóm thử. `WORK_HOURS` bao gồm setup, CPU, GPU và chấm. Recipe 1 đã hoàn tất thử dev trên Kaggle trong khoảng 17 phút cho toàn phiên, nhưng không đạt điều kiện; chưa đo runtime recipe 2. Có thể cần nhiều phiên. Quá hạn cứng có thể phải chạy lại câu chưa ghi journal.

@@ -69,6 +69,16 @@ def window_around_seed(parent, tokenizer, budget, complete_units=False):
     return text[start_char:end_char].strip()
 
 
+def select_contexts(parents, limit, *, same_document_as_top=False):
+    """Keep retrieval order while optionally removing documents outside top-1's scope."""
+    parents = list(parents)
+    if same_document_as_top and parents:
+        top_document = parents[0].get("doc_id")
+        if top_document:
+            parents = [parent for parent in parents if parent.get("doc_id") == top_document]
+    return parents[:limit]
+
+
 def pack_prompt(question, parents, tokenizer, c, budget=None):
     budget = budget or c["generation"]["max_input_tokens"]
     system_suffix = c["generation"].get("system_suffix", "")
@@ -82,7 +92,10 @@ def pack_prompt(question, parents, tokenizer, c, budget=None):
     contexts_k = int(c["generation"].get("contexts_k", c["retrieval"]["parents_k"]))
     if not 1 <= contexts_k <= c["retrieval"]["parents_k"]:
         raise ValueError("generation.contexts_k must be between 1 and retrieval.parents_k")
-    parents = parents[:contexts_k]
+    # The reranker already placed the strongest source first. For focused regeneration,
+    # do not let a similarly named but different legal document distract the generator.
+    parents = select_contexts(parents, contexts_k, same_document_as_top=bool(
+        c["generation"].get("same_document_as_top", False)))
     count = max(1, len(parents))
     parent_cap = c["generation"]["parent_max_tokens"]
     floor = min(c["generation"]["min_context_tokens"], max(32, available//(count*2)))
@@ -116,7 +129,7 @@ def pack_prompt(question, parents, tokenizer, c, budget=None):
             # Only fields extracted verbatim from the supplied corpus, never a generated citation.
             pids = tokenizer(prefix, add_special_tokens=False)["input_ids"][:64]
             text = tokenizer.decode(pids)+"\n"+text
-        packed.append({"parent_id": parent["parent_id"], "text": text,
+        packed.append({"parent_id": parent["parent_id"], "doc_id": parent.get("doc_id"), "text": text,
                        "seed_chunk_id": parent.get("seed_chunk_id"),
                        "number": parent.get("number", ""), "heading": parent.get("heading", ""),
                        "final_score": parent.get("final_score")})

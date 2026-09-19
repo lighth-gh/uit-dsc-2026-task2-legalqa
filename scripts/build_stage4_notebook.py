@@ -34,7 +34,7 @@ def build():
     cell("markdown", "s4intro", """
 # LegalQA Main 04 — P0/P1/P2 ablation và repair
 
-Notebook này đã nhúng sẵn toàn bộ code, scorer và cấu hình thử nghiệm. Chỉ chọn `MODE`; không sửa cell lệnh. Cấu hình hiện tại tiếp nối output Main 04 để chạy `p2_retrieval`. Các mode khác: `p1_dev`, `p1_public`, `p2_generate`, và `repair_v2` để giữ workflow Stage 4 cũ.
+Notebook này đã nhúng sẵn toàn bộ code, scorer và cấu hình thử nghiệm. Chỉ chọn `MODE`; không sửa cell lệnh. Cấu hình hiện tại chạy mới `p1_dev` để so sánh selective regeneration với penalty 1.00/1.03/1.05. Các mode khác: `p1_public`, `p2_retrieval`, `p2_generate`, và `repair_v2` để giữ workflow Stage 4 cũ.
 
 **Input bắt buộc:** đúng diagnostics Stage 3 hoàn chỉnh, output Stage 2/3 có `selected_adapter/adapter_model.safetensors`, và dataset Version 3 chứa `models/` cùng `index/`. Chọn GPU T4/P100 và bật Internet. Diagnostics không chứa trọng số adapter.
 
@@ -50,21 +50,20 @@ WORK = Path('/kaggle/working')
 if not INPUT.is_dir() or not WORK.is_dir():
     raise RuntimeError('Notebook này dùng đường dẫn Kaggle. Chạy local bằng python -m legalqa.repair.')
 
-# Chạy P2 retrieval từ output Main 04 vừa lưu.
-MODE = 'p2_retrieval'  # p1_dev | p1_public | p2_retrieval | p2_generate | repair_v2
+# Bundle đã đổi: chạy P1 dev trong output mới, không resume state của bundle cũ.
+MODE = 'p1_dev'  # p1_dev | p1_public | p2_retrieval | p2_generate | repair_v2
 
 # None: tự tìm đúng một diagnostics ZIP, hoặc một thư mục Stage 3 đã giải nén.
 DIAGNOSTICS = None
 EXPECTED_DIAGNOSTICS_SHA256 = 'a19932405fe8ae65713d290c362a1ba2b968ee71d090ea4479dcdeeda018afe7'
-OUTPUT = WORK / 'legalqa_main_04_v8_060'
+OUTPUT = WORK / 'legalqa_main_04_v8_060_focused_loop'
 RUN_GPU = True
 MODEL_ROOT = Path('/kaggle/input/datasets/lighth/ver3-smoke-output/legalqa_smoke_full_v1/models')
 ADAPTER_ROOT = None          # Thư mục selected_adapter chứa trọng số + adapter_config.json.
-PREVIOUS_OUTPUT = Path('/kaggle/input/notebooks/lighth/legalqa-main-04-repair-submit/legalqa_main_04_v8_060')
+PREVIOUS_OUTPUT = None       # Chỉ đặt output cùng bundle này khi resume một mode bị paused.
 P1_WINNER = None             # Bắt buộc với p1_public, ví dụ 'g1_penalty_103'.
 P2_SHORTLIST = []            # p2_generate: tối đa 2 tên từ báo cáo p2_retrieval.
-P1_VARIANTS = ['g1_penalty_103', 'g1_penalty_105', 'g2_contexts_2',
-               'g3_complete_units', 'g4_grounded_prompt']
+P1_VARIANTS = ['g0_penalty_100', 'g1_penalty_103', 'g1_penalty_105']
 P2_VARIANTS = ['r1_pool_64', 'r2_intent_query', 'r3_adjacent_articles',
                'r4_lexical_weight_1', 'r5_scope_penalty']
 GPU_MAX_ITEMS = 50           # Số câu mới mỗi variant/process trong phiên này.
@@ -224,7 +223,7 @@ if MODE.startswith('p2'):
     cell("markdown", "s4run-note", """
 ## Chạy mode đã chọn
 
-- `p1_dev`: tái lập P0 và thử năm cấu hình inference trên cùng nhóm câu được chọn bằng tín hiệu inference.
+- `p1_dev`: tái lập P0 và thử ba mức penalty 1.00/1.03/1.05 trên cùng nhóm câu lặp được phát hiện từ output gốc.
 - `p1_public`: yêu cầu `P1_WINNER`; tự kiểm `decision.json`, resume tối đa `GPU_MAX_ITEMS` câu và đóng ZIP khi hoàn tất.
 - `p2_retrieval`: tạo năm cache retrieval + diagnostic, chưa generation.
 - `p2_generate`: yêu cầu `P2_SHORTLIST` tối đa hai variant; resume generation dev100, repair/chấm/paired comparison khi đủ.
@@ -298,11 +297,25 @@ if MODE == 'p1_dev':
             summary[variant]['metrics'] = {key: score[key] for key in ('meteor', 'rougeL')}
         if status.get('status') == 'paused':
             break
+    penalty_control = summary.get('g0_penalty_100', {}).get('metrics')
+    comparison = {'control_variant': 'g0_penalty_100', 'control_metrics': penalty_control,
+                  'variants': {}}
+    if penalty_control:
+        for variant in ('g1_penalty_103', 'g1_penalty_105'):
+            metrics = summary.get(variant, {}).get('metrics')
+            if metrics:
+                comparison['variants'][variant] = {
+                    'metrics': metrics,
+                    'delta_vs_1_00': {key: metrics[key] - penalty_control[key]
+                                      for key in ('meteor', 'rougeL')},
+                }
+    write_json(root / 'penalty_comparison.json', comparison)
     write_json(root / 'p1_summary.json', {'baseline': {k: baseline_metrics[k] for k in ('meteor','rougeL')},
-                                          'variants': summary})
+                                          'penalty_comparison': comparison, 'variants': summary})
     complete = len(summary) == len(P1_VARIANTS) and all(
         row.get('status') == 'complete' for row in summary.values())
-    record('complete' if complete else 'paused', summary='p1/p1_summary.json')
+    record('complete' if complete else 'paused', summary='p1/p1_summary.json',
+           penalty_comparison='p1/penalty_comparison.json')
 
 elif MODE == 'p1_public':
     ensure_baseline()
@@ -447,7 +460,7 @@ print(json.dumps(current, ensure_ascii=False, indent=2))
 
 links = [OUTPUT / 'main04_state.json']
 if MODE == 'p1_dev':
-    links.append(OUTPUT / 'p1/p1_summary.json')
+    links += [OUTPUT / 'p1/p1_summary.json', OUTPUT / 'p1/penalty_comparison.json']
 elif MODE == 'p1_public':
     links += [OUTPUT / f'p1/{P1_WINNER}_public/status.json']
     if current.get('submission_zip'):

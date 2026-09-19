@@ -10,7 +10,8 @@ from zipfile import ZipFile
 
 from legalqa.io import read_json, write_json
 from legalqa.repair import EXTENDED_POLICY, deduplicate_answer, repair_predictions
-from legalqa.repair_v2 import GPU_RECIPE, accept_generated, compare_variant, gpu_candidates, run_cpu, run_gpu
+from legalqa.repair_v2 import (GPU_RECIPE, accept_generated, compare_variant, gpu_candidates,
+                               loop_reasons, run_cpu, run_gpu)
 from test_repair import CLAUSE, DETAIL, audit_row, fixture
 
 
@@ -121,6 +122,35 @@ class RepairV2Tests(unittest.TestCase):
             ids, skipped = gpu_candidates(data, predictions)
         self.assertEqual(ids, ["a"])
         self.assertEqual(list(skipped), ["b"])
+
+    def test_loop_only_selection_uses_original_prediction_and_ignores_other_errors(self):
+        loop = "\n".join(f"{i}) {CLAUSE}" for i in range(1, 7))
+        selected = {"loop": {"answer": CLAUSE}, "token": {"answer": CLAUSE}}
+        original = {"loop": {"answer": loop}, "token": {"answer": CLAUSE}}
+        data = {"audit": {key: audit_row(hit_token_limit=True) for key in selected},
+                "questions": {key: {"question": "Thủ tục?"} for key in selected},
+                "records": {key: {"contexts": [{"text": DETAIL}]} for key in selected}}
+        self.assertIn("runaway_incrementing_list", loop_reasons(loop))
+        with patch("legalqa.prompts.refusal_evidence_support", return_value={"strong": True}):
+            ids, skipped = gpu_candidates(data, selected, detection_predictions=original,
+                                          loops_only=True)
+        self.assertEqual(ids, ["loop"])
+        self.assertEqual(skipped, {})
+
+    def test_focused_prompt_keeps_only_top_document_contexts(self):
+        from legalqa.io import config
+        from legalqa.prompts import pack_prompt
+        from test_core import TinyTokenizer
+        settings = config()
+        settings["generation"].update({"contexts_k": 2, "same_document_as_top": True,
+                                       "complete_legal_units": True})
+        contexts = [
+            {"parent_id": "right:1", "doc_id": "right", "text": CLAUSE},
+            {"parent_id": "wrong:1", "doc_id": "wrong", "text": DETAIL},
+            {"parent_id": "right:2", "doc_id": "right", "text": DETAIL},
+        ]
+        _, packed = pack_prompt("Thủ tục?", contexts, TinyTokenizer(), settings)
+        self.assertEqual([row["parent_id"] for row in packed], ["right:1", "right:2"])
 
     def test_cpu_v2_cannot_replace_better_v1(self):
         from legalqa.repair import load_diagnostics, run_repair

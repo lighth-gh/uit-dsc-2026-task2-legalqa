@@ -1,11 +1,12 @@
 """Stage 4 V2: compare CPU policies, then optionally validate selective GPU repair."""
 import argparse
 import copy
+import re
 from pathlib import Path
 
 from .io import Journal, digest, file_hash, read_json, source_hash, validate_predictions, write_json
-from .repair import (EXTENDED_POLICY, _incomplete, _package, _require, load_diagnostics,
-                     repair_predictions, repetition_ratio, run_repair)
+from .repair import (EXTENDED_POLICY, _incomplete, _package, _require, deduplicate_answer,
+                     load_diagnostics, repair_predictions, repetition_ratio, run_repair)
 
 
 GPU_RECIPE = {"version": 2, "repetition_penalty": 1.0, "no_repeat_ngram_size": 0,
@@ -114,19 +115,60 @@ def run_cpu(diagnostics, output, *, audit_only=False):
     return bundle, selected, selected_metrics
 
 
-def gpu_candidates(data, predictions):
-    """Select without gold; the same structural/evidence rules apply to dev/public."""
-    from .prompts import refusal_evidence_support
+NUMBERED_ITEM = re.compile(r"^\s*(?P<label>\d+|[a-zđ])[.)]\s+(?P<body>.+)$", re.I)
+
+
+def loop_reasons(text):
+    """Detect exact block loops and runaway renumbering without reference answers."""
+    reasons = []
+    _, changes = deduplicate_answer(text, EXTENDED_POLICY)
+    if any(change["unit"] == "numbered_loop" for change in changes):
+        reasons.append("numbered_loop")
+    if any(change["unit"] != "numbered_loop" for change in changes):
+        reasons.append("exact_adjacent_loop")
+    if repetition_ratio(text) >= .25:
+        reasons.append("repeated_long_lines")
+
+    run = []
+    for line in text.splitlines() + [""]:
+        match = NUMBERED_ITEM.match(line)
+        if not match:
+            run = []
+            continue
+        label = match.group("label").casefold()
+        body = " ".join(match.group("body").casefold().split())
+        numeric = int(label) if label.isdigit() else ord(label) - ord("a") + 1
+        if run and (numeric != run[-1][0] + 1 or body != run[-1][1]):
+            run = []
+        run.append((numeric, body))
+        if len(run) >= 4 and len(body) >= EXTENDED_POLICY["min_chars"]:
+            reasons.append("runaway_incrementing_list")
+            break
+    return sorted(set(reasons))
+
+
+def gpu_candidates(data, predictions, *, detection_predictions=None, loops_only=False,
+                   contexts_k=None, same_document_as_top=False):
+    """Select without gold; optionally restrict regeneration to detected loop failures."""
+    from .prompts import refusal_evidence_support, select_contexts
     keys, skipped = [], {}
     for key, value in predictions.items():
         row, text = data["audit"][key], value["answer"]
+        detection_text = (detection_predictions or predictions)[key]["answer"]
+        loops = loop_reasons(detection_text)
         _, edits, _ = repair_predictions({key: value}, {key: row}, EXTENDED_POLICY)
         blocked = bool(edits.get(key, {}).get("blocked"))
-        flagged = (_incomplete(text) or blocked or row["hit_token_limit"]
-                   or repetition_ratio(text) >= .25 or "fallback" in row["route"])
+        flagged = bool(loops) if loops_only else (
+            bool(loops) or _incomplete(text) or blocked or row["hit_token_limit"]
+            or repetition_ratio(text) >= .25 or "fallback" in row["route"]
+        )
         if not flagged:
             continue
-        support = refusal_evidence_support(data["questions"][key]["question"], data["records"][key]["contexts"])
+        contexts = data["records"][key]["contexts"]
+        if contexts_k is not None:
+            contexts = select_contexts(contexts, contexts_k,
+                                       same_document_as_top=same_document_as_top)
+        support = refusal_evidence_support(data["questions"][key]["question"], contexts)
         if not support["strong"]:
             skipped[key] = "cached_evidence_not_strong; review retrieval before regeneration"
         else:

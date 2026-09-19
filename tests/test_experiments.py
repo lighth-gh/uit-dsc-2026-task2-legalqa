@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from legalqa.experiments import (INFERENCE_VARIANTS, RETRIEVAL_VARIANTS,
+from legalqa.experiments import (FOCUSED_GENERATION, INFERENCE_VARIANTS, RETRIEVAL_VARIANTS,
                                  _screen_decision, lock_baseline, patched_config, postprocess_candidate,
                                  write_ablation_configs)
 from legalqa.io import config, file_hash, read_json, write_json
@@ -34,6 +34,15 @@ class ExperimentTests(unittest.TestCase):
                                 for group in ("inference", "retrieval")
                                 for row in manifest[group].values()))
 
+    def test_penalty_ablation_uses_same_focused_regeneration_policy(self):
+        expected = {"g0_penalty_100": 1.0, "g1_penalty_103": 1.03,
+                    "g1_penalty_105": 1.05}
+        self.assertEqual(set(INFERENCE_VARIANTS), set(expected))
+        for name, penalty in expected.items():
+            generation = INFERENCE_VARIANTS[name]["generation"]
+            self.assertEqual(generation["repetition_penalty"], penalty)
+            self.assertEqual({k: generation[k] for k in FOCUSED_GENERATION}, FOCUSED_GENERATION)
+
     def test_lock_baseline_verifies_bytes_and_records_reported_score(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -61,7 +70,7 @@ class ExperimentTests(unittest.TestCase):
         metrics = {"meteor": .62, "rougeL": .59}
         passed = _screen_decision(metrics, {"meteor": .631, "rougeL": .586}, control, candidate)
         self.assertTrue(passed["passes_screen"])
-        failed = _screen_decision(metrics, {"meteor": .625, "rougeL": .60}, control, candidate)
+        failed = _screen_decision(metrics, {"meteor": .6205, "rougeL": .60}, control, candidate)
         self.assertFalse(failed["passes_screen"])
 
     def test_postprocess_rejects_misaligned_audit(self):
@@ -75,9 +84,10 @@ class ExperimentTests(unittest.TestCase):
     def test_main04_exposes_all_ablation_modes_without_manual_cell_rewrite(self):
         notebook = read_json(Path(__file__).parents[1] / "legalqa_main_04_repair_submit.ipynb")
         source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
-        for value in ("MODE = 'p2_retrieval'", "p1_public", "p2_generate", "repair_v2",
-                      "P1_WINNER = None", "P2_SHORTLIST = []", "RUN_GPU = True",
-                      "main04_state.json", "p2_retrieval_diagnostics.zip"):
+        for value in ("MODE = 'p1_dev'", "PREVIOUS_OUTPUT = None", "p1_public",
+                      "p2_retrieval", "p2_generate", "repair_v2", "P1_WINNER = None",
+                      "P2_SHORTLIST = []", "RUN_GPU = True", "main04_state.json",
+                      "penalty_comparison.json", "p2_retrieval_diagnostics.zip"):
             self.assertIn(value, source)
         for variant in (*INFERENCE_VARIANTS, *RETRIEVAL_VARIANTS):
             self.assertIn(variant, source)
