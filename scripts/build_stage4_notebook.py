@@ -32,13 +32,15 @@ def build():
         cells.append(item)
 
     cell("markdown", "s4intro", """
-# LegalQA Main 04 — P0/P1/P2 ablation và repair
+# LegalQA Main 04 — P0/P1/P2 ablation và repair private
+
+Input test: `private-official.json` (1.918 câu) từ dataset train phiên bản 5. Diagnostics Stage 3 phải khớp toàn bộ ID và câu hỏi private. `p1_public`, split `public` và tên artifact `public` là tên nội bộ được giữ để tương thích; dữ liệu dùng là private.
 
 Notebook này đã nhúng sẵn toàn bộ code, scorer và cấu hình thử nghiệm. Chỉ chọn `MODE`; không sửa cell lệnh. Cấu hình hiện tại chạy mới `p1_dev` để so sánh selective regeneration với penalty 1.00/1.03/1.05. Các mode khác: `p1_public`, `p2_retrieval`, `p2_generate`, và `repair_v2` để giữ workflow Stage 4 cũ.
 
 **Input bắt buộc:** đúng diagnostics Stage 3 hoàn chỉnh, output Stage 2/3 có `selected_adapter/adapter_model.safetensors`, và dataset Version 3 chứa `models/` cùng `index/`. Chọn GPU T4/P100 và bật Internet. Diagnostics không chứa trọng số adapter.
 
-Mọi mode dùng cùng thư mục `OUTPUT`. Khi cần phiên tiếp theo, Add Input toàn bộ output version trước và đặt `PREVIOUS_OUTPUT` tới thư mục gốc đó. Notebook khóa SHA diagnostics, bundle code, model và adapter; không sửa metadata để ép resume. P1 public chỉ chạy khi đúng variant đã qua điều kiện dev. P2 chỉ tạo/chấm candidate dev100; không tự động nộp public.
+Mọi mode dùng cùng thư mục `OUTPUT`. Khi cần phiên tiếp theo, Add Input toàn bộ output version trước và đặt `PREVIOUS_OUTPUT` tới thư mục gốc đó. Notebook khóa SHA diagnostics, bundle code, model và adapter; không sửa metadata để ép resume. P1 private chỉ chạy khi đúng variant đã qua điều kiện dev. P2 chỉ tạo/chấm candidate dev100; không tự động nộp private.
 """)
     cell("code", "s4config", """
 from pathlib import Path
@@ -55,8 +57,10 @@ MODE = 'p1_dev'  # p1_dev | p1_public | p2_retrieval | p2_generate | repair_v2
 
 # None: tự tìm đúng một diagnostics ZIP, hoặc một thư mục Stage 3 đã giải nén.
 DIAGNOSTICS = None
-EXPECTED_DIAGNOSTICS_SHA256 = 'a19932405fe8ae65713d290c362a1ba2b968ee71d090ea4479dcdeeda018afe7'
-OUTPUT = WORK / 'legalqa_main_04_v8_060_focused_loop'
+EXPECTED_DIAGNOSTICS_SHA256 = None  # New private diagnostics; identity is locked on first run.
+DATASET_ROOT = Path('/kaggle/input/datasets/lighth/uit-dsc-2026-task2-legalqa-train')
+TEST_PATH = DATASET_ROOT / 'private-official.json'
+OUTPUT = WORK / 'legalqa_main_04_v8_private_focused_loop'
 RUN_GPU = True
 MODEL_ROOT = Path('/kaggle/input/datasets/lighth/ver3-smoke-output/legalqa_smoke_full_v1/models')
 ADAPTER_ROOT = None          # Thư mục selected_adapter chứa trọng số + adapter_config.json.
@@ -179,7 +183,7 @@ if (EXPECTED_DIAGNOSTICS_SHA256 and not diagnostics_was_directory
     raise ValueError(f'Sai diagnostics SHA-256: {diagnostics_sha256}')
 
 # P2 dùng trực tiếp questions/references/config trong diagnostics. Không tin đường dẫn ZIP.
-EXTRACTED = WORK / 'stage4_diagnostics_extracted'
+EXTRACTED = WORK / ('stage4_diagnostics_' + diagnostics_sha256[:12])
 if not EXTRACTED.exists():
     with zipfile.ZipFile(DIAGNOSTICS) as archive:
         for info in archive.infolist():
@@ -187,6 +191,15 @@ if not EXTRACTED.exists():
             if part.is_absolute() or '..' in part.parts or '\\\\' in info.filename or ':' in info.filename:
                 raise ValueError(f'Đường dẫn diagnostics không hợp lệ: {info.filename}')
         archive.extractall(EXTRACTED)
+# Match all private IDs and question text before any dev/test processing.
+sys.path.insert(0, str(CODE))
+from legalqa.io import load_questions
+if not TEST_PATH.is_file():
+    raise FileNotFoundError(TEST_PATH)
+private_questions = load_questions(TEST_PATH)
+if load_questions(EXTRACTED / 'data/test.questions.json') != private_questions:
+    raise ValueError('Diagnostics do not match private-official.json. Run Stage 2/3 on private data first.')
+print('Private questions:', len(private_questions), '| Input:', TEST_PATH)
 print('Diagnostics:', DIAGNOSTICS)
 print('Diagnostics SHA-256:', diagnostics_sha256)
 print('Output:', OUTPUT)
@@ -255,7 +268,7 @@ def record(status, **details):
     write_json(STATE_PATH, state)
 
 BASELINE = OUTPUT / 'baseline'
-EXPECTED_BASELINE_METEOR = 0.6202453105154175
+EXPECTED_BASELINE_METEOR = None  # Recompute dev baseline for the new private diagnostics.
 
 def ensure_baseline():
     manifest = BASELINE / 'repair.manifest.json'
@@ -263,7 +276,7 @@ def ensure_baseline():
         run_bounded([sys.executable, '-m', 'legalqa.repair_v2',
                      '--diagnostics', DIAGNOSTICS, '--output', BASELINE], cwd=CODE, env=env)
     metrics = read_json(BASELINE / 'dev.selected.metrics.json')
-    if abs(metrics['meteor'] - EXPECTED_BASELINE_METEOR) > 1e-10:
+    if EXPECTED_BASELINE_METEOR is not None and abs(metrics['meteor'] - EXPECTED_BASELINE_METEOR) > 1e-10:
         raise ValueError(f'Không tái lập đúng P0: {metrics["meteor"]}')
     return metrics
 
@@ -481,14 +494,14 @@ for path in links:
         display(FileLink(str(path)))
 if current['status'] == 'paused':
     print('Save toàn bộ output, Add Input version này, đặt PREVIOUS_OUTPUT rồi chạy lại cùng MODE/config.')
-print('Điểm P1/P2 hiện tại là dev100; chưa phải bằng chứng public >= 0.60.')
+print('Điểm P1/P2 hiện tại là dev100; chưa phải bằng chứng private >= 0.60.')
 """)
     cell("markdown", "s4next", """
 ## Bước tiếp theo
 
 Sau `p1_dev`, xem `p1/p1_summary.json`; chỉ điền `P1_WINNER` và chuyển sang `p1_public` khi `passes_screen=true`. Sau `p2_retrieval`, tải/gửi `p2_retrieval_diagnostics.zip` để chọn tối đa hai tên cho `P2_SHORTLIST`; sau đó dùng `p2_generate`. Nếu một mode paused, không đổi mode/variant giữa chừng.
 
-`answer-token coverage` của P2 chỉ là diagnostic, không phải gold recall. Dev100 đã dùng chọn checkpoint nên ứng viên tốt vẫn phải xác nhận trên dev600 trước khi chạy public1000. Không dùng reference hoặc ngưỡng riêng theo ID public.
+`answer-token coverage` của P2 chỉ là diagnostic, không phải gold recall. Dev100 đã dùng chọn checkpoint nên ứng viên tốt vẫn phải xác nhận trên dev600 trước khi chạy private1918. Không dùng reference hoặc ngưỡng riêng theo ID private.
 """)
     nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
           "language_info": {"name": "python", "version": "3.11.0"}}, "nbformat": 4, "nbformat_minor": 5}

@@ -49,7 +49,7 @@ class Main01ResumeTests(unittest.TestCase):
     def dataset(self):
         data = self.input/'new-dataset-name'/'inner'
         write_json(data/'train.json', {'train':'fixture'})
-        write_json(data/'public-official.json', {'public':'fixture'})
+        write_json(data/'private-official.json', {'public':'fixture'})
         return data
 
     def snapshot(self, root, commit='a'*40):

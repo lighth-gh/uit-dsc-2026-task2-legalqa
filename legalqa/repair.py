@@ -45,7 +45,7 @@ def diagnostics_zip_from_directory(source, destination):
     return destination
 
 
-def load_diagnostics(path, expected_public_count=1000):
+def load_diagnostics(path, expected_public_count=None):
     """Read in place, without extracting or executing anything from the archive."""
     path = Path(path)
     with ZipFile(path) as archive:
@@ -131,6 +131,9 @@ def load_diagnostics(path, expected_public_count=1000):
                          "Audit references an unknown parent")
             splits[split] = {"predictions": pred, "audit": audit, "questions": questions,
                              "prediction_manifest": pm, "records": records}
+        if expected_public_count is None:
+            expected_public_count = len(splits["public"]["questions"])
+        _require(expected_public_count > 0, "Empty test question set")
         _require(len(splits["public"]["predictions"]) == expected_public_count
                  == manifest["progress"]["answers"], "Unexpected public answer count")
         dev_manifest = splits["dev"]["prediction_manifest"]
@@ -355,7 +358,7 @@ def _package(predictions, questions, path):
     temporary.replace(path)
 
 
-def run_repair(diagnostics, output, *, audit_only=False, expected_public_count=1000):
+def run_repair(diagnostics, output, *, audit_only=False, expected_public_count=None):
     print("Verifying Stage 3 diagnostics...", flush=True)
     bundle = load_diagnostics(diagnostics, expected_public_count)
     root = Path(output)

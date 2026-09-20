@@ -143,7 +143,8 @@ class StageTests(unittest.TestCase):
             root=Path(folder);dataset=root/'dataset';run=root/'run'
             original={str(i):{'question':f'question {i}','answer':f'answer {i}'} for i in range(20)}
             write_json(dataset/'train.json',original)
-            write_json(dataset/'public-official.json',{'public':{'question':'test'}})
+            write_json(dataset/'private-official.json',{'private':{'question':'private test','answer':None}})
+            write_json(dataset/'public-official.json',{'public':{'question':'wrong public input'}})
             write_json(run/'config.json',config());write_json(run/'models.lock.json',{})
             stage=Stage.__new__(Stage);stage.root=run;stage.data=run/'data';stage.c=config()
             stage.o={'dataset':str(dataset)};stage.identity={'stage':1,'code_commit':'a'*40,'source_hash':'code'}
@@ -157,6 +158,8 @@ class StageTests(unittest.TestCase):
             write_json(dataset/'train.json',original)
             stage.train()
             self.assertTrue((stage.data/'split_manifest.json').exists())
+            self.assertEqual(read_json(stage.data/'test.questions.json'),
+                             {'private':{'question':'private test'}})
             self.assertFalse(read_json(run/'progress.json')['complete'])
 
     def test_retrieval_journal_resumes_without_repeating_completed_queries(self):

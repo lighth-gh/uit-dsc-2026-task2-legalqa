@@ -118,7 +118,8 @@ class RepairTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "input.zip"
             fixture(path)
-            bundle = load_diagnostics(path, 2)
+            bundle = load_diagnostics(path)
+            self.assertEqual(bundle["verification"]["public_count"], 2)
             self.assertEqual(bundle["verification"]["journal"], "passed")
             self.assertEqual(bundle["source"]["omitted_weights"], ["selected_adapter/adapter_model.safetensors"])
             with self.assertRaisesRegex(ValueError, "count"):

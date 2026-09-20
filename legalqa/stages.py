@@ -255,6 +255,12 @@ class Stage:
         self.identity = {"stage":self.number,"code_commit":self.commit,"source_hash":self.code,
                          "config_hash":digest(self.c),"models":self.lock,"index_hash":self.index_hash}
         self.restore()
+        # Artifact names retain the historical "public" label for Stage 4 compatibility.
+        # Their question set must match the current private input, including on resume.
+        if options.get("dataset") and (self.data/"test.questions.json").is_file():
+            private = Path(options["dataset"])/"private-official.json"
+            if load_questions(self.data/"test.questions.json") != load_questions(private):
+                raise ValueError("Snapshot test questions differ from private-official.json; start a new private run")
         if (self.root/"config.json").is_file() and read_json(self.root/"config.json") != self.c:
             raise ValueError("Saved config differs from pinned code config")
         if (self.root/"models.lock.json").is_file() and read_json(self.root/"models.lock.json") != self.lock:
@@ -338,12 +344,12 @@ class Stage:
         from .training import prepare_training_subset
         if not (self.data/"split_manifest.json").exists():
             dataset = Path(self.o["dataset"])
-            fingerprints = {name:file_hash(dataset/name) for name in ("train.json","public-official.json")}
+            fingerprints = {name:file_hash(dataset/name) for name in ("train.json","private-official.json")}
             if self.identity.get("dataset_hashes",fingerprints) != fingerprints:
                 raise ValueError("Dataset changed during interrupted data preparation")
             self.identity["dataset_hashes"] = fingerprints
             write_json(self.root/"session.json",self.identity)
-            prepare(dataset/"train.json", dataset/"public-official.json", self.data,self.c["seed"])
+            prepare(dataset/"train.json", dataset/"private-official.json", self.data,self.c["seed"])
         sft = self.root/"sft"
         pending = self.identity.get("pending_legacy")
         if pending and self.legacy is None:
