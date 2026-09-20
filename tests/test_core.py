@@ -431,6 +431,15 @@ class CoreTests(unittest.TestCase):
                 if cell["cell_type"] == "code":
                     ast.parse("".join(cell["source"]), filename=f"{name}:cell{i}")
 
+    def test_main01_preflight_skips_only_stage4_bundle_test(self):
+        notebook = json.loads((ROOT/"legalqa_main_01_qlora_train.ipynb").read_text(encoding="utf-8"))
+        source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+        target = "test_repair.RepairTests.test_notebook_cells_compile_and_bundle_matches_sources"
+        self.assertIn("SKIPPED_TESTS = {", source)
+        self.assertEqual(source.count(target), 1)
+        self.assertIn("STAGE1_TEST_RUNNER_PATH", source)
+        self.assertNotIn("'-m', 'unittest', 'discover'", source)
+
     def test_submission_rejects_wrong_id_set_even_same_length(self):
         with self.assertRaises(ValueError):validate_predictions({"x":{"answer":"a"}},{"y":{}})
 
