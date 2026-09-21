@@ -80,7 +80,7 @@ class StageTests(unittest.TestCase):
                 right = right[right.index('class BudgetPause'):]
             if position == 2:
                 left = left[:left.index('# Stage 2 checks cover')]
-                right = right[:right.index("bounded_process([sys.executable, '-B', '-m', 'unittest'")]
+                right = right[:right.index('# Stage 3 checks cover')]
             left = left.replace("    'import_stage1_private': IMPORT_STAGE1_PRIVATE,\n", '')
             self.assertEqual(left, right)
         for stage,cells in enumerate(codes,1):
