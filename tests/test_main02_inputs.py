@@ -71,6 +71,32 @@ class Main02InputTests(unittest.TestCase):
             if cell['cell_type'] == 'code':
                 compile(''.join(cell['source']), f'main02:cell{index}', 'exec')
 
+    def test_private_import_uses_new_code_and_resume_pins_stage2(self):
+        upstream = self.artifact('qlora-train')
+        (upstream / 'stage1_manifest.json').write_text(
+            json.dumps({'schema': 2, 'code_commit': 'a' * 40}), encoding='utf-8')
+        code = ''.join(self.notebook['cells'][3]['source'])
+        block = code[:code.index('class BudgetPause')]
+        ns = dict(Path=Path, json=json, INPUT=self.input, WORK_HOURS=9,
+                  SESSION_STARTED=0, STAGE=2, PREVIOUS_OUTPUT=None, UPSTREAM_OUTPUT=upstream,
+                  LEGACY_INPUT_ROOT=None, RETRIEVAL_INPUT=None, REPO_REVISION=None,
+                  IMPORT_STAGE1_PRIVATE=True)
+        exec(block, ns)
+        self.assertEqual(ns['PIN'], 'main')
+        ns['REPO_REVISION'] = 'b' * 40
+        exec(block, ns)
+        self.assertEqual(ns['PIN'], 'b' * 40)
+        previous = self.input / 'previous'
+        previous.mkdir()
+        (previous / 'stage2_manifest.json').write_text(
+            json.dumps({'schema': 2, 'code_commit': 'c' * 40}), encoding='utf-8')
+        ns.update(PREVIOUS_OUTPUT=previous, REPO_REVISION=None)
+        exec(block, ns)
+        self.assertEqual(ns['PIN'], 'c' * 40)
+        ns['REPO_REVISION'] = 'main'
+        with self.assertRaisesRegex(ValueError, 'commit'):
+            exec(block, ns)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -71,8 +71,18 @@ class StageTests(unittest.TestCase):
     def test_stage2_and_3_share_runner_and_all_stages_keep_budget(self):
         codes=[[''.join(c['source']) for c in self.notebook(i)['cells'] if c['cell_type']=='code']
                for i in (1,2,3)]
+        # Stage 2 can import Stage 1 training across commits for private data.
+        # The process supervisor, dependency/metric checks and execution/export remain shared.
         for position in range(1,len(codes[0])):
-            self.assertEqual(codes[1][position],codes[2][position])
+            left, right = codes[1][position], codes[2][position]
+            if position == 1:
+                left = left[left.index('class BudgetPause'):]
+                right = right[right.index('class BudgetPause'):]
+            if position == 2:
+                left = left[:left.index('# Stage 2 checks cover')]
+                right = right[:right.index("bounded_process([sys.executable, '-B', '-m', 'unittest'")]
+            left = left.replace("    'import_stage1_private': IMPORT_STAGE1_PRIVATE,\n", '')
+            self.assertEqual(left, right)
         for stage,cells in enumerate(codes,1):
             self.assertIn('WORK_HOURS = 9.0',cells[0])
             self.assertIn('EXPORT_SECONDS = 600',cells[0])

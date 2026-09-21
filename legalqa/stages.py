@@ -293,7 +293,11 @@ class Stage:
         if self.upstream:
             snap = verify_snapshot(self.upstream, self.number-1)
             source_session = read_json(self.upstream/"session.json")
-            for key in ("code_commit", "source_hash", "config_hash", "models", "index_hash"):
+            import_private = (self.number == 2 and self.o.get("import_stage1_private", False)
+                              and (not existing.exists() or self.identity.get("stage1_private_import")))
+            keys = ("config_hash", "models", "index_hash") if import_private else (
+                "code_commit", "source_hash", "config_hash", "models", "index_hash")
+            for key in keys:
                 if source_session[key] != self.identity[key]:
                     raise ValueError(f"Upstream provenance mismatch: {key}")
             # Only completed upstream stages can advance; partial snapshots
@@ -305,6 +309,9 @@ class Stage:
                 raise ValueError("Previous output belongs to a different upstream version")
             self.identity["upstream_id"] = upstream_id
             if not existing.exists():
+                if import_private:
+                    self.import_stage1_private(snap, source_session)
+                    return
                 def keep(relative):
                     if relative in {"session.json", "progress.json", "environment.freeze.txt"}:
                         return False
@@ -312,10 +319,55 @@ class Stage:
                         return False
                     return True
                 copy_artifacts(self.upstream, self.root, snap, keep)
-            origin = source_session.get("training_origin_code", self.code)
+            origin = source_session.get("training_origin_code", source_session["source_hash"])
             self.identity["training_origin_code"] = origin
         elif self.number > 1 and not existing.exists():
             raise ValueError("Attach upstream output or a previous cumulative output")
+
+    def import_stage1_private(self, snapshot, source_session):
+        """Import completed training into a new private Stage 2, preserving its origin."""
+        dataset = Path(self.o["dataset"])
+        private_path = dataset/"private-official.json"
+        private = load_questions(private_path)
+        source_data = self.upstream/"data"
+        split = read_json(source_data/"split_manifest.json")
+        if file_hash(dataset/"train.json") != split["train_sha256"]:
+            raise ValueError("Stage 1 training dataset differs; cannot import into private Stage 2")
+        selection = self.c["training"]["selection_split"]
+        required = {"data/train.json", f"data/{selection}.questions.json",
+                    f"data/{selection}.references.json", "sft/training_manifest.json"}
+        for epoch in (1, 2):
+            required.update(f"sft/epoch-{epoch:02d}/{name}" for name in (
+                "adapter_config.json", "adapter_model.safetensors", "trainer_state.json", "epoch_complete.json"))
+        if not required.issubset(snapshot["files"]):
+            raise ValueError("Stage 1 snapshot lacks inventoried training/selection artifacts")
+        origin = source_session.get("training_origin_code", source_session["source_hash"])
+        verify_training(self.upstream/"sft", self.c, source_data, self.lock, self.index_hash, origin)
+        if len(epochs(self.upstream/"sft")) != 2:
+            raise ValueError("Both completed QLoRA epoch adapters are required for private import")
+
+        # Reuse training and its exact dev split. Recompute retrieval/selection with
+        # current code; never carry public retrieval, predictions or journals over.
+        def keep(relative):
+            if relative.startswith("data/"):
+                return relative not in {"data/split_manifest.json", "data/data_report.json"} and not relative.startswith("data/test.")
+            return (relative == "sft/training_manifest.json"
+                    or relative.startswith(("sft/epoch-01/", "sft/epoch-02/")))
+        copy_artifacts(self.upstream, self.root, snapshot, keep)
+        write_json(self.data/"test.questions.json", private)
+        write_json(self.data/"split_manifest.json", {**split, "test_sha256":file_hash(private_path)})
+        if "data/data_report.json" in snapshot["files"]:
+            report = read_json(source_data/"data_report.json")
+            write_json(self.data/"data_report.json", {**report, "test_samples":len(private)})
+        self.identity["training_origin_code"] = origin
+        self.identity["stage1_private_import"] = {
+            "upstream_id":digest(snapshot), "code_commit":source_session["code_commit"],
+            "source_hash":source_session["source_hash"],
+            "original_split_sha256":file_hash(source_data/"split_manifest.json"),
+            "private_sha256":file_hash(private_path), "private_questions":len(private),
+        }
+        print(f"Imported completed Stage 1 from {source_session['code_commit']}; "
+              f"retained train/dev and epoch adapters; private questions={len(private)}. No training rerun.", flush=True)
 
     def command(self, *args, cap=0):
         if should_pause():
