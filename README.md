@@ -23,11 +23,17 @@ Ba mô hình nằm trong Excel được duyệt, theo các đường dẫn ở d
 
 ## Chạy trên Kaggle bằng notebook
 
-Import một trong ba notebook vào Kaggle và bật GPU + Internet. Cả ba clone nhánh `main` từ `https://github.com/lighth-gh/uit-dsc-2026-task2-legalqa.git`, đọc cùng `config.json`, dùng dữ liệu từ `lighth/uit-dsc-2026-task2-legalqa-train` và tái sử dụng index/model từ `lighth/ver3-smoke-output`; notebook chủ động dừng nếu chạy ngoài Kaggle.
+Import notebook vào Kaggle và bật GPU + Internet. Smoke và main-run clone nhánh `main` từ `https://github.com/lighth-gh/uit-dsc-2026-task2-legalqa.git`, đọc cùng `config.json`, dùng dữ liệu từ `lighth/uit-dsc-2026-task2-legalqa-train` và tái sử dụng index/model từ `lighth/ver3-smoke-output`; notebook chủ động dừng nếu chạy ngoài Kaggle.
 
-Chạy theo thứ tự: `legalqa_smoke_pipeline.ipynb` (30 câu), `legalqa_dev100_pipeline.ipynb` (100 câu), rồi `legalqa_main_run.ipynb` (full dev/SFT/submission). Trong **Add Input → Datasets**, gắn `lighth/ver3-smoke-output` và `lighth/uit-dsc-2026-task2-legalqa-train`. Full index 407.107 chunks và model weights được đọc từ Dataset, không build hoặc tải lại.
+Chạy `legalqa_smoke_pipeline.ipynb` (30 câu), rồi `legalqa_main_run.ipynb` (full dev/SFT/submission), hoặc bộ Main 01–03 bên dưới. Trong **Add Input → Datasets**, gắn `lighth/ver3-smoke-output` và `lighth/uit-dsc-2026-task2-legalqa-train`. Full index 407.107 chunks và model weights được đọc từ Dataset, không build hoặc tải lại.
 
-Ba notebook mặc định dùng `USE_REPO_DATA = False` và đường dẫn `/kaggle/input/datasets/lighth/...`. Với vòng private, sửa `KAGGLE_DATASET_ROOT` sang Dataset chứa đúng test private và đổi `PHASE` trong main-run; không đổi nguồn index/model nếu corpus không thay đổi.
+Smoke và main-run mặc định dùng `USE_REPO_DATA = False` và đường dẫn `/kaggle/input/datasets/lighth/...`. Với vòng private, sửa `KAGGLE_DATASET_ROOT` sang Dataset chứa đúng test private và đổi `PHASE` trong main-run; không đổi nguồn index/model nếu corpus không thay đổi.
+
+`legalqa_dev100_pipeline.ipynb` hiện là thí nghiệm chống lặp **1.0 / 1.03 / 1.05**, chạy sau Main 02. Add Input **toàn bộ output Main 02 đã complete** và **dataset `lighth/ver3-smoke-output`**. Không cần Main 01/03/04 hay dataset train. Notebook lấy đúng 100 câu dev và references, `dev100.retrieval.json`, `selected_adapter/`, config và model lock từ Main 02, pin đúng commit nguồn và chỉ thay `repetition_penalty`. Không chia lại dữ liệu, train hoặc retrieve lại.
+
+Chọn GPU T4 x2 + Internet, giữ `MAIN2_OUTPUT = None` nếu chỉ gắn một output Main 02; nếu nhiều version, điền thư mục chứa `stage2_manifest.json`. Kết quả ở `/kaggle/working/legalqa_dev100_repetition_v1`: `comparison.csv/json`, `per_question.csv`, prediction/audit/metrics riêng từng mức và diagnostics ZIP. Chỉ đề xuất mức mới khi giảm số câu lặp raw mà cả METEOR/ROUGE-L không giảm, lặp final và tỷ lệ dòng lặp không tăng; nếu không mức nào đạt thì giữ 1.0. Đây là tuning trên dev đã dùng chọn adapter, chưa chứng minh cải thiện trên private.
+
+Thí nghiệm có checkpoint và giới hạn 9 giờ/phiên. Nếu paused, gắn thêm **toàn bộ output dev100** và đặt `PREVIOUS_OUTPUT` tới ROOT đó để tiếp tục; vẫn giữ hai input bắt buộc. `MAX_NEW_QUESTIONS_PER_VARIANT = 4` dùng smoke, sau đó đặt 0 để chạy đủ 100 câu/mức. Không tự thay đổi Main 03. Khi sửa helper `scripts/dev100_repetition.py`, chạy `python scripts/build_dev100_notebook.py` để nhúng lại notebook. Kiểm thử: `python -B -m unittest discover -s tests -p test_dev100_repetition.py -v`.
 
 | Cell có tiêu đề | Làm gì | Kết quả cần kiểm tra |
 | --- | --- | --- |

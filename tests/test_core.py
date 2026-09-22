@@ -383,11 +383,11 @@ class CoreTests(unittest.TestCase):
         self.assertGreater(retrieval_adjustment(question,exact,settings,2023),
                            retrieval_adjustment(question,old,settings,2023)+4)
 
-    def test_three_kaggle_notebooks_share_quality_config_and_artifacts(self):
+    def test_smoke_and_main_notebooks_share_quality_config_and_artifacts(self):
         artifact = "/kaggle/input/datasets/lighth/ver3-smoke-output/legalqa_smoke_full_v1"
         dataset = "/kaggle/input/datasets/lighth/uit-dsc-2026-task2-legalqa-train"
-        for name in ["legalqa_smoke_pipeline.ipynb", "legalqa_dev100_pipeline.ipynb",
-                     "legalqa_main_run.ipynb"]:
+        # dev100 now imports the selected Main 2 adapter/config; covered separately.
+        for name in ["legalqa_smoke_pipeline.ipynb", "legalqa_main_run.ipynb"]:
             notebook = json.loads((ROOT/name).read_text(encoding="utf-8"))
             source = "\n".join("".join(cell.get("source",[])) for cell in notebook["cells"])
             self.assertIn(artifact,source,name)
