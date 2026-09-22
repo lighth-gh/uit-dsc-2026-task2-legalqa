@@ -179,10 +179,13 @@ if failure is not None:
         cell('markdown', '''## Đọc kết quả
 
 - `comparison.csv` / `comparison.json`: METEOR, ROUGE-L và delta so với 1.0; số câu lặp raw/final, tỷ lệ dòng lặp trung bình, số câu chạm token limit, fallback, độ dài và thời gian trung bình/câu (không phải tổng thời gian hai GPU).
-- `per_question.csv`: 300 dòng để so sánh từng ID; lý do phát hiện lặp. Xem `rp_*/predictions.audit.json` để đọc `raw_answer` và `rp_*/predictions.json` để đọc đáp án cuối.
+- `per_question.csv`: 300 dòng để so sánh từng ID; `raw_quality_reasons` / `final_quality_reasons` và cờ riêng cho `inline_phrase_loop`, `long_numeric_run`, `heading_only`. Xem `rp_*/predictions.audit.json` để đọc `raw_answer` và `rp_*/predictions.json` để đọc đáp án cuối.
 - `rp_1.03/paired_comparison.json`, `rp_1.05/paired_comparison.json`: paired bootstrap METEOR/ROUGE-L so với 1.0; không bảo đảm chất lượng trên private.
-- Chỉ đề xuất mức mới khi **cả METEOR và ROUGE-L không giảm**, số câu raw bị lặp giảm, số câu final bị lặp và tỷ lệ dòng lặp trung bình không tăng. Trong các mức đạt, ưu tiên ít câu lặp raw/final hơn, rồi METEOR và ROUGE-L cao hơn. Nếu không mức nào đạt, giữ **1.0**, `improvement_found=false`.
+- Bộ đo v2 bổ sung: cụm 3–24 từ lặp liên tiếp trong một dòng ít nhất 4 lần và tổng ít nhất 24 từ; chuỗi ít nhất 20 số nguyên liên tiếp tăng 1; đáp án chỉ còn phần dẫn/tiêu đề/mục đánh số. Các ngưỡng được lưu tại `measurement_policy` trong `comparison.json`. Có các cột đếm riêng raw/final trong bảng tổng hợp; `heading_only` không cộng vào số câu lặp.
+- Chỉ đề xuất mức mới khi **cả METEOR và ROUGE-L không giảm**, số câu raw bị lặp giảm, số câu final bị lặp, số đáp án raw/final chỉ còn tiêu đề và tỷ lệ dòng lặp trung bình không tăng. Trong các mức đạt, ưu tiên ít câu lặp raw/final hơn, rồi METEOR và ROUGE-L cao hơn. Nếu không mức nào đạt, giữ **1.0**, `improvement_found=false`.
 - Bộ phát hiện lặp là heuristic, không đánh giá tính đúng pháp lý. Notebook không thay config Main 3 và không tạo submission private.
+
+Helper v2 đổi hash so với bản cũ: không dùng `PREVIOUS_OUTPUT` của helper v1 để resume generation. Nếu đã có đủ ba bộ predictions/audit/metrics, có thể dùng helper mới chạy `summarize --output <bản sao thư mục kết quả>` trong môi trường code đã pin để đo lại, không cần sinh lại đáp án.
 
 Đủ điều kiện hoàn tất khi log có `DEV100 REPETITION COMPARISON COMPLETE` và `STATUS: complete`, đủ 100 câu ở cả ba mức. Nếu `paused`, gắn toàn bộ output để resume; diagnostics ZIP không chứa adapter weights nên không thay thế output đầy đủ khi resume.
 '''),

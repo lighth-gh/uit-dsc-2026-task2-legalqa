@@ -35,6 +35,8 @@ Chọn GPU T4 x2 + Internet, giữ `MAIN2_OUTPUT = None` nếu chỉ gắn một
 
 Thí nghiệm có checkpoint và giới hạn 9 giờ/phiên. Nếu paused, gắn thêm **toàn bộ output dev100** và đặt `PREVIOUS_OUTPUT` tới ROOT đó để tiếp tục; vẫn giữ hai input bắt buộc. `MAX_NEW_QUESTIONS_PER_VARIANT = 4` dùng smoke, sau đó đặt 0 để chạy đủ 100 câu/mức. Không tự thay đổi Main 03. Khi sửa helper `scripts/dev100_repetition.py`, chạy `python scripts/build_dev100_notebook.py` để nhúng lại notebook. Kiểm thử: `python -B -m unittest discover -s tests -p test_dev100_repetition.py -v`.
 
+Bộ đo dev100 v2 bổ sung `inline_phrase_loop` (cụm 3–24 từ lặp liên tiếp trong một dòng ít nhất 4 lần, tổng ít nhất 24 từ), `long_numeric_run` (ít nhất 20 số nguyên liên tiếp tăng 1) và `heading_only` (chỉ còn phần dẫn/tiêu đề/mục đánh số). CSV có cờ theo câu và số đếm riêng cho raw/final; `comparison.json` lưu ngưỡng và phiên bản bộ đo. Mức thắng còn phải không tăng số đáp án raw/final chỉ có tiêu đề. Đây là heuristic, không phải kiểm chứng pháp lý. Helper đổi hash nên không resume generation của bản v1 bằng helper v2; nếu đã có đủ ba bộ predictions/audit/metrics, chạy helper v2 `summarize --output <bản sao thư mục kết quả>` với code đã pin để đo lại mà không sinh lại.
+
 | Cell có tiêu đề | Làm gì | Kết quả cần kiểm tra |
 | --- | --- | --- |
 | 1 Thiết lập Kaggle và đường dẫn | Chọn dữ liệu trong repo hoặc Kaggle Dataset | Runtime là Kaggle và các đường dẫn đúng |
