@@ -129,6 +129,15 @@ with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(archive.read(name))
 
+# Resolve required adaptive data before pip downloads or model setup.
+if MODE.startswith('adaptive'):
+    sys.path.insert(0, str(CODE))
+    from legalqa.adaptive_inputs import resolve_adaptive_input
+    STAGE2_DIAGNOSTICS = resolve_adaptive_input(INPUT, 'stage2', STAGE2_DIAGNOSTICS)
+    BASELINE_SUBMISSION = resolve_adaptive_input(INPUT, 'submission', BASELINE_SUBMISSION)
+    print('Stage 2:', STAGE2_DIAGNOSTICS)
+    print('Baseline submission:', BASELINE_SUBMISSION)
+
 NLTK_ROOT = WORK / 'stage4_nltk_data'
 env = dict(os.environ)
 env['NLTK_DATA'] = str(NLTK_ROOT) + os.pathsep + env.get('NLTK_DATA', '')
@@ -547,21 +556,7 @@ Giữ nguyên input/model/code; chuyển `adaptive_dev` → `adaptive_private` d
 if MODE.startswith('adaptive'):
     sys.path.insert(0, str(CODE))
     from legalqa.adaptive_inputs import load_adaptive_inputs
-    def choose_input(value, pattern, marker=None):
-        if value is not None:
-            path = Path(value)
-            if not path.exists():
-                raise FileNotFoundError(path)
-            return path
-        matches = sorted(INPUT.rglob(pattern))
-        if not matches and marker:
-            matches = sorted(p.parent for p in INPUT.rglob(marker))
-        if len(matches) != 1:
-            raise ValueError(f'Chọn input cụ thể cho {pattern}: {matches}')
-        return matches[0]
-    STAGE2_DIAGNOSTICS = choose_input(STAGE2_DIAGNOSTICS,
-        'legalqa_main_stage2_v8_diagnostics*.zip', 'stage2_manifest.json')
-    BASELINE_SUBMISSION = choose_input(BASELINE_SUBMISSION, 'submission.zip', 'submission.json')
+    # Paths were resolved in setup before dependency installation.
     if PRIVATE_DIAGNOSTICS is not None and Path(PRIVATE_DIAGNOSTICS).is_dir():
         from legalqa.repair import diagnostics_zip_from_directory
         PRIVATE_DIAGNOSTICS = diagnostics_zip_from_directory(

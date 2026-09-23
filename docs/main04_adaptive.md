@@ -52,6 +52,18 @@ Luồng adaptive không tải lại corpus, train lại hoặc chạy reranker.
 `adaptive_audit` có thể chạy trước dev để chỉ lập hàng đợi và thống kê, đặt `RUN_GPU=False`.
 Mode này dùng đúng tokenizer và kiểm identity của model/adapter nhưng không load model GPU.
 
+### Nếu báo không tìm thấy Stage 2
+
+Log `Chọn input cụ thể cho legalqa_main_stage2_v8_diagnostics*.zip: []` nghĩa là bộ tìm input cũ
+không thấy ZIP đúng tên hoặc `stage2_manifest.json` trong `/kaggle/input`. Notebook mới nhận diện
+ZIP bằng nội dung nên hỗ trợ ZIP đổi tên và file có hậu tố `(5)`, kể cả `.ZIP`.
+Nếu vẫn thiếu, notebook dừng trước khi cài thư viện, in các ZIP/manifest đang thấy và hướng dẫn Add Input.
+
+Upload `legalqa_main_stage2_v8_diagnostics (5).zip` thành Kaggle Dataset rồi **Add Input** dataset đó,
+hoặc gắn output Stage 2 có file này. File ở Downloads máy local không tự xuất hiện trong Kaggle.
+Nếu có nhiều bản, đặt `STAGE2_DIAGNOSTICS` bằng đường dẫn ZIP/thư mục thực tế hiện trong Input.
+Không dùng Stage 3 public `(8)` thay cho Stage 2 private. Việc kiểm CRC/hash/ID vẫn giữ nguyên.
+
 Nếu có diagnostics private Stage 3 hoàn chỉnh, có thể đặt `PRIVATE_DIAGNOSTICS` từ đầu.
 Code bắt buộc ID/câu hỏi, config, retrieval records, adapter và model phù hợp. Không dùng
 diagnostics paused hoặc tự suy ra ánh xạ ID. Thêm/đổi diagnostics sau khi đã chạy cần output mới

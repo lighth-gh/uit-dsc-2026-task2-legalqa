@@ -6,10 +6,66 @@ import hashlib
 import json
 import re
 from pathlib import Path, PurePosixPath
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
 from .io import _unique_pairs, digest, file_hash, validate_predictions
 from .repair import _require, load_diagnostics, repair_predictions, POLICY
+
+
+def resolve_adaptive_input(root, kind, value=None):
+    """Locate mounted data by ZIP contents, before installing model dependencies.
+
+    Discovery does not replace Snapshot's CRC/hash/provenance verification.
+    Prefer ZIPs over unpacked copies, as notebook outputs commonly contain both.
+    """
+    if kind not in {'stage2', 'submission'}:
+        raise ValueError(f'Unknown adaptive input kind: {kind}')
+    marker = 'stage2_manifest.json' if kind == 'stage2' else 'submission.json'
+    setting = 'STAGE2_DIAGNOSTICS' if kind == 'stage2' else 'BASELINE_SUBMISSION'
+    search_root = Path(value) if value is not None else Path(root)
+
+    def archive_matches(path):
+        try:
+            with ZipFile(path) as archive:
+                names = archive.namelist()
+                return marker in names if kind == 'stage2' else names == ['submission.json']
+        except (BadZipFile, OSError):
+            return False
+
+    if not search_root.exists():
+        raise FileNotFoundError(f'{setting}: đường dẫn không tồn tại: {search_root}. '
+                                'Add Input trên Kaggle rồi chép đường dẫn thực tế vào cell cấu hình.')
+    if search_root.is_file():
+        if search_root.name == marker:
+            return search_root.parent if kind == 'stage2' else search_root
+        if search_root.suffix.lower() == '.zip' and archive_matches(search_root):
+            return search_root
+        raise ValueError(f'{setting}: {search_root} không phải input {kind}; '
+                         f'cần ZIP chứa {marker} ở thư mục gốc hoặc file {marker} đã giải nén.')
+    if value is not None and (search_root / marker).is_file():
+        return search_root
+    files = sorted(p for p in search_root.rglob('*') if p.is_file())
+    archives = [p for p in files if p.suffix.lower() == '.zip' and archive_matches(p)]
+    matches = archives or [p.parent if kind == 'stage2' else p for p in files if p.name == marker]
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        choices = '\n'.join(f'  {path}' for path in matches)
+        raise ValueError(f'{setting}: tìm thấy nhiều input {kind}. Đặt {setting} thành đúng một đường dẫn:\n{choices}')
+    visible = [p for p in files if p.suffix.lower() == '.zip' or p.name.endswith('_manifest.json')
+               or p.name == 'submission.json']
+    inventory = '\n'.join(f'  {p}' for p in visible[:30]) or '  (không có ZIP/manifest/submission)'
+    mounts = ', '.join(p.name for p in sorted(search_root.iterdir())[:20]) or '(trống)'
+    needed = ('legalqa_main_stage2_v8_diagnostics (5).zip đúng tập private 1.918 câu'
+              if kind == 'stage2' else 'submission.zip baseline private 0.5713')
+    raise FileNotFoundError(
+        f'{setting}: không tìm thấy input {kind} trong {search_root}.\n'
+        f'Kaggle: Add Input → gắn dataset/notebook output chứa {needed}, '
+        f'hoặc upload ZIP này thành dataset và Add Input dataset đó.\n'
+        f'Nếu đã gắn, đặt {setting} tới ZIP hoặc thư mục chứa {marker}; '
+        'file chỉ nằm trong Downloads máy local chưa phải input Kaggle.\n'
+        + ('Stage 3 public paused không thay thế được Stage 2 private.\n' if kind == 'stage2' else '')
+        + f'Các mục đang thấy: {mounts}\nZIP/manifest hiện có (tối đa 30):\n{inventory}')
 
 
 class Snapshot:
