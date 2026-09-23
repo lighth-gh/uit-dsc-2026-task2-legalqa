@@ -113,6 +113,8 @@ def _generate_one(c, key, questions, records, model, tokenizer, device, mode, *,
     prompt_ids, packed = pack_prompt(questions[key]["question"], records[key]["contexts"], tokenizer,c)
     hit_limit = False
     completion_tokens = 0
+    effective_limit = int(c["generation"]["max_new_tokens"])
+    ended_with_eos = False
     raw = ""
     if mode == "generate":
         ids = torch.tensor([prompt_ids],device=device)
@@ -125,10 +127,14 @@ def _generate_one(c, key, questions, records, model, tokenizer, device, mode, *,
             if "no_repeat_ngram_size" in generation:
                 options["no_repeat_ngram_size"] = int(generation["no_repeat_ngram_size"])
             options.update(generation_overrides or {})
+            effective_limit = int(options["max_new_tokens"])
             sequences = model.generate(input_ids=ids, attention_mask=torch.ones_like(ids), **options)
         new = sequences[0,len(prompt_ids):].tolist()
         completion_tokens = len(new)
-        hit_limit = len(new) >= c["generation"]["max_new_tokens"] and new[-1] != tokenizer.eos_token_id
+        eos = options.get("eos_token_id")
+        eos_ids = eos if isinstance(eos, (list, tuple, set)) else [eos]
+        ended_with_eos = bool(new) and new[-1] in eos_ids
+        hit_limit = len(new) >= effective_limit and not ended_with_eos
         raw = tokenizer.decode(new,skip_special_tokens=True)
         answer = clean_answer(raw)
         evidence = "\n".join(p["text"] for p in packed)
@@ -172,6 +178,7 @@ def _generate_one(c, key, questions, records, model, tokenizer, device, mode, *,
         "refusal_evidence_support": refusal_support if mode == "generate" else None,
         "entity_conflict": entity_conflict,
         "hit_token_limit": hit_limit, "input_tokens": len(prompt_ids), "output_tokens": completion_tokens,
+        "effective_max_new_tokens": effective_limit, "ended_with_eos": ended_with_eos,
         "answer_words": len(answer.split()), "context_parent_ids": [p["parent_id"] for p in packed],
         "context_document_ids": [p.get("doc_id") for p in packed],
         "packed_contexts": len(packed),

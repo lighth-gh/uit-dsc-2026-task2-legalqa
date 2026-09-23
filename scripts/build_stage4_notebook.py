@@ -3,6 +3,7 @@ import base64
 import hashlib
 import io
 import json
+import textwrap
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
@@ -52,15 +53,18 @@ WORK = Path('/kaggle/working')
 if not INPUT.is_dir() or not WORK.is_dir():
     raise RuntimeError('Notebook này dùng đường dẫn Kaggle. Chạy local bằng python -m legalqa.repair.')
 
-# Bundle đã đổi: chạy P1 dev trong output mới, không resume state của bundle cũ.
-MODE = 'p1_dev'  # p1_dev | p1_public | p2_retrieval | p2_generate | repair_v2
+# Bundle đã đổi: chạy adaptive_dev trong output mới, không resume bundle cũ.
+MODE = 'adaptive_dev'  # adaptive_audit | adaptive_dev | adaptive_private | p1_dev | p1_public | p2_retrieval | p2_generate | repair_v2
+BASELINE_SUBMISSION = None   # ZIP, submission.json, hoặc thư mục chứa submission.json: bản 0.5713.
+STAGE2_DIAGNOSTICS = None    # ZIP Stage 2 hoặc thư mục đã giải nén, đúng private 1.918 câu.
+PRIVATE_DIAGNOSTICS = None   # Tùy chọn: Stage 3 hoàn chỉnh đúng private; không tự chọn public cũ.
 
 # None: tự tìm đúng một diagnostics ZIP, hoặc một thư mục Stage 3 đã giải nén.
 DIAGNOSTICS = None
 EXPECTED_DIAGNOSTICS_SHA256 = None  # New private diagnostics; identity is locked on first run.
 DATASET_ROOT = Path('/kaggle/input/datasets/lighth/uit-dsc-2026-task2-legalqa-train')
 TEST_PATH = DATASET_ROOT / 'private-official.json'
-OUTPUT = WORK / 'legalqa_main_04_v8_private_focused_loop'
+OUTPUT = WORK / 'legalqa_main_04_v8_private_adaptive'
 RUN_GPU = True
 MODEL_ROOT = Path('/kaggle/input/datasets/lighth/ver3-smoke-output/legalqa_smoke_full_v1/models')
 ADAPTER_ROOT = None          # Thư mục selected_adapter chứa trọng số + adapter_config.json.
@@ -74,13 +78,14 @@ GPU_MAX_ITEMS = 50           # Số câu mới mỗi variant/process trong phiê
 INSTALL_DEPS = True          # Tắt nếu môi trường đã có scorer dependencies + WordNet.
 AUDIT_ONLY = False           # Chỉ áp dụng cho mode repair_v2.
 WORK_HOURS = 9.0             # Gồm cài đặt, CPU, GPU và chấm; không cam kết xong trong một phiên.
-VALID_MODES = {'p1_dev', 'p1_public', 'p2_retrieval', 'p2_generate', 'repair_v2'}
+VALID_MODES = {'adaptive_audit', 'adaptive_dev', 'adaptive_private',
+               'p1_dev', 'p1_public', 'p2_retrieval', 'p2_generate', 'repair_v2'}
 if MODE not in VALID_MODES:
     raise ValueError(f'MODE không hợp lệ: {MODE}')
 if not 0 < WORK_HOURS <= 9:
     raise ValueError('WORK_HOURS phải nằm trong (0, 9].')
 DEADLINE = SESSION_STARTED + WORK_HOURS * 3600
-if MODE != 'repair_v2' and not RUN_GPU:
+if MODE not in {'repair_v2', 'adaptive_audit'} and not RUN_GPU:
     raise ValueError(f'{MODE} cần RUN_GPU=True.')
 if MODE != 'repair_v2' and AUDIT_ONLY:
     raise ValueError('AUDIT_ONLY chỉ dùng với repair_v2.')
@@ -135,7 +140,7 @@ env['LEGALQA_MAX_ITEMS'] = '0'
 if INSTALL_DEPS and not AUDIT_ONLY:
     run_bounded([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
                  'numpy>=1.26,<3', 'nltk==3.9.1', 'absl-py==2.2.2', 'six==1.17.0'])
-    if RUN_GPU:
+    if RUN_GPU or MODE.startswith('adaptive'):
         # Retain Kaggle CUDA torch. The model contract matches the Stage 3 environment.
         run_bounded([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
                      'transformers==4.51.3', 'accelerate==1.6.0', 'peft==0.15.2',
@@ -211,7 +216,7 @@ if PREVIOUS_OUTPUT is not None and not OUTPUT.exists():
     if not (previous / 'main04_state.json').is_file():
         raise ValueError('PREVIOUS_OUTPUT phải là output Main 04 mới có main04_state.json.')
     shutil.copytree(previous, OUTPUT)
-if RUN_GPU:
+if RUN_GPU or MODE.startswith('adaptive'):
     if MODEL_ROOT is None:
         choices = sorted(p.parent for p in INPUT.rglob('models.lock.json')
                          if (p.parent / 'generator/config.json').is_file())
@@ -503,6 +508,116 @@ Sau `p1_dev`, xem `p1/p1_summary.json`; chỉ điền `P1_WINNER` và chuyển s
 
 `answer-token coverage` của P2 chỉ là diagnostic, không phải gold recall. Dev100 đã dùng chọn checkpoint nên ứng viên tốt vẫn phải xác nhận trên dev600 trước khi chạy private1918. Không dùng reference hoặc ngưỡng riêng theo ID private.
 """)
+    # Keep legacy orchestration intact behind an explicit adaptive branch.
+    by_id = {item['id']: item for item in cells}
+
+    def replace_cell(ident, source):
+        by_id[ident]['source'] = source.strip().splitlines(keepends=True)
+
+    replace_cell('s4intro', '''
+# LegalQA Main 04 — Adaptive fallback / truncated repair
+
+Baseline: submission private **1.918 câu, 0.5713**. Mặc định `adaptive_dev`.
+Sinh lại chọn lọc với output **2.048 → 3.072 → 4.096 token**, input tối đa 4.096,
+có một lượt sửa prompt/context khi lặp hoặc sai căn cứ. Giữ nguyên đáp án baseline nếu sửa không đạt.
+
+**Add Input:** submission baseline; diagnostics Stage 2 đúng private; model Version 3;
+output Stage 2/3 chứa `selected_adapter/adapter_model.safetensors` của epoch đã chọn.
+ZIP diagnostics không chứa trọng số. Không cần index cho adaptive.
+`PRIVATE_DIAGNOSTICS` là tùy chọn: chỉ dùng Stage 3 hoàn chỉnh đúng private.
+Stage 3 public paused 900/1.000 câu không khớp và không được ghép vào private.
+
+`adaptive_audit` chỉ dùng tokenizer, không load model GPU. `adaptive_dev` chạy smoke tối đa 5 ID
+trong phiên đầu, sau đó resume tối đa 50 ID mới/phiên. `adaptive_private` tự đọc kết quả dev
+cùng identity và chỉ áp dụng nhóm đạt METEOR không giảm. Không cần chọn winner theo từng câu.
+Dev100 đã dùng chọn adapter: kết quả chỉ là screening, không đảm bảo tăng điểm private.
+
+Mode cũ vẫn có: `p1_dev`, `p1_public`, `p2_retrieval`, `p2_generate`, `repair_v2`;
+các mode này vẫn cần diagnostics Stage 3 hoàn chỉnh như trước.
+''')
+    replace_cell('s4input-note', '''
+## Input và resume
+
+Adaptive tự tìm duy nhất một baseline và một Stage 2; nếu nhiều nguồn, điền đường dẫn trong cell cấu hình.
+Kaggle giải nén ZIP cũng được hỗ trợ. Không tự chọn Stage 3.
+Để resume, Add Input output phiên trước, đặt `PREVIOUS_OUTPUT` tới thư mục có `main04_state.json`.
+Giữ nguyên input/model/code; chuyển `adaptive_dev` → `adaptive_private` dùng cùng output.
+''')
+    adaptive_input = '''
+if MODE.startswith('adaptive'):
+    sys.path.insert(0, str(CODE))
+    from legalqa.adaptive_inputs import load_adaptive_inputs
+    def choose_input(value, pattern, marker=None):
+        if value is not None:
+            path = Path(value)
+            if not path.exists():
+                raise FileNotFoundError(path)
+            return path
+        matches = sorted(INPUT.rglob(pattern))
+        if not matches and marker:
+            matches = sorted(p.parent for p in INPUT.rglob(marker))
+        if len(matches) != 1:
+            raise ValueError(f'Chọn input cụ thể cho {pattern}: {matches}')
+        return matches[0]
+    STAGE2_DIAGNOSTICS = choose_input(STAGE2_DIAGNOSTICS,
+        'legalqa_main_stage2_v8_diagnostics*.zip', 'stage2_manifest.json')
+    BASELINE_SUBMISSION = choose_input(BASELINE_SUBMISSION, 'submission.zip', 'submission.json')
+    if PRIVATE_DIAGNOSTICS is not None and Path(PRIVATE_DIAGNOSTICS).is_dir():
+        from legalqa.repair import diagnostics_zip_from_directory
+        PRIVATE_DIAGNOSTICS = diagnostics_zip_from_directory(
+            PRIVATE_DIAGNOSTICS, WORK / 'adaptive_private_diagnostics.zip')
+    checked = load_adaptive_inputs(STAGE2_DIAGNOSTICS, BASELINE_SUBMISSION, PRIVATE_DIAGNOSTICS)
+    diagnostics_sha256 = checked['source']['stage2']
+    print('Verified private IDs:', len(checked['private']['questions']))
+    print('Private audit:', 'matched' if checked['private']['audit'] is not None else 'unavailable; heuristic mode')
+    print('Baseline score reported by user: 0.5713; Stage 3: 0.5704')
+    del checked
+else:
+'''
+    replace_cell('s4input', adaptive_input + textwrap.indent(''.join(by_id['s4input']['source']), '    '))
+    run_source = ''.join(by_id['s4run']['source'])
+    adaptive_run = '''if MODE.startswith('adaptive'):
+    target = OUTPUT / 'adaptive'
+    command = [sys.executable, '-m', 'legalqa.adaptive', '--mode', MODE,
+               '--stage2', STAGE2_DIAGNOSTICS, '--submission', BASELINE_SUBMISSION,
+               '--models', MODEL_ROOT, '--adapter', ADAPTER_ROOT, '--output', target,
+               '--max-items', GPU_MAX_ITEMS]
+    if PRIVATE_DIAGNOSTICS is not None:
+        command += ['--private-diagnostics', PRIVATE_DIAGNOSTICS]
+    run_bounded(command, cwd=CODE, env=env)
+    adaptive_status = read_json(target / 'status.json')
+    record(adaptive_status['status'], output='adaptive',
+           submission_zip=('adaptive/' + adaptive_status['submission_zip'])
+           if adaptive_status.get('submission_zip') else None)
+
+elif MODE == 'p1_dev':'''
+    replace_cell('s4run', run_source.replace("if MODE == 'p1_dev':", adaptive_run, 1))
+    result_source = ''.join(by_id['s4results']['source'])
+    replace_cell('s4results', result_source.replace("if MODE == 'p1_dev':", '''if MODE.startswith('adaptive'):
+    links += [OUTPUT / 'adaptive/status.json', OUTPUT / 'adaptive/audit.json',
+              OUTPUT / 'adaptive/dev.status.json', OUTPUT / 'adaptive/private.status.json']
+    for method in ('audit', 'heuristic'):
+        links += [OUTPUT / f'adaptive/dev/{method}/decision.json',
+                  OUTPUT / f'adaptive/private/{method}/outcomes.json',
+                  OUTPUT / f'adaptive/private/{method}/unresolved.json',
+                  OUTPUT / f'adaptive/private/{method}/skipped.json']
+    if current.get('submission_zip'):
+        links.append(OUTPUT / current['submission_zip'])
+elif MODE == 'p1_dev':''', 1))
+    replace_cell('s4next', '''
+## Đọc kết quả adaptive
+
+Khi `paused`, Save output và resume cùng mode. Phiên đầu smoke 5 ID, các phiên sau tối đa
+`GPU_MAX_ITEMS=50` ID mới trong tổng `WORK_HOURS=9` (gồm setup, mọi retry và chấm).
+Xem `adaptive/dev/{audit,heuristic}/decision.json`: mỗi nhóm và bản ghép phải đạt METEOR
+không giảm, có thay đổi được chấp nhận và không tăng câu lặp nặng/dang dở.
+Sau khi `adaptive_dev` complete, đổi `MODE='adaptive_private'`; không chỉnh policy hoặc input.
+
+`adaptive/submission_adaptive.zip` chỉ được xuất khi private hoàn tất, chỉ chứa `submission.json`.
+Nếu không có nhóm dev đạt điều kiện, ZIP giữ baseline. Xem `outcomes.json`, `unresolved.json`
+và `skipped.json` để biết câu nào đã thay, thất bại hoặc bị loại bởi dev.
+Giữ baseline 0.5713 để đối chiếu; chỉ lần nộp tiếp theo mới xác nhận điểm private mới.
+''')
     nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
           "language_info": {"name": "python", "version": "3.11.0"}}, "nbformat": 4, "nbformat_minor": 5}
     target = ROOT / "legalqa_main_04_repair_submit.ipynb"

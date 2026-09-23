@@ -1,5 +1,9 @@
 # Main 04 P0/P1/P2 trên diagnostics (5)
 
+> Notebook hiện mặc định `adaptive_dev` cho private baseline 0.5713. Xem
+> [hướng dẫn adaptive fallback/truncated](main04_adaptive.md). Tài liệu bên dưới mô tả các mode cũ,
+> vẫn dùng được khi chọn `p1_dev`, `p1_public`, `p2_retrieval`, `p2_generate` hoặc `repair_v2`.
+
 Notebook hiện điều phối sẵn baseline P0, inference ablation P1, retrieval ablation P2 và workflow repair V2 cũ. Điểm public người dùng đã báo: 0,5580 trước sửa, 0,5599 sau V1. Chưa có bằng chứng đạt public 0,60.
 
 ## Chạy Kaggle

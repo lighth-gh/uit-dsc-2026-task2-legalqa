@@ -84,7 +84,7 @@ class ExperimentTests(unittest.TestCase):
     def test_main04_exposes_all_ablation_modes_without_manual_cell_rewrite(self):
         notebook = read_json(Path(__file__).parents[1] / "legalqa_main_04_repair_submit.ipynb")
         source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
-        for value in ("MODE = 'p1_dev'", "PREVIOUS_OUTPUT = None", "p1_public",
+        for value in ("MODE = 'adaptive_dev'", "PREVIOUS_OUTPUT = None", "p1_public",
                       "p2_retrieval", "p2_generate", "repair_v2", "P1_WINNER = None",
                       "P2_SHORTLIST = []", "RUN_GPU = True", "main04_state.json",
                       "penalty_comparison.json", "p2_retrieval_diagnostics.zip"):
